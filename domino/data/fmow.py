@@ -1,0 +1,35 @@
+from wilds import datasets
+
+
+fmow_config = {
+    "model_name": "wilds_model",
+    "dataset": "fmow",
+    "split_scheme": "official",
+    "dataset_kwargs": {"oracle_training_set": False, "seed": 111, "use_ood_val": True},
+    "metrics": ["accuracy"],
+    "model_type": "densenet121",
+    "model_kwargs": {"pretrained": True},
+    "train_transform": "image_base",
+    "eval_transform": "image_base",
+    "loss_function": "cross_entropy",
+    "groupby_fields": [
+        "year",
+    ],
+    "val_metric": "acc_worst_region",
+    "val_metric_decreasing": False,
+    "optimizer": "Adam",
+    "scheduler": "StepLR",
+    "scheduler_kwargs": {"gamma": 0.96},
+    "batch_size": 64,
+    "lr": 0.0001,
+    "weight_decay": 0.0,
+    "n_epochs": 50,
+    "n_groups_per_batch": 8,
+    "irm_lambda": 1.0,
+    "coral_penalty_weight": 0.1,
+    "algo_log_metric": "accuracy",
+    "process_outputs_function": "multiclass_logits_to_pred",
+    "num_classes": 62,
+    "target_resolution": (224, 224),
+    "model_path": "/home/common/datasets/fmow_v1.1/models/fmow_erm_seed0/best_model.pth",
+}
