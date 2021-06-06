@@ -12,38 +12,39 @@ from torchvision.models import resnet50
 import pandas as pd
 from terra import Task
 import torchvision.transforms as transforms
-import torchvision.datasets.folder as folder
-from mosaic import DataPanel, ImageColumn
+from mosaic import DataPanel
 from mosaic.cells.volume import MedicalVolumeCell
 from PIL import Image
 from dosma import DicomReader
 
-from domino.utils import hash_for_split
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
 CXR_STD = 0.24621
 CXR_SIZE = 224
 
+
 @Task.make_task
-def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str=None):
+def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     from domino.bss_dp import SourceSeparator
-    model= CXRResnet(model_path=model_path)
-    separator = SourceSeparator(config={
-        "activation_dim": 2048,
-        "lr": 1e-3
-    }, model=model)
+
+    model = CXRResnet(model_path=model_path)
+    separator = SourceSeparator(
+        config={"activation_dim": 2048, "lr": 1e-3}, model=model
+    )
     act_dp = separator.prepare_dp(
-        dp=dp, layers={
+        dp=dp,
+        layers={
             "block2": model.cnn_encoder[-3],
             "block3": model.cnn_encoder[-2],
-            "block4": model.cnn_encoder[-1]
-        }, batch_size=128
+            "block4": model.cnn_encoder[-1],
+        },
+        batch_size=128,
     )
     return act_dp
 
-class CXRResnet(nn.Module):
 
+class CXRResnet(nn.Module):
     def __init__(self, model_path: str = None):
         super().__init__()
         input_module = resnet50(pretrained=False)
@@ -56,7 +57,7 @@ class CXRResnet(nn.Module):
             self.cnn_encoder.load_state_dict(state_dict["model"]["module_pool"]["cnn"])
             self.load_state_dict(
                 state_dict["model"]["module_pool"]["classification_module_target"],
-                strict=False
+                strict=False,
             )
 
     def forward(self, x):
@@ -81,30 +82,37 @@ def cxr_transform(volume: MedicalVolumeCell):
             transforms.Normalize(CXR_MEAN, CXR_STD),
         ]
     )(img)
-    return img.repeat([3,1,1])
+    return img.repeat([3, 1, 1])
+
 
 def get_dp(df: pd.DataFrame):
     dp = DataPanel.from_pandas(df)
     loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
-    dp.add_column("input", dp["filepath"].map(
-        lambda x: MedicalVolumeCell(
-            paths=x, loader=loader, transform=cxr_transform
+    dp.add_column(
+        "input",
+        dp["filepath"].map(
+            lambda x: MedicalVolumeCell(
+                paths=x, loader=loader, transform=cxr_transform
+            ),
+            num_workers=0,
         ),
-        num_workers=0, 
-    ), overwrite=True
+        overwrite=True,
     )
-    dp.add_column("img", dp["filepath"].map(
-        lambda x: MedicalVolumeCell(
-            paths=x, loader=loader, transform=cxr_transform_pil
+    dp.add_column(
+        "img",
+        dp["filepath"].map(
+            lambda x: MedicalVolumeCell(
+                paths=x, loader=loader, transform=cxr_transform_pil
+            ),
+            num_workers=0,
         ),
-        num_workers=0, 
-    ), overwrite=True
+        overwrite=True,
     )
     return dp
 
 
 @Task.make_task
-def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str=None):
+def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(ROOT_DIR, "train-rle.csv"))
     segment_df = segment_df.rename(
@@ -112,9 +120,9 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str=None):
     )
     # there are some image ids with multiple label rows, we'll just take the first
     segment_df = segment_df[~segment_df.image_id.duplicated(keep="first")]
-    
-    # get binary labels for pneumothorax, any row with a "-1" for encoded pixels is 
-    # considered a negative 
+
+    # get binary labels for pneumothorax, any row with a "-1" for encoded pixels is
+    # considered a negative
     segment_df["pmx"] = (segment_df.encoded_pixels != "-1").astype(int)
 
     # start building up a main dataframe with a few `merge` operations (i.e. join)
@@ -132,7 +140,7 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str=None):
         ]
     )
 
-    # important to perform a left join here, because there are some images in the 
+    # important to perform a left join here, because there are some images in the
     # directory without labels in `segment_df`
     df = df.merge(filepath_df, how="left", on="image_id")
 

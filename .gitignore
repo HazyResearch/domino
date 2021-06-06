@@ -1,5 +1,5 @@
 # machine-specific config files  
-terra_config.json
+terra-config.json
 *.code-workspace
 *.vscode
 *pod.yaml

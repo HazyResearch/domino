@@ -3,7 +3,7 @@ import os
 import PIL
 import gradio as gr
 import numpy as np
-from mosaic import NumpyArrayColumn, DataPanel, ImageColumn, ImagePath
+from mosaic import ListColumn, DataPanel, ImageColumn, ImagePath, NumpyArrayColumn
 
 import pandas as pd
 import numpy as np
@@ -30,26 +30,6 @@ def solicit_feedback_imgs(
     else:
         run_dir = "_feedback_cache"
     os.makedirs(run_dir, exist_ok=True)
-
-    if overwrite or "feedback_label" not in dp.column_names:
-        dp.add_column(
-            "feedback_label",
-            NumpyArrayColumn(["unlabeled"] * len(dp)),
-            overwrite=overwrite,
-        )
-
-    if overwrite or "feedback_pos_mask" not in dp.column_names:
-        dp.add_column(
-            "feedback_pos_mask",
-            NumpyArrayColumn(np.zeros((len(dp), *size))),
-            overwrite=overwrite,
-        )
-    if overwrite or "feedback_neg_mask" not in dp.column_names:
-        dp.add_column(
-            "feedback_neg_mask",
-            NumpyArrayColumn(np.zeros((len(dp), *size))),
-            overwrite=overwrite,
-        )
 
     # prepare examples
     if rank_by is not None:
@@ -83,17 +63,22 @@ def solicit_feedback_imgs(
                 example_idx,
                 str(label),  # important this is a str, gradio hangs otherwise
                 image_path,
-                dp["feedback_label"][example_idx],
+                dp["feedback_label"][example_idx] if "feedback_label" in dp else None,
             ]
         )
+
+    label_dp = dp[["image_id"]].lz[example_idxs]
+    label_dp["feedback_label"] = NumpyArrayColumn(["unlabeled"] * len(example_idxs))
+    label_dp["feedback_pos_mask"] = ListColumn([None] * len(example_idxs))
+    label_dp["feedback_neg_mask"] = ListColumn([None] * len(example_idxs))
 
     # define feedback function
     def submit_feedback(rank, example_idx, label, img, feedback_label):
         pos_mask = (img == np.array([0, 169, 255])).all(axis=-1)
         neg_mask = (img == np.array([255, 64, 64])).all(axis=-1)
-        dp["feedback_label"][example_idx] = feedback_label
-        dp["feedback_pos_mask"][example_idx] = pos_mask
-        dp["feedback_neg_mask"][example_idx] = neg_mask
+        label_dp["feedback_label"][rank] = feedback_label
+        label_dp["feedback_pos_mask"][rank] = pos_mask
+        label_dp["feedback_neg_mask"][rank] = neg_mask
         return []
 
     iface = gr.Interface(
@@ -109,7 +94,7 @@ def solicit_feedback_imgs(
         examples=examples,
         layout="vertical",
     )
-    return iface.launch(inbrowser=False, inline=False)
+    return iface.launch(inbrowser=False, inline=False), label_dp
 
 
 def merge_in_feedback(

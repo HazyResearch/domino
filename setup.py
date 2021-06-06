@@ -3,6 +3,22 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+REQUIRED = [
+    "pytorch-lightning",
+    "gradio<2.0.0", #1.7.7
+    "terra @ git+https://github.com/seyuboglu/terra",
+    "pandas", 
+    "numpy>=1.18.0",
+    "cytoolz",
+    "ujson",
+    "jsonlines>=1.2.0",
+    "torch>=1.8.0",
+    "tqdm>=4.49.0",
+    "scikit-learn",
+    "umap-learn[plot]",
+    "torchvision>=0.9.0"
+]
+
 setuptools.setup(
     name="domino",
     version="0.0.1",
@@ -19,4 +35,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.8",
+    install_requires=REQUIRED,
 )
