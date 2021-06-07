@@ -4,10 +4,11 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
+    "pre-commit",
     "pytorch-lightning",
-    "gradio<2.0.0", #1.7.7
+    "gradio<2.0.0",  # 1.7.7
     "terra @ git+https://github.com/seyuboglu/terra",
-    "pandas", 
+    "pandas",
     "numpy>=1.18.0",
     "cytoolz",
     "ujson",
@@ -16,7 +17,7 @@ REQUIRED = [
     "tqdm>=4.49.0",
     "scikit-learn",
     "umap-learn[plot]",
-    "torchvision>=0.9.0"
+    "torchvision>=0.9.0",
 ]
 
 setuptools.setup(
