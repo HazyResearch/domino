@@ -6,6 +6,7 @@ terra-config.json
 **/flagged
 _*_cache
 notebooks/test
+scratch/sabri/_fb_imgs
 
 # logs
 *hparams.yaml

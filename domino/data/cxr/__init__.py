@@ -1,22 +1,28 @@
 import os
-from mosaic.cells.imagepath import ImagePath
-import numpy as np
-from functools import partial
-from typing import List
-from glob import glob
 import pickle
+from functools import partial
+from glob import glob
 
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-from torchvision.models import resnet50
-import pandas as pd
-from terra import Task
 import torchvision.transforms as transforms
+from dosma import DicomReader
 from mosaic import DataPanel
 from mosaic.cells.volume import MedicalVolumeCell
 from PIL import Image
-from dosma import DicomReader
+from terra import Task
+from torchvision.models import resnet50
 
+from domino.data.gaze_utils import (
+    apply_lf,
+    diffusivity,
+    make_heatmaps,
+    max_visit,
+    total_time,
+    unique_visits,
+)
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
@@ -42,6 +48,56 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
         batch_size=128,
     )
     return act_dp
+
+
+@Task.make_task
+def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
+
+    # hypers for CXR gaze features:
+    s1 = 3
+    s2 = 3
+    stride = 2
+    view_pct = 0.1
+
+    gaze_seq_dict = pickle.load(open(os.path.join(root_dir, "cxr_gaze_data.pkl"), "rb"))
+
+    # Extract gaze features
+    gaze_feats_dict = {}
+    for img_id in gaze_seq_dict:
+        gaze_seq = gaze_seq_dict[img_id]
+        gaze_heatmap = make_heatmaps([gaze_seq]).squeeze()
+        gaze_time = apply_lf([gaze_heatmap], total_time)
+        gaze_max_visit = apply_lf([gaze_heatmap], partial(max_visit, pct=view_pct))
+        gaze_unique = apply_lf([gaze_heatmap], unique_visits)
+        gaze_diffusivity = apply_lf(
+            [gaze_heatmap], partial(diffusivity, s1=s1, s2=s2, stride=stride)
+        )
+
+        gaze_feats_dict[img_id] = {
+            "gaze_heatmap": gaze_heatmap,
+            "gaze_time": gaze_time,
+            "gaze_max_visit": gaze_max_visit,
+            "gaze_unique": gaze_unique,
+            "gaze_diffusivity": gaze_diffusivity,
+        }
+
+    # merge sequences and features into a df
+    gaze_df = pd.DataFrame(
+        [
+            {
+                "gaze_seq": gaze_seq_dict[img_id],
+                "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
+                "gaze_max_visit": gaze_feats_dict[img_id]["gaze_max_visit"],
+                "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
+                "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
+                "gaze_diffusivity": gaze_feats_dict[img_id]["gaze_diffusivity"],
+                "image_id": os.path.splitext(os.path.basename(img_id))[0],
+            }
+            for img_id in gaze_seq_dict
+        ]
+    )
+
+    return gaze_df
 
 
 class CXRResnet(nn.Module):
@@ -114,7 +170,7 @@ def get_dp(df: pd.DataFrame):
 @Task.make_task
 def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     # get segment annotations
-    segment_df = pd.read_csv(os.path.join(ROOT_DIR, "train-rle.csv"))
+    segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))
     segment_df = segment_df.rename(
         columns={"ImageId": "image_id", " EncodedPixels": "encoded_pixels"}
     )
@@ -163,5 +219,9 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     df = df.merge(tube_df, how="left", on="image_id")
     df.split = df.split.fillna("train")
+
+    # integrate gaze features
+    gaze_df = create_gaze_df.out(load=True)
+    df = df.merge(gaze_df, how="left", on="image_id")
 
     return df
