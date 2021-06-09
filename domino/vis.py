@@ -333,6 +333,8 @@ def visualize_gaze_dp(
     dp: DataPanel,
     gaze_feature_name: str = "time",
     split: str = "train",
+    class_column: str = "pmx",
+    class_value: int = -1,
     num_examples: int = 10,
     image_column: str = "img",
     rle_column: str = "none",
@@ -345,14 +347,21 @@ def visualize_gaze_dp(
     # filter examples to ones containing the gaze feature
     gaze_mask = ~np.isnan(dp[f"gaze_{gaze_feature_name}"])
     mask = np.logical_and(split_mask, gaze_mask)
-    gaze_feature = np.array(dp[f"gaze_{gaze_feature_name}"][mask])
+    if class_value != -1:
+        # filter examples to ones that are of a particular class
+
+        class_mask = dp[class_column].data == class_value
+        mask = np.logical_and(mask, class_mask)
+
+    dp = dp[mask]
+    gaze_feature = np.array(dp[f"gaze_{gaze_feature_name}"])
 
     #  prepare subplots
     plt.rcParams.update({"font.size": 22})
-    fig = plt.figure(constrained_layout=True, figsize=(10, 5 * num_examples))
-    gs = GridSpec(num_examples, 2, figure=fig)
+    fig = plt.figure(constrained_layout=True, figsize=(20, 5 * num_examples))
+    gs = GridSpec(num_examples, 4, figure=fig)
     ax = [
-        [fig.add_subplot(gs[row, col], xticks=[], yticks=[]) for col in range(2)]
+        [fig.add_subplot(gs[row, col], xticks=[], yticks=[]) for col in range(4)]
         for row in range(num_examples)
     ]
 
@@ -376,23 +385,26 @@ def visualize_gaze_dp(
             img = transforms.Resize([512, 512])(img)
             img = transforms.ToTensor()(img)
             img = img.detach().cpu().numpy().squeeze()
-            img_ax = ax[row][col]
+            img_ax = ax[row][2 * col]
+            segmask_ax = ax[row][2 * col + 1]
             is_color = img.shape[0] == 1
             if is_color:
                 img = img.transpose(1, 2, 0)
                 # transform the image to grayscale
                 # gray_img = np.dot(img, np.array([0.2125, 0.7154, 0.0721]))
                 img_ax.imshow(img)
+                segmask_ax.imshow(img)
             else:
                 img = img.squeeze()
                 img_ax.imshow(img, cmap="gray")
+                segmask_ax.imshow(img, cmap="gray")
 
             if rle_column != "none":
                 rle = example[rle_column]
                 if rle != "-1":
                     seg_mask = rle2mask(rle, 1024, 1024).T
                     seg_mask = resize(seg_mask, (512, 512))
-                    img_ax.imshow(seg_mask, alpha=0.15)
+                    segmask_ax.imshow(seg_mask, alpha=0.15)
 
             # label with filename
             img_ax.annotate(
@@ -407,7 +419,7 @@ def visualize_gaze_dp(
             )
 
         # label row
-        col_ax = ax[0][col]
+        col_ax = ax[0][2 * col]
         col_ax.annotate(
             name,
             xy=(0.8, 1.25),
