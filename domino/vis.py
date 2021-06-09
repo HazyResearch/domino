@@ -404,7 +404,7 @@ def visualize_gaze_dp(
                 if rle != "-1":
                     seg_mask = rle2mask(rle, 1024, 1024).T
                     seg_mask = resize(seg_mask, (512, 512))
-                    segmask_ax.imshow(seg_mask, alpha=0.15)
+                    segmask_ax.imshow(seg_mask, alpha=0.5)
 
             # label with filename
             img_ax.annotate(
