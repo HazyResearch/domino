@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-1
+  labels:
+    app: app
+spec:
+  containers:
+    - command:
+        - sleep
+        - infinity
+      image: gcr.io/hai-gcp-fine-grained/default
+      name: pod-1
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+        requests:
+          nvidia.com/gpu: 1
+      volumeMounts:
+        - name: pv-1
+          mountPath: /home
+        - name: dshm
+          mountPath: /dev/shm
+  volumes:
+    - name: pv-1
+      persistentVolumeClaim:
+        claimName: pvc-1
+    - name: dshm
+      emptyDir:
+        medium: Memory
+  restartPolicy: Never
+  nodeSelector:
+    # cloud.google.com/gke-accelerator: nvidia-tesla-a100 # nvidia-tesla-k80, nvidia-tesla-p100, nvidia-tesla-p4, nvidia-tesla-v100, nvidia-tesla-t4, or nvidia-tesla-a100
+    cloud.google.com/gke-nodepool: t4-1
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Equal"
+      value: "present"
+      effect: "NoSchedule"
