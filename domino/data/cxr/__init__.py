@@ -66,12 +66,12 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     for img_id in gaze_seq_dict:
         gaze_seq = gaze_seq_dict[img_id]
         gaze_heatmap = make_heatmaps([gaze_seq]).squeeze()
-        gaze_time = apply_lf([gaze_heatmap], total_time)
-        gaze_max_visit = apply_lf([gaze_heatmap], partial(max_visit, pct=view_pct))
-        gaze_unique = apply_lf([gaze_heatmap], unique_visits)
+        gaze_time = apply_lf([gaze_heatmap], total_time)[0]
+        gaze_max_visit = apply_lf([gaze_heatmap], partial(max_visit, pct=view_pct))[0]
+        gaze_unique = apply_lf([gaze_heatmap], unique_visits)[0]
         gaze_diffusivity = apply_lf(
             [gaze_heatmap], partial(diffusivity, s1=s1, s2=s2, stride=stride)
-        )
+        )[0]
 
         gaze_feats_dict[img_id] = {
             "gaze_heatmap": gaze_heatmap,
@@ -139,6 +139,21 @@ def cxr_transform(volume: MedicalVolumeCell):
         ]
     )(img)
     return img.repeat([3, 1, 1])
+
+
+def rle2mask(rle, width, height):
+    mask = np.zeros(width * height)
+    array = np.asarray([int(x) for x in rle.split()])
+    starts = array[0::2]
+    lengths = array[1::2]
+
+    current_position = 0
+    for index, start in enumerate(starts):
+        current_position += start
+        mask[current_position : current_position + lengths[index]] = 1
+        current_position += lengths[index]
+
+    return mask.reshape(width, height)
 
 
 def get_dp(df: pd.DataFrame):
@@ -221,6 +236,7 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     df.split = df.split.fillna("train")
 
     # integrate gaze features
+    create_gaze_df(root_dir)
     gaze_df = create_gaze_df.out(load=True)
     df = df.merge(gaze_df, how="left", on="image_id")
 

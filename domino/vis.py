@@ -1,21 +1,23 @@
 import os
-from typing import List, Union
+from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.gridspec import GridSpec
-from domino.bss import SourceSeparator
 import torch
-from scipy.ndimage import gaussian_filter
-from terra import Task
-from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score, roc_curve
-
+from matplotlib.gridspec import GridSpec
 from mosaic import DataPanel
-from domino.data.celeb import celeb_transform
+from scipy.ndimage import gaussian_filter
+from skimage.transform import resize
+from sklearn.metrics import roc_auc_score, roc_curve
+from terra import Task
+from torch.utils.data import Dataset
 from torchvision import transforms
+
+from domino.bss import SourceSeparator
+from domino.data.celeb import celeb_transform
+from domino.data.cxr import rle2mask
 
 
 @Task.make_task
@@ -183,7 +185,7 @@ def visualize_component_dp(
     components = torch.tensor(dp[components_column])
     components = components.view(components.shape[0], -1, components.shape[-1])
 
-    #components = components - components.mean(axis=1, keepdim=True)  # todo try removing
+    # components = components - components.mean(axis=1, keepdim=True)  # todo try removing
     components = components.numpy()
 
     # flip the order of the component
@@ -274,7 +276,7 @@ def visualize_component_dp(
             else:
                 img = gray_img = img.squeeze()
                 img_ax.imshow(img, cmap="gray")
-            
+
             # label with filename
             img_ax.annotate(
                 example[id_column][:10],
@@ -325,6 +327,112 @@ def visualize_component_dp(
         plt.savefig(os.path.join(run_dir, "out.pdf"))
 
     # return data_df.iloc[example_idxs]
+
+
+def visualize_gaze_dp(
+    dp: DataPanel,
+    gaze_feature_name: str = "time",
+    split: str = "train",
+    class_column: str = "pmx",
+    class_value: int = -1,
+    num_examples: int = 10,
+    image_column: str = "img",
+    rle_column: str = "none",
+    run_dir: str = None,
+    **kwargs,
+):
+
+    # filter examples by split
+    split_mask = dp["split"].data == split
+    # filter examples to ones containing the gaze feature
+    gaze_mask = ~np.isnan(dp[f"gaze_{gaze_feature_name}"])
+    mask = np.logical_and(split_mask, gaze_mask)
+    if class_value != -1:
+        # filter examples to ones that are of a particular class
+
+        class_mask = dp[class_column].data == class_value
+        mask = np.logical_and(mask, class_mask)
+
+    dp = dp[mask]
+    gaze_feature = np.array(dp[f"gaze_{gaze_feature_name}"])
+
+    #  prepare subplots
+    plt.rcParams.update({"font.size": 22})
+    fig = plt.figure(constrained_layout=True, figsize=(20, 5 * num_examples))
+    gs = GridSpec(num_examples, 4, figure=fig)
+    ax = [
+        [fig.add_subplot(gs[row, col], xticks=[], yticks=[]) for col in range(4)]
+        for row in range(num_examples)
+    ]
+
+    #  sort examples by gaze feature get top and bottom examples
+    examples_sorted_by_gaze = gaze_feature.argsort()
+    examples_sorted_by_gaze_flipped = (-1 * gaze_feature).argsort()
+
+    for col, (name, example_idxs) in enumerate(
+        [
+            (
+                f"largest {gaze_feature_name}",
+                examples_sorted_by_gaze_flipped[:num_examples],
+            ),
+            (f"smallest {gaze_feature_name}", examples_sorted_by_gaze[:num_examples]),
+        ]
+    ):
+        for row, example_idx in enumerate(example_idxs):
+            # get input image
+            example = dp[int(example_idx)]
+            img = example[image_column]
+            img = transforms.Resize([512, 512])(img)
+            img = transforms.ToTensor()(img)
+            img = img.detach().cpu().numpy().squeeze()
+            img_ax = ax[row][2 * col]
+            segmask_ax = ax[row][2 * col + 1]
+            is_color = img.shape[0] == 1
+            if is_color:
+                img = img.transpose(1, 2, 0)
+                # transform the image to grayscale
+                # gray_img = np.dot(img, np.array([0.2125, 0.7154, 0.0721]))
+                img_ax.imshow(img)
+                segmask_ax.imshow(img)
+            else:
+                img = img.squeeze()
+                img_ax.imshow(img, cmap="gray")
+                segmask_ax.imshow(img, cmap="gray")
+
+            if rle_column != "none":
+                rle = example[rle_column]
+                if rle != "-1":
+                    seg_mask = rle2mask(rle, 1024, 1024).T
+                    seg_mask = resize(seg_mask, (512, 512))
+                    segmask_ax.imshow(seg_mask, alpha=0.5)
+
+            # label with filename
+            img_ax.annotate(
+                f"{gaze_feature[int(example_idx)]:.2f}",
+                xy=(0.5, 1),
+                xytext=(0, 5),
+                xycoords="axes fraction",
+                textcoords="offset points",
+                size="large",
+                ha="center",
+                va="baseline",
+            )
+
+        # label row
+        col_ax = ax[0][2 * col]
+        col_ax.annotate(
+            name,
+            xy=(0.8, 1.25),
+            xytext=(0, 5),
+            xycoords="axes fraction",
+            textcoords="offset points",
+            size="large",
+            ha="right",
+            va="center",
+        )
+
+    if run_dir is not None:
+        plt.savefig(os.path.join(run_dir, "out.pdf"))
 
 
 @Task.make_task
@@ -581,7 +689,7 @@ def component_scatterplot(
 
         # Draw the heatma
         cg = sns.clustermap(
-            corr,
+            df.corr(),
             cmap=cmap,
             square=True,
             vmax=1.0,
