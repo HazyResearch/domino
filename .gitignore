@@ -2,7 +2,6 @@
 terra-config.json
 *.code-workspace
 *.vscode
-*pod.yaml
 **/flagged
 _*_cache
 notebooks/test
