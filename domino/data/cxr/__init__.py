@@ -30,7 +30,7 @@ CXR_STD = 0.24621
 CXR_SIZE = 224
 
 
-@Task.make_task
+# @Task.make_task
 def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     from domino.bss_dp import SourceSeparator
 
@@ -41,8 +41,8 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     act_dp = separator.prepare_dp(
         dp=dp,
         layers={
-            "block2": model.cnn_encoder[-3],
-            "block3": model.cnn_encoder[-2],
+            # "block2": model.cnn_encoder[-3],
+            # "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
         batch_size=128,
