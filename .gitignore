@@ -1,8 +1,9 @@
 # machine-specific config files  
+.DS_Store
+terra_config.json
 terra-config.json
 *.code-workspace
 *.vscode
-*pod.yaml
 **/flagged
 _*_cache
 notebooks/test

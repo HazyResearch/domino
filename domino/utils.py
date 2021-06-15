@@ -1,17 +1,16 @@
 import hashlib
-from typing import Dict, Optional, Sequence, Union
 from functools import reduce
+from typing import Dict, Optional, Sequence, Union
 
-import pandas as pd
 import numpy as np
-from pytorch_lightning.utilities.distributed import rank_zero_only
+import pandas as pd
 import torch
-from torchmetrics import Metric
-from sklearn.metrics import roc_auc_score
-from pytorch_lightning.callbacks import ModelCheckpoint
 from cytoolz import concat
-
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.utilities.distributed import rank_zero_only
+from sklearn.metrics import roc_auc_score
 from terra import Task
+from torchmetrics import Metric
 
 
 def nested_getattr(obj, attr, *args):
@@ -66,7 +65,7 @@ class PredLogger(Metric):
     ):
         self.preds.append(pred.detach())
         self.targets.append(target.detach())
-        self.sample_ids.append(sample_id)
+        self.sample_ids.extend(sample_id)
 
     def compute(self):
         """TODO: this sometimes returns duplicates."""
@@ -74,7 +73,7 @@ class PredLogger(Metric):
             sample_ids = torch.cat(self.sample_ids).cpu()
         else:
             # support for string ids
-            sample_ids = concat(self.sample_ids)
+            sample_ids = self.sample_ids
         preds = torch.cat(self.preds).cpu()
         targets = torch.cat(self.targets).cpu()
 
@@ -115,16 +114,17 @@ class TerraCheckpoint(ModelCheckpoint):
         pl_module.valid_preds.compute()  # needed for automatic reset
 
     @rank_zero_only
-    def _save_model(self, filepath: str, trainer, pl_module):
+    def _save_model(self, trainer, filepath: str):
         # only dump on rank 0,  see comment on `save_checkpoint` which instructs the
         # save_function to only save on rank 0, like https://github.com/PyTorchLightning/pytorch-lightning/blob/af621f8590b2f2ba046b508da2619cfd4995d876/pytorch_lightning/trainer/training_io.py#L256-L267
         # we use rank_zero_only as recommended by https://github.com/PyTorchLightning/pytorch-lightning/issues/2267#issuecomment-646602749
+        lit_module = trainer.lightning_module
         Task.dump(
             {
                 "current_epoch": trainer.current_epoch,
                 "global_step": trainer.global_step,
-                "model": pl_module,
-                "valid": pl_module.valid_preds.compute(),
+                "model": lit_module,
+                "valid": lit_module.valid_preds.compute(),
             },
             run_dir=self.dirpath,
             group_name="best_chkpt",

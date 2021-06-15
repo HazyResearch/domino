@@ -1,22 +1,25 @@
 import os
 from typing import Dict, Iterable, List, Union
 
+import mosaic as ms
 import pandas as pd
 import pytorch_lightning as pl
-import torchmetrics
 import torch
 import torch.nn as nn
-from pytorch_lightning.loggers import TensorBoardLogger
+import torchmetrics
+import wandb
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from terra import Task
 from terra.torch import TerraModule
+from torch.utils.data import DataLoader
 from torchvision import transforms as transforms
-from robustnessgym import Dataset
 
-from domino.utils import PredLogger, TerraCheckpoint
-from domino.modeling import ResNet
 from domino.bss import SourceSeparator
-from domino.data.iwildcam import get_iwildcam_model
-from domino.data.wilds import get_wilds_model
+from domino.modeling import ResNet
+from domino.utils import PredLogger, TerraCheckpoint
+
+# from domino.data.iwildcam import get_iwildcam_model
+# from domino.data.wilds import get_wilds_model
 
 
 class Classifier(pl.LightningModule, TerraModule):
@@ -73,14 +76,14 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        inputs, targets, _ = batch
+        inputs, targets, _ = batch["input"], batch["bald"], batch["file"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("train_loss", loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch
+        inputs, targets, sample_id = batch["input"], batch["bald"], batch["file"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("valid_loss", loss)
@@ -105,13 +108,11 @@ class Classifier(pl.LightningModule, TerraModule):
         return optimizer
 
 
-@Task.make_task
 def train(
-    data_df: pd.DataFrame,
-    img_column: str,
+    dp: ms.DataPanel,
+    input_column: str,
     target_column: str,
     id_column: str,
-    img_transform: callable = None,
     model: Classifier = None,
     config: dict = None,
     num_classes: int = 2,
@@ -128,9 +129,6 @@ def train(
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
 
-    if img_transform is None:
-        img_transform = transforms.Lambda(lambda x: x)
-
     if (model is not None) and (config is not None):
         raise ValueError("Cannot pass both `model` and `config`.")
 
@@ -139,9 +137,8 @@ def train(
         config["num_classes"] = num_classes
         model = Classifier(config)
 
-    logger = TensorBoardLogger(
-        save_dir=os.path.join(run_dir, "tensorboard"), name="logs"
-    )
+    logger = WandbLogger(project="domino", save_dir=run_dir)
+
     checkpoint_callbacks = [
         TerraCheckpoint(
             dirpath=run_dir,
@@ -159,30 +156,21 @@ def train(
         callbacks=checkpoint_callbacks,
         default_root_dir=run_dir,
         accelerator=None,
+        val_check_interval=10,
         **kwargs,
     )
-    train_dataset = Dataset.load_image_dataset(
-        data_df[data_df.split == "train"].to_dict("records"),
-        img_columns=img_column,
-        transform=img_transform,
-    )
-    valid_dataset = Dataset.load_image_dataset(
-        data_df[data_df.split == "valid"].to_dict("records"),
-        img_columns=img_column,
-        transform=img_transform,
-    )
-
-    train_dl = train_dataset.to_dataloader(
-        columns=[img_column, target_column, id_column],
-        num_workers=num_workers,
+    train_dl = DataLoader(
+        dp[[input_column, target_column, id_column]].lz[dp["split"].data == "train"],
         batch_size=batch_size,
-    )
-    valid_dl = valid_dataset.to_dataloader(
-        columns=[img_column, target_column, id_column],
         num_workers=num_workers,
+    )
+    valid_dl = DataLoader(
+        dp[[input_column, target_column, id_column]].lz[dp["split"].data == "valid"],
         batch_size=batch_size,
+        num_workers=num_workers,
     )
     trainer.fit(model, train_dl, valid_dl)
+    wandb.finish()
     return model
 
 
