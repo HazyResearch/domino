@@ -12,7 +12,8 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
 from domino.loss import SoftCrossEntropyLoss
-from domino.utils import nested_getattr
+
+# from domino.utils import nested_getattr
 
 
 class ActivationExtractor:
@@ -157,7 +158,7 @@ class SourceSeparator(nn.Module):
         with dp.format(columns=required_cols), tqdm(
             total=num_epochs,
             disable=not pbars,
-            desc=f"fit_source_separator",
+            desc="fit_source_separator",
         ) as batch_t:
             for epoch_idx in range(num_epochs):
                 for batch_idx, batch in enumerate(
@@ -355,7 +356,10 @@ class SourceSeparator(nn.Module):
 
     @staticmethod
     def _cat_acts_across_layers(acts: List[torch.Tensor]):
-        """repeat activations in lower layers so they match the height and width of the first layer"""
+        """
+        repeat activations in lower layers so they
+        match the height and width of the first layer
+        """
         if len(acts) == 1:
             return acts[0]
 

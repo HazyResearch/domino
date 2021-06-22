@@ -30,7 +30,7 @@ CXR_STD = 0.24621
 CXR_SIZE = 224
 
 
-@Task.make_task
+# @Task.make_task
 def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     from domino.bss_dp import SourceSeparator
 
@@ -41,8 +41,8 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     act_dp = separator.prepare_dp(
         dp=dp,
         layers={
-            "block2": model.cnn_encoder[-3],
-            "block3": model.cnn_encoder[-2],
+            # "block2": model.cnn_encoder[-3],
+            # "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
         batch_size=64,
@@ -60,6 +60,9 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     view_pct = 0.1
 
     gaze_seq_dict = pickle.load(open(os.path.join(root_dir, "cxr_gaze_data.pkl"), "rb"))
+    expert_labels_dict = pickle.load(
+        open(os.path.join(root_dir, "expert_labels_dict.pkl"), "rb")
+    )
 
     # Extract gaze features
     gaze_feats_dict = {}
@@ -91,9 +94,10 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
                 "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
                 "gaze_diffusivity": gaze_feats_dict[img_id]["gaze_diffusivity"],
+                "expert_label": expert_labels_dict[img_id],
                 "image_id": os.path.splitext(os.path.basename(img_id))[0],
             }
-            for img_id in gaze_seq_dict
+            for img_id in expert_labels_dict
         ]
     )
 

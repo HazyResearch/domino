@@ -22,7 +22,7 @@ def get_commands(pool, cmd, env):
 def launch_pod(run_name: str, pool: str, cmd: str, env: str, image: str = None):
     # Load the base manifest for launching Pods
     config = yaml.load(
-        open("/home/sabri/code/domino/scratch/sabri/pods/default-pod.yaml"),
+        open("scratch/sabri/pods/default-pod.yaml"),
         Loader=yaml.FullLoader,
     )
 
