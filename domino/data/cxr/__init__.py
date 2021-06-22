@@ -45,7 +45,7 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
             "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
-        batch_size=128,
+        batch_size=64,
     )
     return act_dp
 

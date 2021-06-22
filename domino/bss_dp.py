@@ -1,14 +1,15 @@
 import os
-from typing import Mapping, Union, List
+from dataclasses import dataclass
+from typing import List, Mapping, Union
+
+import numpy as np
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-from torch.utils.data.dataloader import DataLoader
-from torch.utils.data import TensorDataset
-from tqdm.auto import tqdm
-import numpy as np
 from mosaic import DataPanel
+from torch.utils.data import TensorDataset
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from tqdm.auto import tqdm
 
 from domino.loss import SoftCrossEntropyLoss
 from domino.utils import nested_getattr
@@ -91,13 +92,15 @@ class SourceSeparator(nn.Module):
                 **{
                     f"activation_{name}": extractor.activation.cpu().numpy()
                     for name, extractor in layer_to_extractor.items()
-                }
+                },
             }
 
         return dp.update(
             function=predict,
-            batched=True,
+            is_batched_fn=True,
             input_columns=[input_col],
+            pbar=True,
+            num_workers=1,
             *args,
             **kwargs,
         )
@@ -130,7 +133,7 @@ class SourceSeparator(nn.Module):
         num_workers: int = 4,
         pbars: bool = True,
         target_col: str = "y",
-        activation_col: str = "activation"
+        activation_col: str = "activation",
     ):
         required_cols = [activation_col, target_col, "probs"]
         if not set(required_cols).issubset(dp.columns):

@@ -19,7 +19,8 @@ def induce_correlation(
     """
     Induce a correlation `corr` between two boolean columns `attr_a` and `attr_b` by
     subsampling `df`, while maintaining mean and variance. If `match_mu` is `True` then
-    take the minimum mean among the two attributes and use it for both
+    take the minimum mean among the two attributes and use it for both.
+    Details: https://www.notion.so/Slice-Discovery-Evaluation-Framework-63b625318ef4411698c5e369d914db88#8bd2da454826451c80b524149e1c87cc
     """
     if mu_a is None:
         mu_a = df[attr_a].mean()
