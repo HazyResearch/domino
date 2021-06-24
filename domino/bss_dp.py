@@ -1,15 +1,13 @@
 import os
-
-# from dataclasses import dataclass
+from dataclasses import dataclass
 from typing import List, Mapping, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
-from mosaic import DataPanel, NumpyArrayColumn
-
-# from torch.utils.data import TensorDataset
-# from torch.utils.data.dataloader import DataLoader
+from mosaic import DataPanel
+from torch.utils.data import TensorDataset
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
@@ -103,7 +101,7 @@ class SourceSeparator(nn.Module):
             is_batched_fn=True,
             input_columns=[input_col],
             pbar=True,
-            num_workers=6,
+            num_workers=1,
             *args,
             **kwargs,
         )
