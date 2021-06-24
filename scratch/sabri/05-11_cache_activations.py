@@ -1,23 +1,22 @@
 import os
 from typing import List
 
-from terra.io import json_load
-import terra
-from terra import Task
-from mosaic import DataPanel, NumpyArrayColumn
-import pandas as pd
-import numpy as np
-import torch.nn as nn
-from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.preprocessing import normalize
-import seaborn as sns
 import matplotlib.pyplot as plt
-
-
-from domino.vision import Classifier
-from domino.bss_dp import SourceSeparator
-from domino.data.celeb import get_celeb_dp, build_celeb_df
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import terra
+import torch.nn as nn
+from meerkat import DataPanel, NumpyArrayColumn
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import normalize
+from terra import Task
+from terra.io import json_load
+
+from domino.bss_dp import SourceSeparator
+from domino.data.celeb import build_celeb_df, get_celeb_dp
+from domino.vision import Classifier
 
 
 @Task.make_task
@@ -40,12 +39,18 @@ def cache_activations(
 
         # add activations and predictions
         separator = SourceSeparator(model=model)
-        print(f"({idx}) Getting activations and predictions for {model_target_column}...")
-        celeb_dp = separator.prepare_dp(celeb_dp, batch_size=128, layers={
-            "block2": model.model.layer2,
-            "block3": model.model.layer3,
-            "block4": model.model.layer4,
-        })
+        print(
+            f"({idx}) Getting activations and predictions for {model_target_column}..."
+        )
+        celeb_dp = separator.prepare_dp(
+            celeb_dp,
+            batch_size=128,
+            layers={
+                "block2": model.model.layer2,
+                "block3": model.model.layer3,
+                "block4": model.model.layer4,
+            },
+        )
 
         Task.dump(
             {

@@ -7,8 +7,8 @@ import pandas as pd
 import torch
 import torchvision.datasets.folder as folder
 import torchvision.transforms as transforms
-from mosaic import DataPanel, ImageColumn
-from mosaic.contrib.celeba import build_celeba_df
+from meerkat import DataPanel, ImageColumn
+from meerkat.contrib.celeba import build_celeba_df
 from PIL import Image
 from terra import Task
 

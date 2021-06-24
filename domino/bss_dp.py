@@ -5,7 +5,7 @@ from typing import List, Mapping, Union
 import numpy as np
 import torch
 import torch.nn as nn
-from mosaic import DataPanel
+from meerkat import DataPanel
 from torch.utils.data import TensorDataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
