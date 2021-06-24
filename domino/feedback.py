@@ -145,10 +145,18 @@ class ScribbleModel:
         pass
 
     def fit(self, train_dp: DataPanel, activation_col: str = "activation"):
-        kernel_size = (
-            train_dp["feedback_pos_mask"].shape[-2] // self.activation_size[0],
-            train_dp["feedback_pos_mask"].shape[-1] // self.activation_size[1],
-        )
+        train_dp["feedback_mask"] = train_dp["feedback_mask"].transpose(0, 3, 1, 2)
+        if train_dp["feedback_mask"].shape[1] > 1:
+            # squash the mask so it only has 1 channel
+            train_dp["feedback_mask"] = np.expand_dims(
+                train_dp["feedback_mask"].mean(1), 1
+            )
+
+        if self.strategy != "example":  # KS: not sure if right condition, but quick fix
+            kernel_size = (
+                train_dp["feedback_mask"].shape[-2] // self.activation_size[0],
+                train_dp["feedback_mask"].shape[-1] // self.activation_size[1],
+            )
         if self.strategy == "mask_pos_v_neg":
             pooled_masks = {
                 f"{feedback_mask}_pool": nn.functional.avg_pool2d(
@@ -174,7 +182,7 @@ class ScribbleModel:
 
         elif self.strategy == "mask_pos_v":
             pos_mask_pool = nn.functional.avg_pool2d(
-                input=train_dp["feedback_pos_mask"].to_tensor().to(float),
+                input=train_dp["feedback_mask"].to_tensor().to(float),
                 kernel_size=kernel_size,
             ).numpy()
             activation_dim = train_dp[activation_col].shape[1]
