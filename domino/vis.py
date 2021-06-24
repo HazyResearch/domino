@@ -7,7 +7,7 @@ import pandas as pd
 import seaborn as sns
 import torch
 from matplotlib.gridspec import GridSpec
-from mosaic import DataPanel
+from meerkat import DataPanel
 from scipy.ndimage import gaussian_filter
 from skimage.transform import resize
 from sklearn.metrics import roc_auc_score, roc_curve

@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Iterable, List, Union
 
-import mosaic as ms
+import meerkat as mk
 import pandas as pd
 import pytorch_lightning as pl
 import torch
@@ -76,14 +76,14 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        inputs, targets, _ = batch["input"], batch["bald"], batch["file"]
+        inputs, targets, _ = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("train_loss", loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch["input"], batch["bald"], batch["file"]
+        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("valid_loss", loss)
@@ -109,7 +109,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
 
 def train(
-    dp: ms.DataPanel,
+    dp: mk.DataPanel,
     input_column: str,
     target_column: str,
     id_column: str,
@@ -125,7 +125,6 @@ def train(
     run_dir: str = None,
     **kwargs,
 ):
-
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
 
@@ -136,7 +135,6 @@ def train(
         config = {} if config is None else config
         config["num_classes"] = num_classes
         model = Classifier(config)
-
     logger = WandbLogger(project="domino", save_dir=run_dir)
 
     checkpoint_callbacks = [
@@ -159,13 +157,21 @@ def train(
         val_check_interval=10,
         **kwargs,
     )
+    dp = mk.DataPanel.from_batch(
+        {
+            "input": dp[input_column],
+            "target": dp[target_column],
+            "id": dp[id_column],
+            "split": dp["split"],
+        }
+    )
     train_dl = DataLoader(
-        dp[[input_column, target_column, id_column]].lz[dp["split"].data == "train"],
+        dp.lz[dp["split"].data == "train"],
         batch_size=batch_size,
         num_workers=num_workers,
     )
     valid_dl = DataLoader(
-        dp[[input_column, target_column, id_column]].lz[dp["split"].data == "valid"],
+        dp.lz[dp["split"].data == "valid"],
         batch_size=batch_size,
         num_workers=num_workers,
     )

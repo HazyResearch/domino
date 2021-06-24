@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from dosma import DicomReader
-from mosaic import DataPanel
-from mosaic.cells.volume import MedicalVolumeCell
+from meerkat import DataPanel
+from meerkat.cells.volume import MedicalVolumeCell
 from PIL import Image
 from terra import Task
 from torchvision.models import resnet50

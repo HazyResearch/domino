@@ -1,12 +1,33 @@
-from typing import Union
+from typing import List, Union
 
-import mosaic as ms
+import meerkat as mk
 import numpy as np
 import pandas as pd
+import terra
+from pandas.core.frame import DataFrame
+from tqdm.auto import tqdm
+
+
+class CorrelationImpossibleError(ValueError):
+    def __init__(
+        self,
+        corr: float,
+        n: int,
+        attr_a: str,
+        attr_b: str,
+        mu_a: float,
+        mu_b: float,
+        msg: str,
+    ):
+        super().__init__(
+            f"Cannot achieve correlation of {corr} while creating sample with {int(n)} "
+            f"examples and means of {mu_a:0.3f} and {mu_b:0.3f} for attributes {attr_a} and "
+            f"{attr_b} respectively. " + msg
+        )
 
 
 def induce_correlation(
-    df: Union[pd.DataFrame, ms.DataPanel],
+    df: Union[pd.DataFrame, mk.DataPanel],
     corr: float,
     n: int,
     attr_a: str,
@@ -37,35 +58,112 @@ def induce_correlation(
     n_a1 = mu_a * n
     n_b1 = mu_b * n
 
-    n_1 = (n_a1 * n_b1 / n) + corr * np.sqrt(var_a * var_b * n ** 2)
+    n_1 = (n_a1 * n_b1 / n) + corr * np.sqrt(var_a * var_b) * (n - 1)
+    n_0 = n - (n_a1 + n_b1 - n_1)
 
-    if (n_1 > n_a1) or (n_1 > n_b1) or n_1 < 0:
-        raise ValueError(
-            f"Cannot achieve correlation of {corr} while maintaining means for "
-            f"attributes {attr_a=} and {attr_b=}."
-        )
+    n_a1_b0 = n_a1 - n_1
+    n_a0_b1 = n_b1 - n_1
 
-    both1 = (df[attr_a] == 1) & (df[attr_b] == 1)
+    both_1 = (df[attr_a] == 1) & (df[attr_b] == 1)
+    both_0 = (df[attr_a] == 0) & (df[attr_b] == 0)
+
+    # check if requested correlation is possible
+    msg = None
+    if int(n_a1) > df[attr_a].sum():
+        msg = "Not enough samples where a=1. Try a lower mu_a."
+    elif int(n_b1) > df[attr_b].sum():
+        msg = "Not enough samples where b=1. Try a lower mu_b."
+    elif int(n_1) > both_1.sum():
+        msg = "Not enough samples where a=1 and b=1. Try a lower corr or smaller n."
+    elif int(n_0) > both_0.sum():
+        msg = "Not enough samples where a=0 and b=0. Try a lower corr or smaller n."
+    elif int(n_a1_b0) > (df[attr_a] & (1 - both_1)).sum():
+        msg = "Not enough samples where a=1 and b=0. Try a higher corr or smaller n."
+    elif int(n_a0_b1) > (df[attr_b] & (1 - both_1)).sum():
+        msg = "Not enough samples where a=0 and b=1. Try a higher corr or smaller n."
+    elif n_1 < 0:
+        msg = "Insufficient variance for desired corr. Try mu_a or mu_b closer to 0.5 "
+    elif n_0 < 0:
+        msg = "ahh"
+    elif (n_1 > n_a1) or (n_1 > n_b1) or n_1 < 0 or n_0 < 0:
+        msg = "Not enough samples where a=0 and b=0. Try a lower corr or smaller n."
+    if msg is not None:
+        raise CorrelationImpossibleError(corr, n, attr_a, attr_b, mu_a, mu_b, msg)
+
     indices = []
-    indices.extend(np.random.choice(np.where(both1)[0], size=int(n_1), replace=replace))
+    indices.extend(
+        np.random.choice(np.where(both_1)[0], size=int(n_1), replace=replace)
+    )
     indices.extend(
         np.random.choice(
-            np.where(df[attr_a] & (1 - both1))[0], size=int(n_a1 - n_1), replace=replace
+            np.where(df[attr_a] & (1 - both_1))[0], size=int(n_a1_b0), replace=replace
         )
     )
-
     indices.extend(
         np.random.choice(
-            np.where(df[attr_b] & (1 - both1))[0], size=int(n_b1 - n_1), replace=replace
+            np.where(df[attr_b] & (1 - both_1))[0], size=int(n_a0_b1), replace=replace
         )
     )
-
     indices.extend(
         np.random.choice(
-            np.where((df[attr_a] == 0) & (df[attr_b] == 0))[0],
-            size=n - len(indices),
+            np.where(both_0)[0],
+            size=int(n_0),
             replace=replace,
         )
     )
 
     return indices
+
+
+@terra.Task.make_task
+def check_corr_induction(
+    dp: Union[DataFrame, mk.DataPanel],
+    attributes: List[str],
+    corr_start: float,
+    corr_end: float,
+    run_dir: str = None,
+    **kwargs,
+):
+    """Test whether it is possible to induce correlations in the range
+    [`corr_start`, `corr_end`] in datasets of size `n` between all pairs in
+    `attributes`.
+
+    Args:
+        dp (Union[DataFrame, mk.DataPanel]): [description]
+        attributes (List[str]): [description]
+        corr_start (float): [description]
+        corr_end (float): [description]
+        kwargs: passed to `induce_correlation`
+    Returns:
+        [type]: [description]
+    """
+
+    if corr_start * corr_end < 0:
+        raise ValueError("Cannot test correlation range that crosses 0.")
+
+    corrs = [corr_start, corr_end]
+    results = []
+    for idx_a, attr_a in tqdm(enumerate(attributes), total=len(attributes)):
+        for idx_b, attr_b in enumerate(attributes):
+            if idx_a >= idx_b:
+                continue
+            for corr in corrs:
+                try:
+                    induce_correlation(
+                        dp, corr=corr, attr_a=attr_a, attr_b=attr_b, **kwargs
+                    )
+                    success = True
+                except CorrelationImpossibleError as e:
+                    success = False
+                results.append(
+                    {
+                        "attr_a": attr_a,
+                        "attr_b": attr_b,
+                        "corr": corr,
+                        "success": success,
+                    }
+                )
+
+    return (
+        pd.DataFrame(results).groupby(["attr_a", "attr_b"]).success.mean() == 1
+    ).reset_index()
