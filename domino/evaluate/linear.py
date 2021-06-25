@@ -111,7 +111,7 @@ def induce_correlation(
             replace=replace,
         )
     )
-
+    np.random.shuffle(indices)
     return indices
 
 

@@ -42,7 +42,7 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
-            # "block3": model.cnn_encoder[-2],
+            "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
         batch_size=64,

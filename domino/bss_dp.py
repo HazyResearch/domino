@@ -66,7 +66,6 @@ class SourceSeparator(nn.Module):
         *args,
         **kwargs,
     ):
-        extractor = ActivationExtractor()
         if layers is None:
             layers = {"0": self.model.model.layer4}
         elif isinstance(layers, nn.Module):

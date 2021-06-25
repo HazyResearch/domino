@@ -1,14 +1,16 @@
+import json
 import os
-from typing import Dict, Iterable, List, Union
+from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
 import pandas as pd
 import pytorch_lightning as pl
+import terra
 import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 from terra import Task
 from terra.torch import TerraModule
 from torch.utils.data import DataLoader
@@ -135,7 +137,15 @@ def train(
         config = {} if config is None else config
         config["num_classes"] = num_classes
         model = Classifier(config)
-    logger = WandbLogger(project="domino", save_dir=run_dir)
+
+    run_id = int(os.path.basename(run_dir))
+    metadata = terra.get_meta(run_id)
+    logger = WandbLogger(
+        project="domino",
+        save_dir=run_dir,
+        name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
+        tags=[f"{metadata['module']}.{metadata['fn']}"],
+    )
 
     checkpoint_callbacks = [
         TerraCheckpoint(
@@ -169,6 +179,7 @@ def train(
         dp.lz[dp["split"].data == "train"],
         batch_size=batch_size,
         num_workers=num_workers,
+        shuffle=True,
     )
     valid_dl = DataLoader(
         dp.lz[dp["split"].data == "valid"],
@@ -308,3 +319,53 @@ def compute_bss(
     )
 
     return separator.compute(dl)
+
+
+def predict(
+    model: nn.Module,
+    dp: mk.DataPanel,
+    layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    input_column: str = "input",
+    device: int = 0,
+    **kwargs,
+):
+    model.to(device).eval()
+
+    class ActivationExtractor:
+        """Class for extracting activations a targetted intermediate layer"""
+
+        def __init__(self):
+            self.activation = None
+
+        def add_hook(self, module, input, output):
+            self.activation = output
+
+    layer_to_extractor = {}
+    for name, layer in layers.items():
+        extractor = ActivationExtractor()
+        layer.register_forward_hook(extractor.add_hook)
+        layer_to_extractor[name] = extractor
+
+    @torch.no_grad()
+    def _predict(batch: mk.DataPanel):
+        x = batch[input_column].data.to(device)
+        out = model(x)  # Run forward pass
+
+        return {
+            "output": mk.ClassificationOutputColumn(
+                logits=out.cpu(), multi_label=False
+            ),
+            **{
+                f"activation_{name}": extractor.activation.cpu()
+                for name, extractor in layer_to_extractor.items()
+            },
+        }
+
+    dp = dp.update(
+        function=_predict,
+        is_batched_fn=True,
+        pbar=True,
+        input_columns=[input_column],
+        **kwargs,
+    )
+    return dp

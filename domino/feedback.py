@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 import PIL
 import torch.nn as nn
-from mosaic import DataPanel, ListColumn, NumpyArrayColumn
+from meerkat import DataPanel, ListColumn, NumpyArrayColumn
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import normalize
 
@@ -145,6 +145,7 @@ class ScribbleModel:
         pass
 
     def fit(self, train_dp: DataPanel, activation_col: str = "activation"):
+        train_dp = train_dp.view()
         train_dp["feedback_mask"] = train_dp["feedback_mask"].transpose(0, 3, 1, 2)
         if train_dp["feedback_mask"].shape[1] > 1:
             # squash the mask so it only has 1 channel
