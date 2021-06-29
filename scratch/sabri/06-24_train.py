@@ -12,11 +12,7 @@ def train_celeb(df: pd.DataFrame, target: str, correlate: str, run_dir: str = No
 
     dp = get_celeb_dp(df)
     indices = induce_correlation(
-        dp,
-        corr=0.85,
-        attr_a=target,
-        attr_b=correlate,
-        n=30000,
+        dp, corr=0.85, attr_a=target, attr_b=correlate, n=30000, match_mu=True
     )
     train(
         dp=dp.lz[indices],
@@ -30,6 +26,6 @@ def train_celeb(df: pd.DataFrame, target: str, correlate: str, run_dir: str = No
 
 
 if __name__ == "__main__":
-    train_celeb(
-        target="eyeglasses", correlate="wearing_necktie", df=build_celeb_df.out(474)
+    train_model(
+        target="high_cheekbones", correlate="wearing_hat", df=build_celeb_df.out(474)
     )

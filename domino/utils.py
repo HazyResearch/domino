@@ -90,9 +90,12 @@ class PredLogger(Metric):
             if isinstance(current_val, torch.Tensor):
                 setattr(this, key, fn(current_val))
             elif isinstance(current_val, Sequence):
-                if len(current_val) > 0 and isinstance(current_val[0], tuple):
+                if (
+                    len(current_val) > 0 and isinstance(current_val[0], tuple)
+                ) or key == "sample_ids":
                     # avoid calling `.to`, `.cpu`, `.cuda` on string metric states
                     continue
+
                 setattr(this, key, [fn(cur_v) for cur_v in current_val])
             else:
                 raise TypeError(

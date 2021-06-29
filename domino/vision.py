@@ -15,6 +15,7 @@ from terra import Task
 from terra.torch import TerraModule
 from torch.utils.data import DataLoader
 from torchvision import transforms as transforms
+from wandb.sdk_py27 import wandb_config
 
 from domino.bss import SourceSeparator
 from domino.modeling import ResNet
@@ -123,6 +124,7 @@ def train(
     num_workers: int = 10,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
+    wandb_config: dict = None,
     seed: int = 123,
     run_dir: str = None,
     **kwargs,
@@ -145,6 +147,7 @@ def train(
         save_dir=run_dir,
         name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
         tags=[f"{metadata['module']}.{metadata['fn']}"],
+        config={} if wandb_config is None else wandb_config,
     )
 
     checkpoint_callbacks = [
@@ -164,7 +167,7 @@ def train(
         callbacks=checkpoint_callbacks,
         default_root_dir=run_dir,
         accelerator=None,
-        val_check_interval=10,
+        # val_check_interval=10,
         **kwargs,
     )
     dp = mk.DataPanel.from_batch(
