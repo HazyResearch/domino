@@ -21,7 +21,7 @@ train_linear_slices(
     ],
     batch_size=196,
     num_workers=6,
-    max_epochs=2,
+    max_epochs=5,
     val_check_interval=50,
     num_samples=1,
 )

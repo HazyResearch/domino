@@ -23,6 +23,7 @@ from domino.data.gaze_utils import (
     total_time,
     unique_visits,
 )
+from domino.vision import score
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
@@ -32,20 +33,16 @@ CXR_SIZE = 224
 
 # @Task.make_task
 def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
-    from domino.bss_dp import SourceSeparator
-
     model = CXRResnet(model_path=model_path)
-    separator = SourceSeparator(
-        config={"activation_dim": 2048, "lr": 1e-3}, model=model
-    )
-    act_dp = separator.prepare_dp(
+    act_dp = score(
+        model=model,
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
             "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
-        batch_size=64,
+        batch_size=16,
     )
     return act_dp
 
