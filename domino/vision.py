@@ -194,142 +194,13 @@ def train(
     return model
 
 
-@Task.make_task
 def score(
-    model: Classifier,
-    data_df: pd.DataFrame,
-    img_column: str,
-    target_column: str,
-    id_column: str,
-    img_transform: callable = None,
-    metrics: List[str] = None,
-    gpus: Union[int, Iterable] = 1,
-    split: str = "valid",
-    num_workers: int = 10,
-    batch_size: int = 16,
-    seed: int = 123,
-    run_dir: str = None,
-    **kwargs,
-):
-    # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
-    pl.utilities.seed.seed_everything(seed)
-
-    if img_transform is None:
-        img_transform = transforms.Lambda(lambda x: x)
-    data_df = data_df[data_df.split == split]
-    model.set_metrics(metrics=metrics)
-    dataset = Dataset.load_image_dataset(
-        data_df.to_dict("records"),
-        img_columns=img_column,
-        transform=img_transform,
-    )
-    model.eval()
-    trainer = pl.Trainer(
-        gpus=gpus,
-        default_root_dir=run_dir,
-        accelerator=None,
-    )
-    metrics = trainer.test(
-        model=model,
-        test_dataloaders=dataset.to_dataloader(
-            columns=[img_column, target_column, id_column],
-            num_workers=num_workers,
-            batch_size=batch_size,
-        ),
-    )
-
-    preds = model.valid_preds.compute()
-
-    return metrics, preds
-
-
-@Task.make_task
-def fit_bss(
-    model: Classifier,
-    data_df: pd.DataFrame,
-    img_column: str,
-    target_column: str,
-    id_column: str,
-    img_transform: callable,
-    config: Dict = None,
-    batch_size: int = 16,
-    num_workers: int = 4,
-    num_epochs: int = 10,
-    memmap: bool = False,
-    split="valid",
-    seed: int = 123,
-    run_dir: str = None,
-    **kwargs,
-):
-    pl.utilities.seed.seed_everything(seed)
-
-    if img_transform is None:
-        img_transform = transforms.Lambda(lambda x: x)
-
-    if model is None:
-        model = Classifier()
-
-    if config is None:
-        config = {}
-
-    dataset = Dataset.load_image_dataset(
-        data_df[data_df.split == split].to_dict("records"),
-        img_columns=img_column,
-        transform=img_transform,
-    )
-    dl = dataset.to_dataloader(
-        columns=[img_column, target_column, id_column],
-        num_workers=num_workers,
-        batch_size=batch_size,
-    )
-
-    separator = SourceSeparator(model, config=config)
-
-    separator.fit(dl, log_dir=run_dir, num_epochs=num_epochs, memmap=memmap)
-
-    return separator
-
-
-@Task.make_task
-def compute_bss(
-    separator: SourceSeparator,
-    data_df: pd.DataFrame,
-    img_column: str,
-    target_column: str,
-    id_column: str,
-    img_transform: callable,
-    batch_size: int = 16,
-    num_workers: int = 4,
-    split="valid",
-    seed: int = 123,
-    run_dir: str = None,
-    **kwargs,
-):
-    pl.utilities.seed.seed_everything(seed)
-
-    if img_transform is None:
-        img_transform = transforms.Lambda(lambda x: x)
-
-    dataset = Dataset.load_image_dataset(
-        data_df[data_df.split == split].to_dict("records"),
-        img_columns=img_column,
-        transform=img_transform,
-    )
-    dl = dataset.to_dataloader(
-        columns=[img_column, target_column, id_column],
-        num_workers=num_workers,
-        batch_size=batch_size,
-    )
-
-    return separator.compute(dl)
-
-
-def predict(
     model: nn.Module,
     dp: mk.DataPanel,
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
     input_column: str = "input",
     device: int = 0,
+    run_dir: str = None,
     **kwargs,
 ):
     model.to(device).eval()
@@ -344,13 +215,14 @@ def predict(
             self.activation = output
 
     layer_to_extractor = {}
-    for name, layer in layers.items():
-        extractor = ActivationExtractor()
-        layer.register_forward_hook(extractor.add_hook)
-        layer_to_extractor[name] = extractor
+    if layers is not None:
+        for name, layer in layers.items():
+            extractor = ActivationExtractor()
+            layer.register_forward_hook(extractor.add_hook)
+            layer_to_extractor[name] = extractor
 
     @torch.no_grad()
-    def _predict(batch: mk.DataPanel):
+    def _score(batch: mk.DataPanel):
         x = batch[input_column].data.to(device)
         out = model(x)  # Run forward pass
 
@@ -365,7 +237,7 @@ def predict(
         }
 
     dp = dp.update(
-        function=_predict,
+        function=_score,
         is_batched_fn=True,
         pbar=True,
         input_columns=[input_column],

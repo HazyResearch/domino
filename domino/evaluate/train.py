@@ -1,13 +1,15 @@
+import os
 from typing import Sequence, Tuple
 
 import meerkat as mk
 import numpy as np
+import pandas as pd
 import ray
 import terra
 from ray import tune
 
 from domino.evaluate.linear import CorrelationImpossibleError, induce_correlation
-from domino.vision import train
+from domino.vision import Classifier, score, train
 
 
 @terra.Task.make_task
@@ -21,6 +23,14 @@ def train_model(
 ):
     # set seed
     target, correlate = target_correlate
+
+    metadata = {
+        "target": target,
+        "correlate": correlate,
+        "corr": corr,
+        "num_examples": num_examples,
+        "run_id": int(os.path.basename(run_dir)),
+    }
     try:
         indices = induce_correlation(
             dp,
@@ -40,13 +50,11 @@ def train_model(
         id_column="file",
         target_column=target,
         run_dir=run_dir,
-        wandb_config={
-            "target": target,
-            "correlate": correlate,
-            "corr": corr,
-        },
+        wandb_config=metadata,
         **kwargs,
     )
+
+    return metadata
 
 
 @terra.Task.make_task
@@ -61,10 +69,12 @@ def train_linear_slices(
     **kwargs,
 ):
     def _train_model(config):
-        train_model(terra.out(dp_run_id), **config, num_examples=num_examples, **kwargs)
+        return train_model(
+            terra.out(dp_run_id), **config, num_examples=num_examples, **kwargs
+        )
 
     ray.init(num_gpus=4, num_cpus=32)
-    tune.run(
+    analysis = tune.run(
         _train_model,
         config={
             "corr": tune.grid_search(list(np.linspace(0, max_corr, num_corrs))),
@@ -73,3 +83,69 @@ def train_linear_slices(
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
     )
+    return analysis.dataframe()
+
+
+@terra.Task.make_task
+def score_model(
+    dp: mk.DataPanel,
+    model: Classifier,
+    target: str,
+    correlate: str,
+    corr: float,
+    num_examples: int,
+    split: str,
+    run_dir: str = None,
+    **kwargs,
+):
+    # set seed
+    metadata = {
+        "target": target,
+        "correlate": correlate,
+        "corr": corr,
+        "num_examples": num_examples,
+        "run_id": int(os.path.basename(run_dir)),
+    }
+    dp = score(
+        model,
+        dp=dp.lz[dp["split"].data == split],
+        input_column="input",
+        id_column="file",
+        target_column=target,
+        run_dir=run_dir,
+        wandb_config=metadata,
+        **kwargs,
+    )
+
+    return dp[["file", target, correlate, "output"]], metadata
+
+
+@terra.Task.make_task
+def score_linear_slices(
+    dp_run_id: int,
+    model_df: pd.DataFrame,
+    num_samples: float = 1,
+    split: str = "test",
+    run_dir: str = None,
+    **kwargs,
+):
+    def _score_model(config):
+        args = config["args"]
+        args["model"] = terra.get_artifacts(args.pop("run_id"), "best_chkpt")["model"]
+        _, metadata = score_model(terra.out(dp_run_id), split=split, **args, **kwargs)
+        return metadata
+
+    ray.init(num_gpus=4, num_cpus=32)
+    analysis = tune.run(
+        _score_model,
+        config={
+            "args": tune.grid_search(
+                model_df[
+                    ["run_id", "target", "correlate", "corr", "num_examples"]
+                ].to_dict("records")
+            )
+        },
+        num_samples=num_samples,
+        resources_per_trial={"gpu": 1},
+    )
+    return analysis.dataframe()
