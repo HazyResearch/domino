@@ -38,6 +38,7 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     separator = SourceSeparator(
         config={"activation_dim": 2048, "lr": 1e-3}, model=model
     )
+
     act_dp = separator.prepare_dp(
         dp=dp,
         layers={

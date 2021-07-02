@@ -100,7 +100,7 @@ class SourceSeparator(nn.Module):
             is_batched_fn=True,
             input_columns=[input_col],
             pbar=True,
-            num_workers=1,
+            num_workers=8,
             *args,
             **kwargs,
         )
