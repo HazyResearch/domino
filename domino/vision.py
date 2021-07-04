@@ -13,7 +13,7 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
 from terra.torch import TerraModule
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import transforms as transforms
 from wandb.sdk_py27 import wandb_config
 
@@ -30,6 +30,7 @@ class Classifier(pl.LightningModule, TerraModule):
     DEFAULT_CONFIG = {
         "lr": 1e-4,
         "model_name": "resnet",
+        "arch": "resnet18",
         "num_classes": 2,
     }
 
@@ -63,7 +64,9 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def _set_model(self):
         if self.config["model_name"] == "resnet":
-            self.model = ResNet(num_classes=self.config["num_classes"])
+            self.model = ResNet(
+                num_classes=self.config["num_classes"], arch=self.config["arch"]
+            )
         elif self.config["model_name"] == "iwildcam":
             self.model = get_iwildcam_model()
         elif self.config["model_name"] == "wilds_model":
@@ -124,7 +127,10 @@ def train(
     num_workers: int = 10,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
+    train_split: str = "train",
+    valid_split: str = "valid",
     wandb_config: dict = None,
+    weighted_sampling: bool = False,
     seed: int = 123,
     run_dir: str = None,
     **kwargs,
@@ -178,14 +184,25 @@ def train(
             "split": dp["split"],
         }
     )
+
+    train_dp = dp.lz[dp["split"].data == train_split]
+    sampler = None
+    if weighted_sampling:
+        weights = torch.ones(len(train_dp))
+        weights[train_dp["target"] == 1] = (1 - dp["target"]).sum() / (
+            dp["target"].sum()
+        )
+        sampler = WeightedRandomSampler(weights=weights, num_samples=len(train_dp))
+
     train_dl = DataLoader(
-        dp.lz[dp["split"].data == "train"],
+        train_dp,
         batch_size=batch_size,
         num_workers=num_workers,
-        shuffle=True,
+        # shuffle=True,
+        sampler=sampler,
     )
     valid_dl = DataLoader(
-        dp.lz[dp["split"].data == "valid"],
+        dp.lz[dp["split"].data == valid_split],
         batch_size=batch_size,
         num_workers=num_workers,
     )
