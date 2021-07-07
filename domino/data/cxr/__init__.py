@@ -9,8 +9,8 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from dosma import DicomReader
-from mosaic import DataPanel
-from mosaic.cells.volume import MedicalVolumeCell
+from meerkat import DataPanel
+from meerkat.cells.volume import MedicalVolumeCell
 from PIL import Image
 from terra import Task
 from torchvision.models import resnet50
@@ -23,6 +23,7 @@ from domino.data.gaze_utils import (
     total_time,
     unique_visits,
 )
+from domino.vision import score
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
@@ -32,20 +33,16 @@ CXR_SIZE = 224
 
 # @Task.make_task
 def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
-    from domino.bss_dp import SourceSeparator
-
     model = CXRResnet(model_path=model_path)
-    separator = SourceSeparator(
-        config={"activation_dim": 2048, "lr": 1e-3}, model=model
-    )
-    act_dp = separator.prepare_dp(
+    act_dp = score(
+        model=model,
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
-            # "block3": model.cnn_encoder[-2],
+            "block3": model.cnn_encoder[-2],
             "block4": model.cnn_encoder[-1],
         },
-        batch_size=128,
+        batch_size=16,
     )
     return act_dp
 
@@ -60,6 +57,9 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     view_pct = 0.1
 
     gaze_seq_dict = pickle.load(open(os.path.join(root_dir, "cxr_gaze_data.pkl"), "rb"))
+    expert_labels_dict = pickle.load(
+        open(os.path.join(root_dir, "expert_labels_dict.pkl"), "rb")
+    )
 
     # Extract gaze features
     gaze_feats_dict = {}
@@ -91,9 +91,10 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
                 "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
                 "gaze_diffusivity": gaze_feats_dict[img_id]["gaze_diffusivity"],
+                "expert_label": expert_labels_dict[img_id],
                 "image_id": os.path.splitext(os.path.basename(img_id))[0],
             }
-            for img_id in gaze_seq_dict
+            for img_id in expert_labels_dict
         ]
     )
 

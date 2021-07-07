@@ -7,8 +7,8 @@ import pandas as pd
 import torch
 import torchvision.datasets.folder as folder
 import torchvision.transforms as transforms
-from mosaic import DataPanel, ImageColumn
-from mosaic.contrib.celeba import build_celeba_df
+from meerkat import DataPanel, ImageColumn
+from meerkat.contrib.celeba import build_celeba_df
 from PIL import Image
 from terra import Task
 
@@ -74,11 +74,10 @@ def celeb_mask_loader(filepath: str):
         return Image.new("RGB", (512, 512))
 
 
-# @Task.make_task
-def get_celeb_dp(
-    df: pd.DataFrame,
-):
+@Task.make_task
+def build_celeb_dp(df: pd.DataFrame, run_dir: str = None):
     """Build the dataframe by joining on the attribute, split and identity CelebA CSVs."""
+
     dp = DataPanel.from_pandas(df)
     dp["img"] = ImageColumn.from_filepaths(filepaths=dp["img_path"])
     dp["input"] = ImageColumn.from_filepaths(

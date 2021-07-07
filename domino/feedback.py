@@ -7,7 +7,7 @@ import gradio as gr
 import numpy as np
 import PIL
 import torch.nn as nn
-from mosaic import DataPanel, ListColumn, NumpyArrayColumn
+from meerkat import DataPanel, ListColumn, NumpyArrayColumn
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import normalize
 
@@ -144,10 +144,30 @@ class ScribbleModel:
     def prepare(self):
         pass
 
-    def fit(self, train_dp: DataPanel, activation_col: str = "activation"):
+    def fit(
+        self,
+        train_dp: DataPanel,
+        activation_col: str = "activation",
+        neg_weight_mask: bool = False,
+    ):
+        train_dp = train_dp.view()
+        train_dp["feedback_mask"] = train_dp["feedback_mask"].transpose(0, 3, 1, 2)
+        if train_dp["feedback_mask"].shape[1] > 1:
+            # squash the mask so it only has 1 channel
+            train_dp["feedback_mask"] = np.expand_dims(
+                train_dp["feedback_mask"].mean(1), 1
+            )
+            if neg_weight_mask:
+                train_dp["negative_mask"] = train_dp["negative_mask"].transpose(
+                    0, 3, 1, 2
+                )
+                train_dp["negative_mask"] = np.expand_dims(
+                    train_dp["negative_mask"].mean(1), 1
+                )
+
         kernel_size = (
-            train_dp["feedback_pos_mask"].shape[-2] // self.activation_size[0],
-            train_dp["feedback_pos_mask"].shape[-1] // self.activation_size[1],
+            train_dp["feedback_mask"].shape[-2] // self.activation_size[0],
+            train_dp["feedback_mask"].shape[-1] // self.activation_size[1],
         )
         if self.strategy == "mask_pos_v_neg":
             pooled_masks = {
@@ -174,7 +194,7 @@ class ScribbleModel:
 
         elif self.strategy == "mask_pos_v":
             pos_mask_pool = nn.functional.avg_pool2d(
-                input=train_dp["feedback_pos_mask"].to_tensor().to(float),
+                input=train_dp["feedback_mask"].to_tensor().to(float),
                 kernel_size=kernel_size,
             ).numpy()
             activation_dim = train_dp[activation_col].shape[1]
@@ -185,12 +205,24 @@ class ScribbleModel:
             )
             y = pos_mask_pool.flatten() > self.threshold
 
+            if neg_weight_mask:
+                negweight_masks = nn.functional.avg_pool2d(
+                    input=train_dp["negative_mask"].to_tensor().to(float),
+                    kernel_size=kernel_size,
+                ).numpy()
+                weights_mask = negweight_masks.flatten() < -self.threshold
+                weights = np.ones(len(y))
+                weights[weights_mask] = 10
+
         elif self.strategy == "example":
             y = (train_dp["feedback_label"].data == "positive").astype(int)
             x = train_dp[activation_col].data.mean(axis=(2, 3))
 
         x = normalize(x)
-        self.lr.fit(x, y)
+        if neg_weight_mask:
+            self.lr.fit(x, y, weights)
+        else:
+            self.lr.fit(x, y)
 
     def predict(
         self,

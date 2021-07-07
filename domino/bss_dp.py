@@ -1,15 +1,13 @@
 import os
-
-# from dataclasses import dataclass
+from dataclasses import dataclass
 from typing import List, Mapping, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
-from mosaic import DataPanel, NumpyArrayColumn
-
-# from torch.utils.data import TensorDataset
-# from torch.utils.data.dataloader import DataLoader
+from meerkat import DataPanel
+from torch.utils.data import TensorDataset
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 
@@ -68,7 +66,6 @@ class SourceSeparator(nn.Module):
         *args,
         **kwargs,
     ):
-        extractor = ActivationExtractor()
         if layers is None:
             layers = {"0": self.model.model.layer4}
         elif isinstance(layers, nn.Module):
@@ -103,7 +100,7 @@ class SourceSeparator(nn.Module):
             is_batched_fn=True,
             input_columns=[input_col],
             pbar=True,
-            num_workers=6,
+            num_workers=8,
             *args,
             **kwargs,
         )

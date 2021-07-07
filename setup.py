@@ -19,6 +19,8 @@ REQUIRED = [
     "umap-learn[plot]",
     "torchvision>=0.9.0",
     "wandb",
+    "ray[default]",
+    "torchxrayvision",
 ]
 
 setuptools.setup(
