@@ -13,6 +13,7 @@ def train_mimic(dp: mk.DataPanel, target: str, run_dir: str = None):
         input_column="input",
         id_column="dicom_id",
         target_column=target,
+        gpus=[3],
         batch_size=64,
         num_workers=6,
         run_dir=run_dir,
@@ -24,4 +25,4 @@ def train_mimic(dp: mk.DataPanel, target: str, run_dir: str = None):
 
 
 if __name__ == "__main__":
-    train_mimic(dp=build_dp.out(run_id=963), target="Pneumothorax")
+    train_mimic(dp=build_dp.out(run_id=963), target="Edema")

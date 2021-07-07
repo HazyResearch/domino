@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import terra
 from pandas.core.frame import DataFrame
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 
 class CorrelationImpossibleError(ValueError):

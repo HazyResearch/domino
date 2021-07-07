@@ -13,12 +13,11 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
 from terra.torch import TerraModule
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
-from wandb.sdk_py27 import wandb_config
 
 from domino.bss import SourceSeparator
-from domino.modeling import ResNet
+from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
 
 # from domino.data.iwildcam import get_iwildcam_model
@@ -67,13 +66,9 @@ class Classifier(pl.LightningModule, TerraModule):
             self.model = ResNet(
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
-        elif self.config["model_name"] == "iwildcam":
-            self.model = get_iwildcam_model()
-        elif self.config["model_name"] == "wilds_model":
-            self.model = get_wilds_model(
-                model_type=self.config["model_type"],
-                d_out=self.config["num_classes"],
-                model_path=self.config["model_path"],
+        elif self.config["model_name"] == "densenet":
+            self.model = DenseNet(
+                num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
@@ -114,6 +109,26 @@ class Classifier(pl.LightningModule, TerraModule):
         return optimizer
 
 
+class MTClassifier(Classifier):
+    def training_step(self, batch, batch_idx):
+        inputs, targets, _ = batch["input"], batch["target"], batch["id"]
+        outs = self.forward(inputs)
+        loss = nn.functional.cross_entropy(outs, targets)
+        self.log("train_loss", loss, on_step=True, logger=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+        outs = self.forward(inputs)
+        loss = nn.functional.cross_entropy(outs, targets)
+        self.log("valid_loss", loss)
+
+        for metric in self.metrics.values():
+            metric(torch.softmax(outs, dim=-1), targets)
+
+        self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+
+
 def train(
     dp: mk.DataPanel,
     input_column: str,
@@ -123,6 +138,7 @@ def train(
     config: dict = None,
     num_classes: int = 2,
     max_epochs: int = 50,
+    samples_per_epoch: int = None,
     gpus: Union[int, Iterable] = 1,
     num_workers: int = 10,
     batch_size: int = 16,
@@ -173,13 +189,13 @@ def train(
         callbacks=checkpoint_callbacks,
         default_root_dir=run_dir,
         accelerator=None,
-        # val_check_interval=10,
+        auto_select_gpus=True,
         **kwargs,
     )
     dp = mk.DataPanel.from_batch(
         {
             "input": dp[input_column],
-            "target": dp[target_column],
+            "target": dp[target_column].astype(int),
             "id": dp[id_column],
             "split": dp["split"],
         }
@@ -192,13 +208,18 @@ def train(
         weights[train_dp["target"] == 1] = (1 - dp["target"]).sum() / (
             dp["target"].sum()
         )
-        sampler = WeightedRandomSampler(weights=weights, num_samples=len(train_dp))
+        samples_per_epoch = (
+            len(train_dp) if samples_per_epoch is None else samples_per_epoch
+        )
+        sampler = WeightedRandomSampler(weights=weights, num_samples=samples_per_epoch)
+    elif samples_per_epoch is not None:
+        sampler = RandomSampler(train_dp, num_samples=samples_per_epoch)
 
     train_dl = DataLoader(
         train_dp,
         batch_size=batch_size,
         num_workers=num_workers,
-        # shuffle=True,
+        shuffle=sampler is None,
         sampler=sampler,
     )
     valid_dl = DataLoader(
