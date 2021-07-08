@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Dict, Iterable, List, Mapping, Union
 
@@ -16,7 +15,7 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
-from domino.bss import SourceSeparator
+from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
 
@@ -28,9 +27,11 @@ class Classifier(pl.LightningModule, TerraModule):
 
     DEFAULT_CONFIG = {
         "lr": 1e-4,
+        "wd": 0,
         "model_name": "resnet",
         "arch": "resnet18",
         "num_classes": 2,
+        "gdro": False,
     }
 
     def __init__(self, config: dict = None):
@@ -40,6 +41,30 @@ class Classifier(pl.LightningModule, TerraModule):
             self.config.update(config)
 
         self._set_model()
+        criterion = nn.CrossEntropyLoss(reduction="none")
+        loss_config = config["loss_config"]
+        self.train_loss_computer = LossComputer(
+            criterion,
+            is_robust=loss_config["gdro"],
+            dataset_config=config["train_dataset_config"],
+            alpha=loss_config["alpha"],
+            gamma=loss_config["gamma"],
+            step_size=loss_config["robust_step_size"],
+            normalize_loss=loss_config["use_normalized_loss"],
+            btl=loss_config["btl"],
+            min_var_weight=loss_config["min_var_weight"],
+        )
+        self.val_loss_computer = LossComputer(
+            criterion,
+            is_robust=loss_config["gdro"],
+            dataset_config=config["val_dataset_config"],
+            alpha=loss_config["alpha"],
+            gamma=loss_config["gamma"],
+            step_size=loss_config["robust_step_size"],
+            normalize_loss=loss_config["use_normalized_loss"],
+            btl=loss_config["btl"],
+            min_var_weight=loss_config["min_var_weight"],
+        )
 
         metrics = self.config.get("metrics", ["auroc", "accuracy"])
         self.set_metrics(metrics, num_classes=self.config["num_classes"])
@@ -77,16 +102,23 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        inputs, targets, _ = batch["input"], batch["target"], batch["id"]
+        inputs, targets, group_ids = batch["input"], batch["target"], batch["group_id"]
         outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
+        loss = self.train_loss_computer.loss(outs, targets, group_ids)
+        self.train_loss_computer.log_stats(self.log, is_training=True)
         self.log("train_loss", loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+        inputs, targets, group_ids, sample_id = (
+            batch["input"],
+            batch["target"],
+            batch["group_id"],
+            batch["id"],
+        )
         outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
+        loss = self.val_loss_computer.loss(outs, targets, group_ids)
+        self.val_loss_computer.log_stats(self.log)
         self.log("valid_loss", loss)
 
         for metric in self.metrics.values():
@@ -105,7 +137,9 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.config["lr"])
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.config["lr"], weight_decay=self.config["wd"]
+        )
         return optimizer
 
 
@@ -134,6 +168,7 @@ def train(
     input_column: str,
     target_column: str,
     id_column: str,
+    subgroup_columns: List[str] = ["none"],
     model: Classifier = None,
     config: dict = None,
     num_classes: int = 2,
@@ -153,6 +188,48 @@ def train(
 ):
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
+
+    # TODO: make this work for multiple subgroup columns
+    dp = mk.DataPanel.from_batch(
+        {
+            "input": dp[input_column],
+            "target": dp[target_column].astype(int),
+            "id": dp[id_column],
+            "split": dp["split"],
+            "group_id": (dp[subgroup_columns[0]] == 1).astype(int),
+        }
+    )
+    train_dp = dp.lz[dp["split"].data == train_split]
+    val_dp = dp.lz[dp["split"].data == valid_split]
+
+    # create train_dataset_config and val_dataset_config
+    subgroup_columns_ = []
+    for name in subgroup_columns:
+        subgroup_columns_.append(f"with_{name}")
+        subgroup_columns_.append(f"without_{name}")
+    train_dataset_config = {
+        "n_groups": len(subgroup_columns_),
+        "group_counts": torch.Tensor(
+            [
+                train_dp["group_id"].sum(),
+                len(train_dp["group_id"]) - train_dp["group_id"].sum(),
+            ]
+        ),
+        "group_str": subgroup_columns_,
+    }
+    val_dataset_config = {
+        "n_groups": len(subgroup_columns_),
+        "group_counts": torch.Tensor(
+            [
+                val_dp["group_id"].sum(),
+                len(val_dp["group_id"]) - val_dp["group_id"].sum(),
+            ]
+        ),
+        "group_str": subgroup_columns_,
+    }
+
+    config["train_dataset_config"] = train_dataset_config
+    config["val_dataset_config"] = val_dataset_config
 
     if (model is not None) and (config is not None):
         raise ValueError("Cannot pass both `model` and `config`.")
@@ -192,16 +269,7 @@ def train(
         auto_select_gpus=True,
         **kwargs,
     )
-    dp = mk.DataPanel.from_batch(
-        {
-            "input": dp[input_column],
-            "target": dp[target_column].astype(int),
-            "id": dp[id_column],
-            "split": dp["split"],
-        }
-    )
 
-    train_dp = dp.lz[dp["split"].data == train_split]
     sampler = None
     if weighted_sampling:
         weights = torch.ones(len(train_dp))
@@ -223,10 +291,11 @@ def train(
         sampler=sampler,
     )
     valid_dl = DataLoader(
-        dp.lz[dp["split"].data == valid_split],
+        val_dp,
         batch_size=batch_size,
         num_workers=num_workers,
     )
+
     trainer.fit(model, train_dl, valid_dl)
     wandb.finish()
     return model
