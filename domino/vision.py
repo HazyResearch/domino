@@ -246,7 +246,7 @@ def train(
         save_dir=run_dir,
         name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
         tags=[f"{metadata['module']}.{metadata['fn']}"],
-        config={} if wandb_config is None else wandb_config,
+        config=config,
     )
 
     checkpoint_callbacks = [
