@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Union
 
 import meerkat as mk
+import torch
 import torch.nn as nn
+
+from domino.utils import requires_columns
 
 
 class SliceDiscoveryMethod(ABC):
@@ -19,7 +23,12 @@ class SliceDiscoveryMethod(ABC):
             self.config = self.Config()
 
     @abstractmethod
-    def fit(self, data_dp: mk.DataPanel, model: nn.Module) -> SliceDiscoveryMethod:
+    @requires_columns(dp_arg="data_dp", columns=["input", "target", "act", "pred"])
+    def fit(
+        self,
+        model: nn.Module,
+        data_dp: mk.DataPanel = None,
+    ) -> SliceDiscoveryMethod:
         pass
 
     @abstractmethod

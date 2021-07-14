@@ -81,6 +81,7 @@ def train_linear_slices(
             terra.out(dp_run_id),
             input_column=input_column,
             id_column=id_column,
+            pbar=False,
             **config,
             num_examples=num_examples,
             **kwargs,
@@ -108,10 +109,16 @@ def score_model(
     corr: float,
     num_examples: int,
     split: str,
+    input_column: str = "input",
+    id_column: str = "file",
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
     run_dir: str = None,
     **kwargs,
 ):
+
+    if layers is not None:
+        layers = {name: nested_getattr(model, layer) for name, layer in layers.items()}
+
     # set seed
     metadata = {
         "target": target,
@@ -123,15 +130,15 @@ def score_model(
     dp = score(
         model,
         dp=dp.lz[dp["split"].data == split],
-        input_column="input",
-        id_column="file",
+        input_column=input_column,
+        id_column=id_column,
         target_column=target,
         run_dir=run_dir,
-        layers={name: nested_getattr(model, layer) for name, layer in layers.items()},
+        layers=layers,
         wandb_config=metadata,
         **kwargs,
     )
-    cols = ["file", target, correlate, "output"] + (
+    cols = [id_column, target, correlate, "output"] + (
         [] if layers is None else [f"activation_{name}" for name in layers.keys()]
     )
     return dp[cols], metadata
@@ -150,10 +157,17 @@ def score_linear_slices(
     **kwargs,
 ):
     def _score_model(config):
+        import meerkat.contrib.mimic  # required otherwise we get a yaml import error
+
         args = config["args"]
         args["model"] = terra.get_artifacts(args.pop("run_id"), "best_chkpt")["model"]
         _, metadata = score_model(
-            terra.out(dp_run_id), split=split, layers=layers, **args, **kwargs
+            terra.out(dp_run_id),
+            split=split,
+            layers=layers,
+            pbar=False,
+            **args,
+            **kwargs,
         )
         return metadata
 

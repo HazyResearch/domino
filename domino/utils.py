@@ -1,7 +1,9 @@
 import hashlib
-from functools import reduce
-from typing import Dict, Optional, Sequence, Union
+from functools import reduce, wraps
+from inspect import getcallargs
+from typing import Collection, Dict, Mapping, Optional, Sequence, Union
 
+import meerkat as mk
 import numpy as np
 import pandas as pd
 import torch
@@ -11,6 +13,33 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
 from torchmetrics import Metric
+
+
+def requires_columns(dp_arg: str, columns: Collection[str]):
+    def _requires(fn: callable):
+        @wraps(fn)
+        def _wrapper(*args, aliases: Mapping[str, str] = None, **kwargs):
+            args_dict = getcallargs(fn, *args, **kwargs)
+            if "kwargs" in args_dict:
+                args_dict.update(args_dict.pop("kwargs"))
+
+            dp = args_dict[dp_arg]
+            if aliases is not None:
+                dp = dp.view()
+                for column, alias in aliases.items():
+                    dp[column] = dp[alias]
+
+            missing_cols = [column for column in columns if column not in dp]
+            if len(missing_cols) > 0:
+                raise ValueError(
+                    f"DataPanel passed to `{fn.__qualname__}` at argument `{dp_arg}` "
+                    f"is missing required columns `{missing_cols}`."
+                )
+            return fn(*args, **kwargs)
+
+        return _wrapper
+
+    return _requires
 
 
 def nested_getattr(obj, attr, *args):

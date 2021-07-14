@@ -147,6 +147,7 @@ def train(
     valid_split: str = "valid",
     wandb_config: dict = None,
     weighted_sampling: bool = False,
+    pbar: bool = True,
     seed: int = 123,
     run_dir: str = None,
     **kwargs,
@@ -190,6 +191,7 @@ def train(
         default_root_dir=run_dir,
         accelerator=None,
         auto_select_gpus=True,
+        progress_bar_refresh_rate=None if pbar else 0,
         **kwargs,
     )
     dp = mk.DataPanel.from_batch(
@@ -237,6 +239,7 @@ def score(
     dp: mk.DataPanel,
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
     input_column: str = "input",
+    pbar: bool = True,
     device: int = 0,
     run_dir: str = None,
     **kwargs,
@@ -277,7 +280,7 @@ def score(
     dp = dp.update(
         function=_score,
         is_batched_fn=True,
-        pbar=True,
+        pbar=pbar,
         input_columns=[input_column],
         **kwargs,
     )

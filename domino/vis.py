@@ -771,3 +771,69 @@ def get_saliency(
         return grad_to_show
 
     return grad
+
+
+def get_gradcam(
+    model: torch.nn.Module,
+    inp: torch.tensor,
+    device: bool = True,
+    show=False,
+    ax=None,
+) -> torch.Tensor:
+    """Compute a saliency map for `model` on `inp`.
+
+    Args:
+        model (torch.nn.Module): a trained image model
+        inp (torch.tensor): input to the model of shape (channels, height, width).
+        device (int, optional): cuda device. Defaults to 1.
+        show (bool, optional): show the slaiency map the . Defaults to False.
+        threshold (float, optional): standardized saliencies below this value are
+            clipped to zero. Defaults to 0.5.
+        sigma (int, optional): the standard deviation for the gaussian kernel. Defaults
+            to 5.
+        ax ([type], optional): axis for plotting. Defaults to None.
+
+    Returns:
+        [torch.Tensor]: a saliency tensor of shape (height, width)
+    """
+    from pytorch_grad_cam import (
+        AblationCAM,
+        EigenCAM,
+        GradCAM,
+        GradCAMPlusPlus,
+        ScoreCAM,
+        XGradCAM,
+    )
+    from pytorch_grad_cam.utils.image import show_cam_on_image
+    from torchvision.models import resnet50
+    from torchvision.transforms import Resize
+
+    target_layer = model.model.layer4[-1]
+
+    # Construct the CAM object once, and then re-use it on many images:
+    cam = GradCAM(model=model, target_layer=target_layer, use_cuda=device)
+
+    # If target_category is None, the highest scoring category
+    # will be used for every image in the batch.
+    # target_category can also be an integer, or a list of different integers
+    # for every image in the batch.
+    target_category = 1
+
+    # You can also pass aug_smooth=True and eigen_smooth=True, to apply smoothing.
+    grayscale_cam = cam(input_tensor=inp.unsqueeze(0), target_category=target_category)
+
+    # In this example grayscale_cam has only one image in the batch:
+    grayscale_cam = grayscale_cam[0, :]
+    # visualization = show_cam_on_image(np.array(Resize([224, 224])(dp["img"][idx])), grayscale_cam)
+
+    if show:
+        inp = inp.detach().cpu().numpy().squeeze()
+        inp = np.dot(inp.transpose(1, 2, 0), np.array([0.2125, 0.7154, 0.0721]))
+        if ax is None:
+            plt.imshow(inp, cmap="gray")
+            plt.imshow(grayscale_cam, alpha=grayscale_cam)
+        else:
+            ax.imshow(inp, cmap="gray")
+            ax.imshow(grayscale_cam, alpha=grayscale_cam)
+
+    return grayscale_cam
