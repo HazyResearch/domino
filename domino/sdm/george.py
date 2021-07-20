@@ -79,7 +79,13 @@ class GeorgeSDM(SliceDiscoveryMethod):
 
             dp.append(curr_dp)
         dp = mk.concat(dp)
-        for slice_idx in range(self.config.n_slices):
-            dp[f"slice_{slice_idx}"] = (dp["slices"] == slice_idx).astype(int)
-
+        # since slices in other methods are not necessarily mutually exclusive, it's
+        # important to return as a matrix of binary columns, one for each slice
+        dp["slices"] = np.stack(
+            [
+                (dp["slices"].data == slice_idx).astype(int)
+                for slice_idx in range(self.config.n_slices)
+            ],
+            axis=-1,
+        )
         return dp

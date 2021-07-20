@@ -16,6 +16,8 @@ class SliceDiscoveryMethod(ABC):
     class Config:
         n_slices: int = 2
 
+    RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 10}}
+
     def __init__(self, config: dict = None):
         if config is not None:
             self.config = self.Config(**config)
@@ -26,7 +28,7 @@ class SliceDiscoveryMethod(ABC):
     @requires_columns(dp_arg="data_dp", columns=["input", "target", "act", "pred"])
     def fit(
         self,
-        model: nn.Module,
+        model: nn.Module = None,
         data_dp: mk.DataPanel = None,
     ) -> SliceDiscoveryMethod:
         pass

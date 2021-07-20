@@ -1,4 +1,5 @@
 import os
+from functools import partial
 from typing import Mapping, Sequence, Tuple, Union
 
 import meerkat as mk
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 import ray
 import terra
+import torch
 import torch.nn as nn
 from ray import tune
 
@@ -112,12 +114,27 @@ def score_model(
     input_column: str = "input",
     id_column: str = "file",
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    reduction_fns: Sequence[str] = None,
     run_dir: str = None,
     **kwargs,
 ):
 
     if layers is not None:
         layers = {name: nested_getattr(model, layer) for name, layer in layers.items()}
+
+    if reduction_fns is not None:
+        # get the actual function corresponding to the str passed in
+        def _get_reduction_fn(reduction_name):
+            if reduction_name == "max":
+                reduction_fn = partial(torch.mean, dim=[-1, -2])
+            elif reduction_name == "mean":
+                reduction_fn = partial(torch.mean, dim=[-1, -2])
+            else:
+                raise ValueError(f"reduction_fn {reduction_fn} not supported.")
+            reduction_fn.__name__ = reduction_name
+            return reduction_fn
+
+        reduction_fns = map(_get_reduction_fn, reduction_fns)
 
     # set seed
     metadata = {
@@ -150,7 +167,8 @@ def score_linear_slices(
     model_df: pd.DataFrame,
     num_samples: float = 1,
     split: str = "test",
-    layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    layers: Union[nn.Module, Mapping[str, str]] = None,
+    reduction_fns: Sequence[str] = None,
     num_gpus: int = 1,
     num_cpus: int = 8,
     run_dir: str = None,

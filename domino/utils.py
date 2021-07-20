@@ -35,7 +35,8 @@ def requires_columns(dp_arg: str, columns: Collection[str]):
                     f"DataPanel passed to `{fn.__qualname__}` at argument `{dp_arg}` "
                     f"is missing required columns `{missing_cols}`."
                 )
-            return fn(*args, **kwargs)
+            args_dict[dp_arg] = dp
+            return fn(**args_dict)
 
         return _wrapper
 
