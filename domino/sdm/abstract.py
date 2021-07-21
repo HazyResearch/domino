@@ -14,9 +14,10 @@ from domino.utils import requires_columns
 class SliceDiscoveryMethod(ABC):
     @dataclass
     class Config:
-        n_slices: int = 2
+        n_slices: int = 5
+        layer: str = ""
 
-    RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 10}}
+    RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 
     def __init__(self, config: dict = None):
         if config is not None:

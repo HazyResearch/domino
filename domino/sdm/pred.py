@@ -11,7 +11,7 @@ from .abstract import SliceDiscoveryMethod
 
 class PredSDM(SliceDiscoveryMethod):
 
-    RESOURCES_REQUIRED = {"cpu": 0.75, "custom_resources": {"ram_gb": 1}}
+    RESOURCES_REQUIRED = {"cpu": 0.5, "custom_resources": {"ram_gb": 0.5}}
 
     def __init__(self, config: dict = None):
         super(PredSDM, self).__init__(config)

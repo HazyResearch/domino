@@ -260,6 +260,7 @@ def score(
             self.activation = output
 
     layer_to_extractor = {}
+
     if layers is not None:
         for name, layer in layers.items():
             if reduction_fns is not None:
@@ -268,7 +269,7 @@ def score(
                     layer.register_forward_hook(extractor.add_hook)
                     layer_to_extractor[f"{name}_{reduction_fn.__name__}"] = extractor
             else:
-                extractor = ActivationExtractor(reduction_fn=reduction_fn)
+                extractor = ActivationExtractor()
                 layer.register_forward_hook(extractor.add_hook)
                 layer_to_extractor[name] = extractor
 
