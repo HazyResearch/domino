@@ -190,13 +190,14 @@ def train(
     pl.utilities.seed.seed_everything(seed)
 
     # TODO: make this work for multiple subgroup columns
+    group_ids = 2 * dp[subgroup_columns[0]] + dp[target_column]
     dp = mk.DataPanel.from_batch(
         {
             "input": dp[input_column],
             "target": dp[target_column].astype(int),
             "id": dp[id_column],
             "split": dp["split"],
-            "group_id": (dp[subgroup_columns[0]] == 1).astype(int),
+            "group_id": group_ids.astype(int),
         }
     )
     train_dp = dp.lz[dp["split"].data == train_split]
@@ -205,14 +206,16 @@ def train(
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
     for name in subgroup_columns:
-        subgroup_columns_.append(f"with_{name}")
-        subgroup_columns_.append(f"without_{name}")
+        for str_ in ["without", "with"]:
+            subgroup_columns_.append(f"without_{name}_{str_}_{target_column}")
+            subgroup_columns_.append(f"with_{name}_{str_}_{target_column}")
+
     train_dataset_config = {
         "n_groups": len(subgroup_columns_),
         "group_counts": torch.Tensor(
             [
-                train_dp["group_id"].sum(),
-                len(train_dp["group_id"]) - train_dp["group_id"].sum(),
+                (train_dp["group_id"] == group_i).sum()
+                for group_i in range(len(subgroup_columns_))
             ]
         ),
         "group_str": subgroup_columns_,
@@ -221,12 +224,14 @@ def train(
         "n_groups": len(subgroup_columns_),
         "group_counts": torch.Tensor(
             [
-                val_dp["group_id"].sum(),
-                len(val_dp["group_id"]) - val_dp["group_id"].sum(),
+                (val_dp["group_id"] == group_i).sum()
+                for group_i in range(len(subgroup_columns_))
             ]
         ),
         "group_str": subgroup_columns_,
     }
+
+    print(f"Train config: {train_dataset_config}")
 
     config["train_dataset_config"] = train_dataset_config
     config["val_dataset_config"] = val_dataset_config
