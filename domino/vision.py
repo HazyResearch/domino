@@ -242,7 +242,7 @@ def train(
     logger = WandbLogger(
         config=dictconfig_to_dict(config),
         config_exclude_keys="wandb",
-        **config.wandb,
+        **config["wandb"],
     )
 
     model.train()

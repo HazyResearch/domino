@@ -1,37 +1,32 @@
 import pandas as pd
-import terra
 
 from domino.data.celeb import build_celeb_df, build_celeb_dp
 from domino.vision import train
 
 
-@terra.Task.make_task
 def train_celeba(
     df: pd.DataFrame,
     target_column: str,
     input_column: str,
     gdro: bool = False,
-    run_dir: str = None,
 ):
 
     dp = build_celeb_dp(df)
+    config = {}
+    config["model"] = {"model_name": "resnet", "arch": "resnet50"}
+    config["train"] = {"lr": 1e-5, "wd": 0.1}
     loss_config = {
         "gdro": gdro,
         "alpha": 0.01,
         "gamma": 0.1,
         "min_var_weight": 0,
-        "robust_step_size": 0.1,
+        "robust_step_size": 0.01,
         "use_normalized_loss": False,
         "btl": False,
     }
-    config = {
-        "lr": 1e-5,
-        "wd": 0.1,
-        "model_name": "resnet",
-        "arch": "resnet50",
-        "loss_config": loss_config,
-    }
-    subgroup_columns = ["male"]
+    config["train"]["loss"] = loss_config
+    config["dataset"] = {"subgroup_columns": ["male"]}
+    config["wandb"] = {"project": "domino", "group": "celeba_repro"}
 
     train(
         dp=dp,
@@ -40,11 +35,9 @@ def train_celeba(
         target_column=target_column,
         batch_size=128,  # default: 128
         num_workers=4,
-        run_dir=run_dir,
         valid_split="test",
         val_check_interval=20,
         config=config,
-        subgroup_columns=subgroup_columns,
     )
 
 
