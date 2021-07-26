@@ -1,0 +1,33 @@
+model:
+  model_name: resnet
+  arch: resnet50
+
+train:
+  batch_size: 32
+  lr: 1e-5
+  wd: 0.0
+  valid_split: test
+  val_check_interval: 20
+  loss:
+    gdro: False
+    alpha: 0.01
+    gamma: 0.1
+    min_var_weight: 0
+    robust_step_size: 0.01
+    use_normalized_loss: False
+    btl: False
+
+dataset:
+  num_workers: 4
+  id_column: "image_id"
+  input_column: "input"
+  target_column: "pmx"
+  subgroup_columns: ["tube"]
+  datapanel_pth: "/media/4tb_hdd/siim/tubescribble_dp_07-24-21.dp"
+
+wandb:
+  project: domino
+  group: ''
+
+
+# "/media/4tb_hdd/siim/gazeslicer_dp_07-23-21.dp"

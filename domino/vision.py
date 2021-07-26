@@ -1,77 +1,78 @@
-import os
 from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
-import pandas as pd
 import pytorch_lightning as pl
-import terra
 import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
+from omegaconf import DictConfig
 from pytorch_lightning.loggers import WandbLogger
-from terra import Task
 from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet
-from domino.utils import PredLogger, TerraCheckpoint
+from domino.utils import PredLogger
 
 # from domino.data.iwildcam import get_iwildcam_model
 # from domino.data.wilds import get_wilds_model
 
 
-class Classifier(pl.LightningModule, TerraModule):
-
-    DEFAULT_CONFIG = {
-        "lr": 1e-4,
-        "wd": 0,
-        "model_name": "resnet",
-        "arch": "resnet18",
-        "num_classes": 2,
-        "gdro": False,
+def dictconfig_to_dict(d):
+    """Convert object of type OmegaConf to dict so Wandb can log properly
+    Support nested dictionary.
+    """
+    return {
+        k: dictconfig_to_dict(v) if isinstance(v, DictConfig) else v
+        for k, v in d.items()
     }
 
+
+class Classifier(pl.LightningModule, TerraModule):
     def __init__(self, config: dict = None):
         super().__init__()
-        self.config = self.DEFAULT_CONFIG.copy()
-        if config is not None:
-            self.config.update(config)
+        self.config = config
 
         self._set_model()
         criterion = nn.CrossEntropyLoss(reduction="none")
-        loss_config = config["loss_config"]
+
+        loss_cfg = config["train"]["loss"]
+        dataset_cfg = config["dataset"]
         self.train_loss_computer = LossComputer(
             criterion,
-            is_robust=loss_config["gdro"],
-            dataset_config=config["train_dataset_config"],
-            alpha=loss_config["alpha"],
-            gamma=loss_config["gamma"],
-            step_size=loss_config["robust_step_size"],
-            normalize_loss=loss_config["use_normalized_loss"],
-            btl=loss_config["btl"],
-            min_var_weight=loss_config["min_var_weight"],
+            is_robust=loss_cfg["gdro"],
+            dataset_config=dataset_cfg["train_dataset_config"],
+            alpha=loss_cfg["alpha"],
+            gamma=loss_cfg["gamma"],
+            step_size=loss_cfg["robust_step_size"],
+            normalize_loss=loss_cfg["use_normalized_loss"],
+            btl=loss_cfg["btl"],
+            min_var_weight=loss_cfg["min_var_weight"],
         )
         self.val_loss_computer = LossComputer(
             criterion,
-            is_robust=loss_config["gdro"],
-            dataset_config=config["val_dataset_config"],
-            alpha=loss_config["alpha"],
-            gamma=loss_config["gamma"],
-            step_size=loss_config["robust_step_size"],
-            normalize_loss=loss_config["use_normalized_loss"],
-            btl=loss_config["btl"],
-            min_var_weight=loss_config["min_var_weight"],
+            is_robust=loss_cfg["gdro"],
+            dataset_config=dataset_cfg["val_dataset_config"],
+            alpha=loss_cfg["alpha"],
+            gamma=loss_cfg["gamma"],
+            step_size=loss_cfg["robust_step_size"],
+            normalize_loss=loss_cfg["use_normalized_loss"],
+            btl=loss_cfg["btl"],
+            min_var_weight=loss_cfg["min_var_weight"],
         )
 
         metrics = self.config.get("metrics", ["auroc", "accuracy"])
-        self.set_metrics(metrics, num_classes=self.config["num_classes"])
+        self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
         self.valid_preds = PredLogger()
 
     def set_metrics(self, metrics: List[str], num_classes: int = None):
-        num_classes = self.config["num_classes"] if num_classes is None else num_classes
+        num_classes = (
+            self.config["dataset"]["num_classes"]
+            if num_classes is None
+            else num_classes
+        )
         _metrics = {
             "accuracy": torchmetrics.Accuracy(compute_on_step=False),
             "auroc": torchmetrics.AUROC(compute_on_step=False, num_classes=num_classes),
@@ -87,16 +88,14 @@ class Classifier(pl.LightningModule, TerraModule):
         )  # metrics need to be child module of the model, https://pytorch-lightning.readthedocs.io/en/stable/metrics.html#metrics-and-devices
 
     def _set_model(self):
-        if self.config["model_name"] == "resnet":
-            self.model = ResNet(
-                num_classes=self.config["num_classes"], arch=self.config["arch"]
-            )
-        elif self.config["model_name"] == "densenet":
-            self.model = DenseNet(
-                num_classes=self.config["num_classes"], arch=self.config["arch"]
-            )
+        model_cfg = self.config["model"]
+        num_classes = self.config["dataset"]["num_classes"]
+        if model_cfg["model_name"] == "resnet":
+            self.model = ResNet(num_classes=num_classes, arch=model_cfg["arch"])
+        elif model_cfg["model_name"] == "densenet":
+            self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
         else:
-            raise ValueError(f"Model name {self.config['model_name']} not supported.")
+            raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
 
     def forward(self, x):
         return self.model(x)
@@ -137,8 +136,9 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
+        train_cfg = self.config["train"]
         optimizer = torch.optim.Adam(
-            self.parameters(), lr=self.config["lr"], weight_decay=self.config["wd"]
+            self.parameters(), lr=train_cfg["lr"], weight_decay=train_cfg["wd"]
         )
         return optimizer
 
@@ -168,7 +168,6 @@ def train(
     input_column: str,
     target_column: str,
     id_column: str,
-    subgroup_columns: List[str] = ["none"],
     model: Classifier = None,
     config: dict = None,
     num_classes: int = 2,
@@ -183,12 +182,12 @@ def train(
     wandb_config: dict = None,
     weighted_sampling: bool = False,
     seed: int = 123,
-    run_dir: str = None,
     **kwargs,
 ):
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
 
+    subgroup_columns = config["dataset"]["subgroup_columns"]
     # TODO: make this work for multiple subgroup columns
     group_ids = 2 * dp[subgroup_columns[0]] + dp[target_column]
     dp = mk.DataPanel.from_batch(
@@ -212,64 +211,46 @@ def train(
 
     train_dataset_config = {
         "n_groups": len(subgroup_columns_),
-        "group_counts": torch.Tensor(
-            [
-                (train_dp["group_id"] == group_i).sum()
-                for group_i in range(len(subgroup_columns_))
-            ]
-        ),
+        "group_counts": [
+            int((train_dp["group_id"] == group_i).sum())
+            for group_i in range(len(subgroup_columns_))
+        ],
         "group_str": subgroup_columns_,
     }
     val_dataset_config = {
         "n_groups": len(subgroup_columns_),
-        "group_counts": torch.Tensor(
-            [
-                (val_dp["group_id"] == group_i).sum()
-                for group_i in range(len(subgroup_columns_))
-            ]
-        ),
+        "group_counts": [
+            int((val_dp["group_id"] == group_i).sum())
+            for group_i in range(len(subgroup_columns_))
+        ],
         "group_str": subgroup_columns_,
     }
 
     print(f"Train config: {train_dataset_config}")
 
-    config["train_dataset_config"] = train_dataset_config
-    config["val_dataset_config"] = val_dataset_config
+    config["dataset"]["train_dataset_config"] = train_dataset_config
+    config["dataset"]["val_dataset_config"] = val_dataset_config
 
     if (model is not None) and (config is not None):
         raise ValueError("Cannot pass both `model` and `config`.")
 
     if model is None:
         config = {} if config is None else config
-        config["num_classes"] = num_classes
+        config["dataset"]["num_classes"] = num_classes
         model = Classifier(config)
 
-    run_id = int(os.path.basename(run_dir))
-    metadata = terra.get_meta(run_id)
     logger = WandbLogger(
-        project="domino",
-        save_dir=run_dir,
-        name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
-        tags=[f"{metadata['module']}.{metadata['fn']}"],
-        config=config,
+        config=dictconfig_to_dict(config),
+        config_exclude_keys="wandb",
+        **config.wandb,
     )
 
-    checkpoint_callbacks = [
-        TerraCheckpoint(
-            dirpath=run_dir,
-            monitor=ckpt_monitor,
-            save_top_k=1,
-            mode="max",
-        )
-    ]
     model.train()
     trainer = pl.Trainer(
         gpus=gpus,
         max_epochs=max_epochs,
         log_every_n_steps=1,
         logger=logger,
-        callbacks=checkpoint_callbacks,
-        default_root_dir=run_dir,
         accelerator=None,
         auto_select_gpus=True,
         **kwargs,

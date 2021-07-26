@@ -28,7 +28,7 @@ class LossComputer:
         self.btl = btl
 
         self.n_groups = dataset_config["n_groups"]
-        self.group_counts = dataset_config["group_counts"].cuda()
+        self.group_counts = torch.Tensor(dataset_config["group_counts"]).cuda()
         self.group_frac = self.group_counts / self.group_counts.sum()
         self.group_str = dataset_config["group_str"]
 
