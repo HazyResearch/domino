@@ -2,9 +2,7 @@ import os
 
 os.environ["TERRA_CONFIG_PATH"] = "/home/sabri/code/domino-21/terra_config.json"
 from domino.data.iwildcam import build_iwildcam_df, iwildcam_task_config
-from domino.vision import Classifier
-from domino.vision import fit_bss
-
+from domino.vision import Classifier, fit_bss
 
 model = Classifier(config={"model_name": "iwildcam", **iwildcam_task_config})
 

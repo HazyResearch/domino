@@ -1,7 +1,8 @@
+import os
+
+import pandas as pd
 from terra import Task
 from terra.io import json_load
-import os
-import pandas as pd
 
 
 @Task.make_task

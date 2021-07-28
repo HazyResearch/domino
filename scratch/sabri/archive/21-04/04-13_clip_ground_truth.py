@@ -1,9 +1,9 @@
-import pandas as pd
+import os
 
+import pandas as pd
 from terra import Task
 
 import domino.clip
-import os
 
 os.environ["TERRA_CONFIG_PATH"] = "/home/sabri/code/domino-21/terra_config.json"
 
@@ -16,10 +16,11 @@ def evaluate_clip_on_ground_truth_slices(
     idx_to_img_id,
     run_dir: str = None,
 ):
-    from domino.data.celeb import ATTRIBUTES, build_celeb_df
     import numpy as np
     import torch
     from tqdm.auto import tqdm
+
+    from domino.data.celeb import ATTRIBUTES, build_celeb_df
 
     print("computing cosine similarity...")
     img_embs_norm = img_embs / img_embs.norm(dim=-1, keepdim=True)
