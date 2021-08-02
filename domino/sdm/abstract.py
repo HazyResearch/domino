@@ -37,3 +37,4 @@ class SliceDiscoveryMethod(ABC):
     @abstractmethod
     def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
         pass
+
