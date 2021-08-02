@@ -45,7 +45,7 @@ def build_dp(
     dataset_dir: str, gcp_project: str, resize: int = 512, run_dir: str = None, **kwargs
 ):
     dp = build_mimic_dp(dataset_dir=dataset_dir, gcp_project=gcp_project, **kwargs)
-    dp = dp.lz[np.isin(dp["ViewPosition"].data, ["PA", "AP"])]
+    dp = dp.lz[np.isin(dp["view_position"].data, ["PA", "AP"])]
 
     resized_paths = pd.Series(dp["path"].data).apply(
         lambda x: os.path.join(
@@ -68,7 +68,7 @@ def build_dp(
 
     # convert some columns to binary
     dp["patient_orientation_rf"] = (
-        dp["PatientOrientation"].data == "['R', 'F']"
+        dp["patient_orientation"].data == "['R', 'F']"
     ).astype(int)
     dp["young"] = (dp["anchor_age"] < 40).astype(int)
     dp["ethnicity_black"] = (dp["ethnicity"].data == "BLACK/AFRICAN AMERICAN").astype(
@@ -83,18 +83,18 @@ def build_dp(
 
 
 CHEXPERT_COLUMNS = [
-    "Atelectasis",
-    "Cardiomegaly",
-    "Consolidation",
-    "Edema",
-    "Enlarged_Cardiomediastinum",
-    "Fracture",
-    "Lung_Lesion",
-    "Lung_Opacity",
-    "No_Finding",
-    "Pleural_Effusion",
-    "Pleural_Other",
-    "Pneumonia",
-    "Pneumothorax",
-    "Support_Devices",
+    "atelectasis",
+    "cardiomegaly",
+    "consolidation",
+    "edema",
+    "enlarged_cardiomediastinum",
+    "fracture",
+    "lung_lesion",
+    "lung_opacity",
+    "no_finding",
+    "pleural_effusion",
+    "pleural_other",
+    "pneumonia",
+    "pneumothorax",
+    "support_devices",
 ]
