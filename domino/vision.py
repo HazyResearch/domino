@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Iterable, List, Mapping, Union
+from typing import Dict, Iterable, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import pandas as pd
@@ -147,6 +147,7 @@ def train(
     valid_split: str = "valid",
     wandb_config: dict = None,
     weighted_sampling: bool = False,
+    pbar: bool = True,
     seed: int = 123,
     run_dir: str = None,
     **kwargs,
@@ -190,6 +191,7 @@ def train(
         default_root_dir=run_dir,
         accelerator=None,
         auto_select_gpus=True,
+        progress_bar_refresh_rate=None if pbar else 0,
         **kwargs,
     )
     dp = mk.DataPanel.from_batch(
@@ -235,8 +237,10 @@ def train(
 def score(
     model: nn.Module,
     dp: mk.DataPanel,
-    layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    layers: Mapping[str, nn.Module] = None,
+    reduction_fns: Sequence[callable] = None,
     input_column: str = "input",
+    pbar: bool = True,
     device: int = 0,
     run_dir: str = None,
     **kwargs,
@@ -246,18 +250,28 @@ def score(
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""
 
-        def __init__(self):
+        def __init__(self, reduction_fn: callable = None):
             self.activation = None
+            self.reduction_fn = reduction_fn
 
         def add_hook(self, module, input, output):
+            if self.reduction_fn is not None:
+                output = self.reduction_fn(output)
             self.activation = output
 
     layer_to_extractor = {}
+
     if layers is not None:
         for name, layer in layers.items():
-            extractor = ActivationExtractor()
-            layer.register_forward_hook(extractor.add_hook)
-            layer_to_extractor[name] = extractor
+            if reduction_fns is not None:
+                for reduction_fn in reduction_fns:
+                    extractor = ActivationExtractor(reduction_fn=reduction_fn)
+                    layer.register_forward_hook(extractor.add_hook)
+                    layer_to_extractor[f"{name}_{reduction_fn.__name__}"] = extractor
+            else:
+                extractor = ActivationExtractor()
+                layer.register_forward_hook(extractor.add_hook)
+                layer_to_extractor[name] = extractor
 
     @torch.no_grad()
     def _score(batch: mk.DataPanel):
@@ -269,7 +283,7 @@ def score(
                 logits=out.cpu(), multi_label=False
             ),
             **{
-                f"activation_{name}": extractor.activation.cpu()
+                name: extractor.activation.cpu()
                 for name, extractor in layer_to_extractor.items()
             },
         }
@@ -277,7 +291,7 @@ def score(
     dp = dp.update(
         function=_score,
         is_batched_fn=True,
-        pbar=True,
+        pbar=pbar,
         input_columns=[input_column],
         **kwargs,
     )

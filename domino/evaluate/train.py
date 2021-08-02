@@ -1,11 +1,13 @@
 import os
-from typing import Mapping, Sequence, Tuple, Union
+from functools import partial
+from typing import Collection, Mapping, Sequence, Tuple, Union
 
 import meerkat as mk
 import numpy as np
 import pandas as pd
 import ray
 import terra
+import torch
 import torch.nn as nn
 from ray import tune
 
@@ -81,6 +83,7 @@ def train_linear_slices(
             terra.out(dp_run_id),
             input_column=input_column,
             id_column=id_column,
+            pbar=False,
             **config,
             num_examples=num_examples,
             **kwargs,
@@ -108,10 +111,31 @@ def score_model(
     corr: float,
     num_examples: int,
     split: str,
+    input_column: str = "input",
+    id_column: str = "file",
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    reduction_fns: Sequence[str] = None,
     run_dir: str = None,
     **kwargs,
 ):
+
+    if layers is not None:
+        layers = {name: nested_getattr(model, layer) for name, layer in layers.items()}
+
+    if reduction_fns is not None:
+        # get the actual function corresponding to the str passed in
+        def _get_reduction_fn(reduction_name):
+            if reduction_name == "max":
+                reduction_fn = partial(torch.mean, dim=[-1, -2])
+            elif reduction_name == "mean":
+                reduction_fn = partial(torch.mean, dim=[-1, -2])
+            else:
+                raise ValueError(f"reduction_fn {reduction_name} not supported.")
+            reduction_fn.__name__ = reduction_name
+            return reduction_fn
+
+        reduction_fns = list(map(_get_reduction_fn, reduction_fns))
+
     # set seed
     metadata = {
         "target": target,
@@ -120,21 +144,29 @@ def score_model(
         "num_examples": num_examples,
         "run_id": int(os.path.basename(run_dir)),
     }
-    dp = score(
+
+    split_mask = (
+        (dp["split"].data == split)
+        if isinstance(split, str)
+        else np.isin(dp["split"].data, split)
+    )
+    score_dp = score(
         model,
-        dp=dp.lz[dp["split"].data == split],
-        input_column="input",
-        id_column="file",
+        dp=dp.lz[split_mask],
+        input_column=input_column,
+        id_column=id_column,
         target_column=target,
         run_dir=run_dir,
-        layers={name: nested_getattr(model, layer) for name, layer in layers.items()},
+        layers=layers,
         wandb_config=metadata,
+        reduction_fns=reduction_fns,
         **kwargs,
     )
-    cols = ["file", target, correlate, "output"] + (
-        [] if layers is None else [f"activation_{name}" for name in layers.keys()]
+    # get new columns and some identifying columns
+    cols = [id_column, target, correlate, "split"] + list(
+        set(score_dp.columns) - set(dp.columns)
     )
-    return dp[cols], metadata
+    return score_dp[cols], metadata
 
 
 @terra.Task.make_task
@@ -142,22 +174,31 @@ def score_linear_slices(
     dp_run_id: int,
     model_df: pd.DataFrame,
     num_samples: float = 1,
-    split: str = "test",
-    layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    split: Union[str, Collection[str]] = "test",
+    layers: Union[nn.Module, Mapping[str, str]] = None,
+    reduction_fns: Sequence[str] = None,
     num_gpus: int = 1,
     num_cpus: int = 8,
     run_dir: str = None,
     **kwargs,
 ):
     def _score_model(config):
+        import meerkat.contrib.mimic  # required otherwise we get a yaml import error
+
         args = config["args"]
         args["model"] = terra.get_artifacts(args.pop("run_id"), "best_chkpt")["model"]
         _, metadata = score_model(
-            terra.out(dp_run_id), split=split, layers=layers, **args, **kwargs
+            terra.out(dp_run_id),
+            split=split,
+            layers=layers,
+            pbar=False,
+            reduction_fns=reduction_fns,
+            **args,
+            **kwargs,
         )
         return metadata
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_gpus)
+    ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     analysis = tune.run(
         _score_model,
         config={
