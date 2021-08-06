@@ -1,3 +1,5 @@
+import hashlib
+import math
 import os
 from functools import partial
 
@@ -47,12 +49,12 @@ def build_dp(
     dp = build_mimic_dp(dataset_dir=dataset_dir, gcp_project=gcp_project, **kwargs)
     dp = dp.lz[np.isin(dp["view_position"].data, ["PA", "AP"])]
 
-    resized_paths = pd.Series(dp["path"].data).apply(
+    resized_paths = pd.Series(dp["dicom_path"].data).apply(
         lambda x: os.path.join(
             dataset_dir, os.path.splitext(x)[0] + f"_{resize}" + ".jpg"
         )
     )
-    dp[f"img_{resize}"] = mk.ImageColumn.from_filepaths(
+    dp[f"cxr_jpg_{resize}"] = mk.ImageColumn.from_filepaths(
         filepaths=resized_paths, loader=PIL.Image.open
     )
 
@@ -75,10 +77,50 @@ def build_dp(
         int
     )
     dp["ethnicity_hisp"] = (dp["ethnicity"].data == "HISPANIC/LATINO").astype(int)
+    dp["ethnicity_white"] = (dp["ethnicity"].data == "WHITE").astype(int)
     dp["ethnicity_asian"] = (dp["ethnicity"].data == "ASIAN").astype(int)
-    dp["burned_in_annotation"] = (dp["BurnedInAnnotation"].data == "YES").astype(int)
+    dp["burned_in_annotation"] = (dp["burned_in_annotation"].data == "YES").astype(int)
     dp["gender_male"] = (dp["gender"].data == "M").astype(int)
 
+    return dp
+
+
+def hash_for_split(example_id: str, salt=""):
+    GRANULARITY = 100000
+    hashed = hashlib.sha256((str(example_id) + salt).encode())
+    hashed = int(hashed.hexdigest().encode(), 16) % GRANULARITY + 1
+    return hashed / float(GRANULARITY)
+
+
+@terra.Task.make_task
+def split_dp(
+    dp: mk.DataPanel,
+    train_frac: float = 0.7,
+    valid_frac: float = 0.1,
+    test_frac: float = 0.2,
+    other_splits: dict = None,
+    salt: str = "",
+    run_dir: str = None,
+):
+    other_splits = {} if other_splits is None else other_splits
+    splits = {
+        "train": train_frac,
+        "valid": valid_frac,
+        "test": test_frac,
+        **other_splits,
+    }
+
+    if not math.isclose(sum(splits.values()), 1):
+        raise ValueError("Split fractions must sum to 1.")
+
+    dp["subject_hash"] = dp["subject_id"].apply(partial(hash_for_split, salt=salt))
+    start = 0
+    split_column = pd.Series(["unassigned"] * len(dp))
+    for split, frac in splits.items():
+        end = start + frac
+        split_column[(start < dp["subject_hash"]) & (dp["subject_hash"] <= end)] = split
+        start = end
+    dp["split"] = split_column
     return dp
 
 

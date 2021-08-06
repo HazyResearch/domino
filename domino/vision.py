@@ -20,9 +20,6 @@ from domino.bss import SourceSeparator
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
 
-# from domino.data.iwildcam import get_iwildcam_model
-# from domino.data.wilds import get_wilds_model
-
 
 class Classifier(pl.LightningModule, TerraModule):
 
@@ -42,10 +39,12 @@ class Classifier(pl.LightningModule, TerraModule):
         self._set_model()
 
         metrics = self.config.get("metrics", ["auroc", "accuracy"])
-        self.set_metrics(metrics, num_classes=self.config["num_classes"])
+        self.metrics = self._get_metrics(
+            metrics, num_classes=self.config["num_classes"]
+        )
         self.valid_preds = PredLogger()
 
-    def set_metrics(self, metrics: List[str], num_classes: int = None):
+    def _get_metrics(self, metrics: List[str], num_classes: int = None):
         num_classes = self.config["num_classes"] if num_classes is None else num_classes
         _metrics = {
             "accuracy": torchmetrics.Accuracy(compute_on_step=False),
@@ -57,7 +56,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 num_classes=num_classes, average="macro"
             ),
         }
-        self.metrics = nn.ModuleDict(
+        return nn.ModuleDict(
             {name: metric for name, metric in _metrics.items() if name in metrics}
         )  # metrics need to be child module of the model, https://pytorch-lightning.readthedocs.io/en/stable/metrics.html#metrics-and-devices
 
@@ -79,6 +78,7 @@ class Classifier(pl.LightningModule, TerraModule):
     def training_step(self, batch, batch_idx):
         inputs, targets, _ = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
+
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("train_loss", loss, on_step=True, logger=True)
         return loss
@@ -109,30 +109,60 @@ class Classifier(pl.LightningModule, TerraModule):
         return optimizer
 
 
-class MTClassifier(Classifier):
+class BinaryMTClassifier(Classifier):
+    def __init__(self, config: dict = None):
+        super().__init__()
+        self.config = self.DEFAULT_CONFIG.copy()
+        if config is not None:
+            self.config.update(config)
+        targets = self.config["targets"]
+        self.config["num_classes"] = len(targets)
+        self._set_model()
+
+        metrics = self.config.get("metrics", ["auroc", "accuracy"])
+        self.metrics = nn.ModuleDict(
+            {
+                target: self._get_metrics(
+                    metrics, num_classes=self.config["num_classes"]
+                )
+                for target in targets
+            }
+        )
+        self.targets = targets
+        self.loss = nn.BCEWithLogitsLoss(reduction="mean")
+        self.valid_preds = PredLogger()
+
     def training_step(self, batch, batch_idx):
-        inputs, targets, _ = batch["input"], batch["target"], batch["id"]
+        inputs = batch["input"]
+        targets = torch.stack([batch[target] for target in self.targets], axis=-1)
         outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
+        loss = self.loss(outs, targets.to(float))
         self.log("train_loss", loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+        inputs, sample_id = batch["input"], batch["id"]
+        targets = torch.stack([batch[target] for target in self.targets], axis=-1)
         outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
+        loss = self.loss(outs, targets.to(float))
         self.log("valid_loss", loss)
 
-        for metric in self.metrics.values():
-            metric(torch.softmax(outs, dim=-1), targets)
+        for idx, target in enumerate(self.targets):
+            for metric in self.metrics[target].values():
+                metric(torch.sigmoid(outs[:, idx]), targets[:, idx])
 
-        self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+        self.valid_preds.update(torch.sigmoid(outs), targets, sample_id)
+
+    def validation_epoch_end(self, outputs) -> None:
+        for target in self.targets:
+            for metric_name, metric in self.metrics[target].items():
+                self.log(f"valid/{metric_name}/{target}", metric.compute())
 
 
 def train(
     dp: mk.DataPanel,
     input_column: str,
-    target_column: str,
+    target_column: Union[Sequence[str], str],
     id_column: str,
     model: Classifier = None,
     config: dict = None,
@@ -161,7 +191,10 @@ def train(
     if model is None:
         config = {} if config is None else config
         config["num_classes"] = num_classes
-        model = Classifier(config)
+        if isinstance(target_column, Sequence):
+            model = BinaryMTClassifier(config=config)
+        else:
+            model = Classifier(config)
 
     run_id = int(os.path.basename(run_dir))
     metadata = terra.get_meta(run_id)
@@ -194,18 +227,33 @@ def train(
         progress_bar_refresh_rate=None if pbar else 0,
         **kwargs,
     )
-    dp = mk.DataPanel.from_batch(
-        {
-            "input": dp[input_column],
-            "target": dp[target_column].astype(int),
-            "id": dp[id_column],
-            "split": dp["split"],
-        }
-    )
 
-    train_dp = dp.lz[dp["split"].data == train_split]
+    if isinstance(target_column, str):
+        dp = mk.DataPanel.from_batch(
+            {
+                "input": dp[input_column],
+                "target": dp[target_column].astype(int),
+                "id": dp[id_column],
+                "split": dp["split"],
+            }
+        )
+    else:
+        dp = mk.DataPanel.from_batch(
+            {
+                "input": dp[input_column],
+                "id": dp[id_column],
+                "split": dp["split"],
+                **{target: dp[target].astype(int) for target in target_column},
+            }
+        )
+
+    train_dp = dp.lz[dp["split"] == train_split]
     sampler = None
     if weighted_sampling:
+        if isinstance(target_column, Sequence):
+            raise ValueError(
+                "Weighted sampling with multiple targets is not supported."
+            )
         weights = torch.ones(len(train_dp))
         weights[train_dp["target"] == 1] = (1 - dp["target"]).sum() / (
             dp["target"].sum()
@@ -225,7 +273,7 @@ def train(
         sampler=sampler,
     )
     valid_dl = DataLoader(
-        dp.lz[dp["split"].data == valid_split],
+        dp.lz[dp["split"] == valid_split],
         batch_size=batch_size,
         num_workers=num_workers,
     )
@@ -267,7 +315,8 @@ def score(
                 for reduction_fn in reduction_fns:
                     extractor = ActivationExtractor(reduction_fn=reduction_fn)
                     layer.register_forward_hook(extractor.add_hook)
-                    layer_to_extractor[f"{name}_{reduction_fn.__name__}"] = extractor
+                    layer_to_extractor[name] = extractor
+                    # layer_to_extractor[f"{name}_{reduction_fn.__name__}"] = extractor
             else:
                 extractor = ActivationExtractor()
                 layer.register_forward_hook(extractor.add_hook)
