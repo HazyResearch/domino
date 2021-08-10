@@ -1,6 +1,7 @@
 from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -36,7 +37,10 @@ class Classifier(pl.LightningModule, TerraModule):
         self.config = config
 
         self._set_model()
-        criterion = nn.CrossEntropyLoss(reduction="none")
+        criterion = nn.CrossEntropyLoss(
+            weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
+            reduction="none",
+        )
 
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
@@ -187,27 +191,48 @@ def train(
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
 
+    multiclass = config["train"]["multiclass"]
+
+    train_mask = dp["split"].data == train_split
+    if config["train"]["gaze_split"]:
+        # gaze train split is one where chest tube labels exist
+        train_mask = np.logical_and(train_mask, ~np.isnan(dp["chest_tube"].data))
+
     subgroup_columns = config["dataset"]["subgroup_columns"]
     # TODO: make this work for multiple subgroup columns
-    group_ids = 2 * dp[subgroup_columns[0]] + dp[target_column]
+    if len(subgroup_columns) > 0:
+        group_ids = 2 * dp[subgroup_columns[0]] + dp[target_column]
+    else:
+        group_ids = dp[target_column]
+    if multiclass:
+        # make sure gdro and robust sampler are off
+        assert (
+            not config["train"]["loss"]["robust_sampler"]
+            and not config["train"]["loss"]["gdro"]
+        )
+        num_classes = num_classes * 2 * len(subgroup_columns)
+
     dp = mk.DataPanel.from_batch(
         {
             "input": dp[input_column],
-            "target": dp[target_column].astype(int),
+            "target": dp[target_column].astype(int)
+            if not multiclass
+            else group_ids.astype(int),  # group_ids become target labels
             "id": dp[id_column],
             "split": dp["split"],
             "group_id": group_ids.astype(int),
         }
     )
-    train_dp = dp.lz[dp["split"].data == train_split]
+
+    train_dp = dp.lz[train_mask]
     val_dp = dp.lz[dp["split"].data == valid_split]
 
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
     for name in subgroup_columns:
         for str_ in ["without", "with"]:
-            subgroup_columns_.append(f"without_{name}_{str_}_{target_column}")
-            subgroup_columns_.append(f"with_{name}_{str_}_{target_column}")
+            subgroup_columns_.append(f"without_{target_column}_{str_}_{name}")
+            subgroup_columns_.append(f"with_{target_column}_{str_}_{name}")
 
     train_dataset_config = {
         "n_groups": len(subgroup_columns_),
@@ -230,6 +255,24 @@ def train(
 
     config["dataset"]["train_dataset_config"] = train_dataset_config
     config["dataset"]["val_dataset_config"] = val_dataset_config
+
+    if config["train"]["loss"]["reweight_class"]:
+
+        class_weights = np.array(
+            [
+                float(1 - ((train_dp["target"] == i).sum() / len(train_dp)))
+                for i in range(num_classes)
+            ]
+        )
+        class_weights = [
+            int((1 + class_weight) ** config["train"]["loss"]["reweight_class_alpha"])
+            for class_weight in class_weights
+        ]
+
+    else:
+        class_weights = [1] * num_classes
+
+    config["train"]["loss"]["class_weights"] = class_weights
 
     if (model is not None) and (config is not None):
         raise ValueError("Cannot pass both `model` and `config`.")
@@ -257,11 +300,27 @@ def train(
     )
 
     sampler = None
+
     if weighted_sampling:
+        assert not config["train"]["loss"]["robust_sampler"]
         weights = torch.ones(len(train_dp))
         weights[train_dp["target"] == 1] = (1 - dp["target"]).sum() / (
             dp["target"].sum()
         )
+        samples_per_epoch = (
+            len(train_dp) if samples_per_epoch is None else samples_per_epoch
+        )
+        sampler = WeightedRandomSampler(weights=weights, num_samples=samples_per_epoch)
+
+    elif config["train"]["loss"]["robust_sampler"]:
+        weights = torch.ones(len(train_dp))
+        for group_i in range(len(subgroup_columns_)):
+            group_mask = train_dp["group_id"] == group_i
+            # higher weight if rare subclass
+            weights[group_mask] = (
+                len(train_dp) - (train_dp["group_id"] == group_i).sum()
+            ) / len(train_dp)
+
         samples_per_epoch = (
             len(train_dp) if samples_per_epoch is None else samples_per_epoch
         )

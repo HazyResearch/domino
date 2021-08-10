@@ -22,6 +22,7 @@ def train_cxr(
         num_workers=dataset_cfg["num_workers"],
         valid_split=train_cfg["valid_split"],
         val_check_interval=train_cfg["val_check_interval"],
+        max_epochs=train_cfg["epochs"],
         config=cfg,
     )
 

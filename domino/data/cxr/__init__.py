@@ -32,15 +32,28 @@ CXR_SIZE = 224
 
 
 # @Task.make_task
-def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
-    model = CXRResnet(model_path=model_path)
+def get_cxr_activations(
+    dp: DataPanel, model_path: str, domino_run: bool = False, run_dir: str = None
+):
+    if domino_run:
+        model = resnet50(num_classes=2, pretrained=False)
+        state_dict = {}
+        for name, key in torch.load(model_path)["state_dict"].items():
+            state_dict[name.split("model.")[-1]] = key
+        model.load_state_dict(state_dict)
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    else:
+        model = CXRResnet(model_path=model_path)
+        cnn_encoder = model.cnn_encoder
+
     act_dp = score(
         model=model,
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
-            "block3": model.cnn_encoder[-2],
-            "block4": model.cnn_encoder[-1],
+            "block3": cnn_encoder[-2],
+            "block4": cnn_encoder[-1],
         },
         batch_size=16,
     )
@@ -102,7 +115,7 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
 
 class CXRResnet(nn.Module):
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, domino_run: bool = False):
         super().__init__()
         input_module = resnet50(pretrained=False)
         modules = list(input_module.children())[:-2]
@@ -111,11 +124,17 @@ class CXRResnet(nn.Module):
         self.fc = nn.Linear(in_features=2048, out_features=2)
         if model_path is not None:
             state_dict = torch.load(model_path)
-            self.cnn_encoder.load_state_dict(state_dict["model"]["module_pool"]["cnn"])
-            self.load_state_dict(
-                state_dict["model"]["module_pool"]["classification_module_target"],
-                strict=False,
-            )
+            if domino_run:
+                state_dict = state_dict["state_dict"]
+
+            else:
+                self.cnn_encoder.load_state_dict(
+                    state_dict["model"]["module_pool"]["cnn"]
+                )
+                self.load_state_dict(
+                    state_dict["model"]["module_pool"]["classification_module_target"],
+                    strict=False,
+                )
 
     def forward(self, x):
         x = self.cnn_encoder(x)
@@ -135,6 +154,18 @@ def cxr_transform(volume: MedicalVolumeCell):
     img = transforms.Compose(
         [
             transforms.Resize([CXR_SIZE, CXR_SIZE]),
+            transforms.ToTensor(),
+            transforms.Normalize(CXR_MEAN, CXR_STD),
+        ]
+    )(img)
+    return img.repeat([3, 1, 1])
+
+
+def cxr_transform2(volume: MedicalVolumeCell):
+    img = cxr_transform_pil(volume)
+    img = transforms.Compose(
+        [
+            transforms.Resize([2 * CXR_SIZE, 2 * CXR_SIZE]),
             transforms.ToTensor(),
             transforms.Normalize(CXR_MEAN, CXR_STD),
         ]
@@ -165,6 +196,16 @@ def get_dp(df: pd.DataFrame):
         dp["filepath"].map(
             lambda x: MedicalVolumeCell(
                 paths=x, loader=loader, transform=cxr_transform
+            ),
+            num_workers=0,
+        ),
+        overwrite=True,
+    )
+    dp.add_column(
+        "input2",
+        dp["filepath"].map(
+            lambda x: MedicalVolumeCell(
+                paths=x, loader=loader, transform=cxr_transform2
             ),
             num_workers=0,
         ),
