@@ -33,17 +33,30 @@ CXR_SIZE = 224
 
 # @Task.make_task
 def get_cxr_activations(
-    dp: DataPanel, model_path: str, domino_run: bool = False, run_dir: str = None
+    dp: DataPanel,
+    model_path: str,
+    run_type: str = "siim",
+    num_classes=2,
+    run_dir: str = None,
 ):
-    if domino_run:
-        model = resnet50(num_classes=2, pretrained=False)
+    if run_type == "mimic":
+        model = resnet50(num_classes=14, pretrained=False)
+        state_dict = {}
+        for name, key in torch.load(model_path)["state_dict"].items():
+
+            state_dict[name.split("model.")[-1]] = key
+        model.load_state_dict(state_dict)
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    elif run_type == "domino":
+        model = resnet50(num_classes=num_classes, pretrained=False)
         state_dict = {}
         for name, key in torch.load(model_path)["state_dict"].items():
             state_dict[name.split("model.")[-1]] = key
         model.load_state_dict(state_dict)
         modules = list(model.children())[:-2]
         cnn_encoder = nn.Sequential(*modules)
-    else:
+    elif run_type == "siim":
         model = CXRResnet(model_path=model_path)
         cnn_encoder = model.cnn_encoder
 

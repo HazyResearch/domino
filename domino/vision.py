@@ -1,3 +1,4 @@
+import os
 from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
@@ -19,6 +20,31 @@ from domino.utils import PredLogger
 
 # from domino.data.iwildcam import get_iwildcam_model
 # from domino.data.wilds import get_wilds_model
+
+DOMINO_DIR = "/home/ksaab/Documents/domino"
+
+
+def get_save_dir(config):
+    gaze_split = config["train"]["gaze_split"]
+    target = config["dataset"]["target_column"]
+    subgroup_columns = config["dataset"]["subgroup_columns"]
+    subgroup = subgroup_columns[0] if len(subgroup_columns) > 0 else "none"
+    method = "erm"
+    if config["train"]["loss"]["gdro"]:
+        method = "gdro"
+    elif config["train"]["loss"]["reweight_class"]:
+        method = "reweight"
+    elif config["train"]["loss"]["robust_sampler"]:
+        method = "sampler"
+    elif config["train"]["multiclass"]:
+        method = "multiclass"
+    lr = config["train"]["lr"]
+    wd = config["train"]["wd"]
+    save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroup}/lr_{lr}/wd_{wd}"
+
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+    return save_dir
 
 
 def dictconfig_to_dict(d):
@@ -282,9 +308,11 @@ def train(
         config["dataset"]["num_classes"] = num_classes
         model = Classifier(config)
 
+    save_dir = get_save_dir(config)
     logger = WandbLogger(
         config=dictconfig_to_dict(config),
         config_exclude_keys="wandb",
+        save_dir=save_dir,
         **config["wandb"],
     )
 
