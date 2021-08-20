@@ -8,6 +8,8 @@ terra-config.json
 _*_cache
 notebooks/test
 scratch/sabri/_fb_imgs
+scratch/sabri/test_data
+
 
 # logs
 *hparams.yaml
