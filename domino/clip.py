@@ -1,5 +1,6 @@
 import clip
 import meerkat as mk
+import meerkat.nn as mknn
 import numpy as np
 import pandas as pd
 import torch
@@ -30,7 +31,6 @@ def embed_words(
     return words_dp
 
 
-# @Task.make_task
 def embed_images(
     dp: mk.DataPanel,
     img_column: str,
@@ -50,6 +50,7 @@ def embed_images(
             is_batched_fn=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            output_type=mknn.EmbeddingColumn,
         )
     return dp
 

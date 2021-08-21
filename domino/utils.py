@@ -1,6 +1,9 @@
 import hashlib
+import math
+import os
 from dataclasses import dataclass
-from functools import reduce, wraps
+from datetime import date
+from functools import partial, reduce, wraps
 from inspect import getcallargs
 from typing import Collection, Dict, Mapping, Optional, Sequence, Union
 
@@ -14,6 +17,41 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
 from torchmetrics import Metric
+
+
+def split_dp(
+    dp: mk.DataPanel,
+    split_on: str,
+    train_frac: float = 0.7,
+    valid_frac: float = 0.1,
+    test_frac: float = 0.2,
+    other_splits: dict = None,
+    salt: str = "",
+    run_dir: str = None,
+):
+    dp = dp.view()
+    other_splits = {} if other_splits is None else other_splits
+    splits = {
+        "train": train_frac,
+        "valid": valid_frac,
+        "test": test_frac,
+        **other_splits,
+    }
+
+    if not math.isclose(sum(splits.values()), 1):
+        raise ValueError("Split fractions must sum to 1.")
+
+    dp["split_hash"] = dp[split_on].map(partial(hash_for_split, salt=salt))
+    start = 0
+    split_column = pd.Series(["unassigned"] * len(dp))
+    for split, frac in splits.items():
+        end = start + frac
+        split_column[
+            ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
+        ] = split
+        start = end
+    dp["split"] = split_column
+    return dp
 
 
 @dataclass
@@ -118,7 +156,7 @@ class PredLogger(Metric):
     def compute(self):
         """TODO: this sometimes returns duplicates."""
         if torch.is_tensor(self.sample_ids[0]):
-            sample_ids = torch.cat(self.sample_ids).cpu()
+            sample_ids = torch.tensor(self.sample_ids).cpu()
         else:
             # support for string ids
             sample_ids = self.sample_ids
@@ -299,3 +337,13 @@ def batched_pearsonr(x, y, batch_first=True):
     corr = bessel_corrected_covariance / (x_std * y_std)
 
     return corr
+
+
+def get_data_dir(nb_dir: str = None):
+    if nb_dir is None:
+        nb_dir = os.getcwd()
+    today = date.today()
+    dirname = today.strftime("%y-%m-%d_data")
+    data_dir = os.path.join(nb_dir, "data", dirname)
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
