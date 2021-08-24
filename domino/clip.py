@@ -74,6 +74,7 @@ def get_wiki_words(top_k: int = 1e5, eng_only: bool = False, run_dir: str = None
         df = df.merge(eng_df, how="inner", on="word")
 
     df = df.sort_values("frequency", ascending=False)
+    df = df.drop_duplicates(subset=["word"])
     return mk.DataPanel.from_pandas(df.iloc[: int(top_k)])
 
 
