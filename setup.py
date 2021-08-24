@@ -13,6 +13,7 @@ REQUIRED = [
     "cytoolz",
     "ujson",
     "jsonlines>=1.2.0",
+    "nlkt",
     "torch>=1.8.0",
     "tqdm>=4.49.0",
     "scikit-learn",

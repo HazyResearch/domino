@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
+from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
 from terra.torch import TerraModule
@@ -27,6 +28,7 @@ class Classifier(pl.LightningModule, TerraModule):
         "lr": 1e-4,
         "model_name": "resnet",
         "arch": "resnet18",
+        "pretrained": True,
         "num_classes": 2,
     }
 
@@ -63,7 +65,9 @@ class Classifier(pl.LightningModule, TerraModule):
     def _set_model(self):
         if self.config["model_name"] == "resnet":
             self.model = ResNet(
-                num_classes=self.config["num_classes"], arch=self.config["arch"]
+                num_classes=self.config["num_classes"],
+                arch=self.config["arch"],
+                pretrained=self.config["pretrained"],
             )
         elif self.config["model_name"] == "densenet":
             self.model = DenseNet(
@@ -182,6 +186,7 @@ def train(
     run_dir: str = None,
     **kwargs,
 ):
+    # see here for preprocessing https://github.com/pytorch/vision/issues/39#issuecomment-403701432
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(seed)
 
@@ -191,20 +196,28 @@ def train(
     if model is None:
         config = {} if config is None else config
         config["num_classes"] = num_classes
-        if isinstance(target_column, Sequence):
+        if isinstance(target_column, List):
             model = BinaryMTClassifier(config=config)
         else:
             model = Classifier(config)
+    try:
+        run_id = int(os.path.basename(run_dir))
+        metadata = terra.get_meta(run_id)
+        logger = WandbLogger(
+            project="domino",
+            save_dir=run_dir,
+            name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
+            tags=[f"{metadata['module']}.{metadata['fn']}"],
+            config={} if wandb_config is None else wandb_config,
+        )
 
-    run_id = int(os.path.basename(run_dir))
-    metadata = terra.get_meta(run_id)
-    logger = WandbLogger(
-        project="domino",
-        save_dir=run_dir,
-        name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
-        tags=[f"{metadata['module']}.{metadata['fn']}"],
-        config={} if wandb_config is None else wandb_config,
-    )
+    except ValueError:
+        logger = WandbLogger(
+            project="domino",
+            save_dir=run_dir,
+            name=run_dir,
+            config={} if wandb_config is None else wandb_config,
+        )
 
     checkpoint_callbacks = [
         TerraCheckpoint(
@@ -328,9 +341,7 @@ def score(
         out = model(x)  # Run forward pass
 
         return {
-            "output": mk.ClassificationOutputColumn(
-                logits=out.cpu(), multi_label=False
-            ),
+            "output": ClassificationOutputColumn(logits=out.cpu(), multi_label=False),
             **{
                 name: extractor.activation.cpu()
                 for name, extractor in layer_to_extractor.items()

@@ -1,81 +1,58 @@
-import pandas as pd
-from terra import Task
-import numpy as np
-import torch
-import pandas as pd
 import clip
-from tqdm.auto import tqdm
-import robustnessgym as rg
+import meerkat as mk
+import meerkat.nn as mknn
+import numpy as np
+import pandas as pd
+import torch
 import torchvision.transforms as transforms
+from terra import Task
+from tqdm.auto import tqdm
+
 from domino.utils import batched_pearsonr
 
 
 @Task.make_task
 def embed_words(
-    df: pd.DataFrame,
+    words_dp: mk.DataPanel,
     batch_size: int = 128,
-    model: str = "/afs/cs.stanford.edu/u/sabrieyuboglu/data/models/clip/RN50.pt",
-    top_k: int = None,
+    model: str = "ViT-B/32",
     run_dir: str = None,
-):
-    if top_k is not None:
-        df = df.sort_values("frequency", ascending=False)
-        df = df.iloc[:top_k]
-    model, _ = clip.load(model, device=torch.device(0), jit=False)
-    embs = []
-    texts = []
-    with torch.no_grad():
-        for _, batch_df in tqdm(df.groupby(np.arange(len(df)) // batch_size)):
-            text_samples = list(map(lambda x: f"a photo of {x}", batch_df.word))
-            tokens = clip.tokenize(text_samples).to(0)
-            emb = model.encode_text(tokens)
-            embs.append(emb.cpu())
-            texts.extend(text_samples)
-    return torch.cat(embs, dim=0), texts
+) -> mk.DataPanel:
+    model, _ = clip.load(model, device=torch.device(0))
+    words_dp["tokens"] = mk.LambdaColumn(
+        words_dp["word"], fn=lambda x: clip.tokenize(f"a photo of {x}").squeeze()
+    )
+    words_dp["emb"] = words_dp["tokens"].map(
+        lambda x: model.encode_text(x.data.to(0)).cpu().detach(),
+        pbar=True,
+        is_batched_fn=True,
+        batch_size=batch_size,
+    )
+    return words_dp
 
 
-@Task.make_task
 def embed_images(
-    data_df: pd.DataFrame,
+    dp: mk.DataPanel,
     img_column: str,
-    id_column: str,
-    img_transform: callable,
-    split: str = "valid",
     batch_size: int = 128,
     num_workers: int = 4,
-    model: str = "/afs/cs.stanford.edu/u/sabrieyuboglu/data/models/clip/RN50.pt",
+    model: str = "ViT-B/32",
     run_dir: str = None,
     **kwargs,
 ):
+    model, preprocess = clip.load(model, device=torch.device(0))
 
-    model, preprocess = clip.load(model, device=torch.device(0), jit=False)
-    transform = transforms.Compose(
-        [
-            img_transform,
-            transforms.Lambda(lambda x: x.to(torch.uint8)),
-            transforms.ToPILImage(),
-            preprocess,
-        ]
-    )
-    dataset = rg.Dataset.load_image_dataset(
-        data_df[data_df.split == split].to_dict("records"),
-        img_columns=img_column,
-        transform=transform,
-    )
-    dl = dataset.to_dataloader(
-        columns=[img_column, id_column],
-        num_workers=num_workers,
-        batch_size=batch_size,
-    )
-    embs = []
-    img_ids = []
+    dp["__embed_images_input__"] = dp[img_column].to_lambda(preprocess)
     with torch.no_grad():
-        for img, img_id in tqdm(dl):
-            img = img.to(0)
-            emb = model.encode_image(img)
-            embs.append(emb.cpu())
-            img_ids.extend(img_id)
-    return torch.cat(embs, dim=0), img_ids
+        dp["emb"] = dp["__embed_images_input__"].map(
+            lambda x: model.encode_image(x.data.to(0)).cpu().detach(),
+            pbar=True,
+            is_batched_fn=True,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            output_type=mknn.EmbeddingColumn,
+        )
+    return dp
 
 
 @Task.make_task
@@ -87,14 +64,18 @@ def get_wiki_words(top_k: int = 1e5, eng_only: bool = False, run_dir: str = None
     )
 
     if eng_only:
+        import nltk
         from nltk.corpus import words
+
+        nltk.download("words")
 
         eng_words = words.words()
         eng_df = pd.DataFrame({"word": eng_words})
         df = df.merge(eng_df, how="inner", on="word")
 
     df = df.sort_values("frequency", ascending=False)
-    return df.iloc[: int(top_k)]
+    df = df.drop_duplicates(subset=["word"])
+    return mk.DataPanel.from_pandas(df.iloc[: int(top_k)])
 
 
 def find_explanatory_words(
