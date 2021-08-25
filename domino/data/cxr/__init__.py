@@ -73,6 +73,15 @@ def get_cxr_activations(
     return act_dp
 
 
+def minmax_norm(dict_arr, key):
+    arr = np.array([dict_arr[id][key] for id in dict_arr])
+    for id in dict_arr:
+        dict_arr[id][key] -= arr.min()
+        dict_arr[id][key] /= arr.max()
+
+    return dict_arr
+
+
 @Task.make_task
 def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
@@ -106,6 +115,12 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
             "gaze_unique": gaze_unique,
             "gaze_diffusivity": gaze_diffusivity,
         }
+
+    # normalize features
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_time")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_max_visit")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_unique")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_diffusivity")
 
     # merge sequences and features into a df
     gaze_df = pd.DataFrame(
@@ -214,16 +229,16 @@ def get_dp(df: pd.DataFrame):
         ),
         overwrite=True,
     )
-    dp.add_column(
-        "input2",
-        dp["filepath"].map(
-            lambda x: MedicalVolumeCell(
-                paths=x, loader=loader, transform=cxr_transform2
-            ),
-            num_workers=0,
-        ),
-        overwrite=True,
-    )
+    # dp.add_column(
+    #     "input2",
+    #     dp["filepath"].map(
+    #         lambda x: MedicalVolumeCell(
+    #             paths=x, loader=loader, transform=cxr_transform2
+    #         ),
+    #         num_workers=0,
+    #     ),
+    #     overwrite=True,
+    # )
     dp.add_column(
         "img",
         dp["filepath"].map(

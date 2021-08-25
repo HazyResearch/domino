@@ -11,6 +11,7 @@ def train_cxr(
 
     dataset_cfg = cfg["dataset"]
     train_cfg = cfg["train"]
+
     dp = mk.DataPanel.read(path=dataset_cfg["datapanel_pth"])
 
     train(

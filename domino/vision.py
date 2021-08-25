@@ -2,6 +2,7 @@ import os
 from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
+import meerkat.nn as mknn
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -28,7 +29,10 @@ def get_save_dir(config):
     gaze_split = config["train"]["gaze_split"]
     target = config["dataset"]["target_column"]
     subgroup_columns = config["dataset"]["subgroup_columns"]
-    subgroup = subgroup_columns[0] if len(subgroup_columns) > 0 else "none"
+    subgroups = ""
+    for name in subgroup_columns:
+        subgroups += f"_{name}"
+    subgroups = subgroups if len(subgroup_columns) > 0 else "none"
     method = "erm"
     if config["train"]["loss"]["gdro"]:
         method = "gdro"
@@ -38,9 +42,12 @@ def get_save_dir(config):
         method = "sampler"
     elif config["train"]["multiclass"]:
         method = "multiclass"
+    elif "upsampled" in config["dataset"]["datapanel_pth"]:
+        method = "upsample"
+
     lr = config["train"]["lr"]
     wd = config["train"]["wd"]
-    save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroup}/lr_{lr}/wd_{wd}"
+    save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}"
 
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
@@ -63,10 +70,17 @@ class Classifier(pl.LightningModule, TerraModule):
         self.config = config
 
         self._set_model()
-        criterion = nn.CrossEntropyLoss(
-            weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
-            reduction="none",
-        )
+        criterion_dict = {"cross_entropy": nn.CrossEntropyLoss, "mse": nn.MSELoss}
+        criterion_fnc = criterion_dict[config["train"]["loss"]["criterion"]]
+        if config["train"]["loss"]["criterion"] == "cross_entropy":
+            criterion = criterion_fnc(
+                weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
+                reduction="none",
+            )
+        else:
+            criterion = criterion_fnc(
+                reduction="none",
+            )
 
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
@@ -93,8 +107,11 @@ class Classifier(pl.LightningModule, TerraModule):
             min_var_weight=loss_cfg["min_var_weight"],
         )
 
-        metrics = self.config.get("metrics", ["auroc", "accuracy"])
-        self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
+        if config["train"]["loss"]["criterion"] == "mse":
+            self.metrics = {}
+        else:
+            metrics = self.config.get("metrics", ["auroc", "accuracy"])
+            self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
         self.valid_preds = PredLogger()
 
     def set_metrics(self, metrics: List[str], num_classes: int = None):
@@ -225,9 +242,10 @@ def train(
         train_mask = np.logical_and(train_mask, ~np.isnan(dp["chest_tube"].data))
 
     subgroup_columns = config["dataset"]["subgroup_columns"]
-    # TODO: make this work for multiple subgroup columns
     if len(subgroup_columns) > 0:
-        group_ids = 2 * dp[subgroup_columns[0]] + dp[target_column]
+        group_ids = dp[target_column]
+        for i in range(len(subgroup_columns)):
+            group_ids = group_ids + (2 ** (i + 1)) * dp[subgroup_columns[i]]
     else:
         group_ids = dp[target_column]
     if multiclass:
@@ -241,7 +259,7 @@ def train(
     dp = mk.DataPanel.from_batch(
         {
             "input": dp[input_column],
-            "target": dp[target_column].astype(int)
+            "target": dp[target_column]  # .astype(int)
             if not multiclass
             else group_ids.astype(int),  # group_ids become target labels
             "id": dp[id_column],
@@ -253,12 +271,22 @@ def train(
     train_dp = dp.lz[train_mask]
     val_dp = dp.lz[dp["split"].data == valid_split]
 
+    # HACK
+    if "gaze" in target_column:
+        train_dp["target"] = train_dp["target"].data.astype(np.float32)
+        num_classes = 1
+        n_train = 800
+        val_dp = train_dp[n_train:]
+        train_dp = train_dp[:n_train]
+
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
-    for name in subgroup_columns:
-        for str_ in ["without", "with"]:
-            subgroup_columns_.append(f"without_{target_column}_{str_}_{name}")
-            subgroup_columns_.append(f"with_{target_column}_{str_}_{name}")
+    binary_strs = ["without", "with"]
+    for i in range(2 ** (len(subgroup_columns) + 1)):
+        subgroup_name = f"{binary_strs[(i%2)!=0]}_{target_column}"
+        for ndx, name in enumerate(subgroup_columns):
+            subgroup_name += f"_{binary_strs[(int(i/(2**(ndx+1)))%2)!=0]}_{name}"
+        subgroup_columns_.append(subgroup_name)
 
     train_dataset_config = {
         "n_groups": len(subgroup_columns_),
@@ -403,6 +431,7 @@ def score(
 
     @torch.no_grad()
     def _score(batch: mk.DataPanel):
+        # x = torch.stack(batch[input_column].data).to(device)
         x = batch[input_column].data.to(device)
         out = model(x)  # Run forward pass
 
@@ -421,6 +450,7 @@ def score(
         is_batched_fn=True,
         pbar=True,
         input_columns=[input_column],
+        materialize=True,
         **kwargs,
     )
     return dp

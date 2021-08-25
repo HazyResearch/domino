@@ -122,7 +122,7 @@ def default_config():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", type=str, default="train")
+    parser.add_argument("--file", type=str, default="07-23_train_cxr")
     parser.add_argument("--config", type=str)
     parser.add_argument("--sweep", default="sweep", type=str)
     parser.add_argument("--name", type=str)

@@ -10,8 +10,9 @@ train:
   wd: 0.0
   valid_split: test
   gaze_split: False
-  val_check_interval: 20
+  val_check_interval: 5
   loss:
+    criterion: "cross_entropy"
     reweight_class_alpha: 10
     reweight_class: False
     robust_sampler: False
@@ -29,7 +30,7 @@ dataset:
   input_column: "input"
   target_column: "pmx"
   subgroup_columns: []
-  datapanel_pth: "/media/4tb_hdd/siim/tubescribble_dp_07-24-21.dp"
+  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_08-24-21.dp"
 
 wandb:
   project: domino
