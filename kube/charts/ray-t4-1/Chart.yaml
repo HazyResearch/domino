@@ -1,0 +1,10 @@
+apiVersion: v2
+name: ray-t4-1
+description: A Helm chart for deployments of Ray on Kubernetes.
+type: application
+
+# Chart version.
+version: 0.1.0
+
+# Ray version.
+appVersion: "latest"
