@@ -5,4 +5,5 @@ from .george import GeorgeSDM
 from .ica import ICASDM
 from .pca import PCASDM, KernelPCASDM
 from .pred import PredSDM
+from .spotlight import SpotlightSDM
 from .supervised import SupervisedSDM
