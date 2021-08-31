@@ -23,6 +23,7 @@ from domino.data.gaze_utils import (
     total_time,
     unique_visits,
 )
+from domino.modeling import ResNet
 from domino.vision import score
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
@@ -49,10 +50,16 @@ def get_cxr_activations(
         modules = list(model.children())[:-2]
         cnn_encoder = nn.Sequential(*modules)
     elif run_type == "domino":
-        model = resnet50(num_classes=num_classes, pretrained=False)
+        # model = resnet50(num_classes=num_classes, pretrained=False)
+        model = ResNet(
+            num_classes=num_classes,
+            arch="resnet50",
+            dropout=0,
+        )
         state_dict = {}
         for name, key in torch.load(model_path)["state_dict"].items():
             state_dict[name.split("model.")[-1]] = key
+
         model.load_state_dict(state_dict)
         modules = list(model.children())[:-2]
         cnn_encoder = nn.Sequential(*modules)
@@ -68,7 +75,7 @@ def get_cxr_activations(
             "block3": cnn_encoder[-2],
             "block4": cnn_encoder[-1],
         },
-        batch_size=16,
+        batch_size=64,
     )
     return act_dp
 

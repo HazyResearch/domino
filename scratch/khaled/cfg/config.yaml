@@ -1,6 +1,7 @@
 model:
   model_name: resnet
   arch: resnet50
+  dropout: 0
 
 train:
   multiclass: False # if true, then uses subgroup columns as multiclass labels
@@ -30,7 +31,7 @@ dataset:
   input_column: "input"
   target_column: "pmx"
   subgroup_columns: []
-  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_08-24-21.dp"
+  datapanel_pth: "/media/4tb_hdd/siim/mimicscribble_dp_08-30-21.dp"
 
 wandb:
   project: domino

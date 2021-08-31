@@ -214,6 +214,8 @@ class LossComputer:
 
         split = "train" if is_training else "val"
 
+        robust_acc = 100
+
         for group_idx in range(self.n_groups):
             logger(
                 f"{self.group_str[group_idx]} {split} loss",
@@ -236,6 +238,8 @@ class LossComputer:
                 f"{self.group_str[group_idx]} {split} acc",
                 self.avg_group_acc[group_idx],
             )
+
+        logger(f"robust {split} acc", (self.avg_group_acc).min())
 
         self.reset_stats()
 

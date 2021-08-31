@@ -2,7 +2,6 @@ import os
 from typing import Dict, Iterable, List, Mapping, Union
 
 import meerkat as mk
-import meerkat.nn as mknn
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -10,6 +9,7 @@ import torch.nn as nn
 import torchmetrics
 import wandb
 from omegaconf import DictConfig
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
@@ -47,7 +47,8 @@ def get_save_dir(config):
 
     lr = config["train"]["lr"]
     wd = config["train"]["wd"]
-    save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}"
+    dropout = config["model"]["dropout"]
+    save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}/dropout_{dropout}"
 
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
@@ -138,7 +139,11 @@ class Classifier(pl.LightningModule, TerraModule):
         model_cfg = self.config["model"]
         num_classes = self.config["dataset"]["num_classes"]
         if model_cfg["model_name"] == "resnet":
-            self.model = ResNet(num_classes=num_classes, arch=model_cfg["arch"])
+            self.model = ResNet(
+                num_classes=num_classes,
+                arch=model_cfg["arch"],
+                dropout=model_cfg["dropout"],
+            )
         elif model_cfg["model_name"] == "densenet":
             self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
         else:
@@ -164,7 +169,6 @@ class Classifier(pl.LightningModule, TerraModule):
         )
         outs = self.forward(inputs)
         loss = self.val_loss_computer.loss(outs, targets, group_ids)
-        self.val_loss_computer.log_stats(self.log)
         self.log("valid_loss", loss)
 
         for metric in self.metrics.values():
@@ -173,6 +177,7 @@ class Classifier(pl.LightningModule, TerraModule):
         self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
 
     def validation_epoch_end(self, outputs) -> None:
+        self.val_loss_computer.log_stats(self.log)
         for metric_name, metric in self.metrics.items():
             self.log(f"valid_{metric_name}", metric.compute())
 
@@ -345,6 +350,10 @@ def train(
     )
 
     model.train()
+    ckpt_metric = "valid_accuracy"
+    if len(subgroup_columns) > 0:
+        ckpt_metric = "robust val acc"
+    checkpoint_callback = ModelCheckpoint(monitor=ckpt_metric, mode="max")
     trainer = pl.Trainer(
         gpus=gpus,
         max_epochs=max_epochs,
@@ -352,6 +361,8 @@ def train(
         logger=logger,
         accelerator=None,
         auto_select_gpus=True,
+        callbacks=[checkpoint_callback],
+        default_root_dir=save_dir,
         **kwargs,
     )
 
