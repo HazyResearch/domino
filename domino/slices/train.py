@@ -5,7 +5,7 @@ import ray
 import terra
 from ray import tune
 
-from domino.slices.visual_genome import build_correlation_slice
+from domino.slices.gqa import build_correlation_slice
 from domino.vision import train
 
 
@@ -17,7 +17,6 @@ def train_model(
     **kwargs,
 ):
     # set seed
-
     metadata = config
     metadata["run_id"] = int(os.path.basename(run_dir))
 
@@ -30,7 +29,8 @@ def train_model(
         wandb_config=metadata,
         num_sanity_val_steps=30,
         batch_size=128,
-        max_epochs=10,
+        val_check_interval=20,
+        max_epochs=3,
         **kwargs,
     )
     return metadata

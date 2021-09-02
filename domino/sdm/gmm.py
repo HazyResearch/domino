@@ -307,13 +307,15 @@ class ErrorGMM(GaussianMixture):
         return super()._n_parameters() + 2 * self.n_components
 
     def _estimate_error_log_prob(self, y, y_hat):
-        # DCHECK_THIS
+        # CHECK_THIS
         likelihood = np.zeros((len(y), self.n_components))
-        likelihood += np.log(1 - self.errors_)
-        likelihood += np.expand_dims(y_hat * (1 - y) + (1 - y_hat) * (y), axis=1)
-        likelihood += np.log(self.errors_)
-        likelihood += np.expand_dims(y_hat * (y) + (1 - y_hat) * (1 - y), axis=1)
-        return likelihood
+        likelihood += np.expand_dims(1 - self.errors_, axis=0) * np.expand_dims(
+            y_hat ** (1 - y) * (1 - y_hat) ** (y), axis=1
+        )
+        likelihood += np.expand_dims(self.errors_, axis=0) * np.expand_dims(
+            y_hat ** (y) * (1 - y_hat) ** (1 - y), axis=1
+        )
+        return np.log(likelihood)
 
 
 class _ErrorGMM:
