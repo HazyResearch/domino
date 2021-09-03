@@ -1,5 +1,9 @@
+import warnings
+from functools import wraps
+
 import numpy as np
 import sklearn.cluster as cluster
+from scipy import linalg
 from scipy.special import logsumexp
 from scipy.stats import multivariate_normal
 from sklearn.mixture import GaussianMixture
@@ -11,6 +15,7 @@ from sklearn.mixture._gaussian_mixture import (
     _estimate_gaussian_covariances_spherical,
     _estimate_gaussian_covariances_tied,
 )
+from tqdm import tqdm
 
 
 def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
@@ -20,6 +25,10 @@ def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
     ----------
     X : array-like of shape (n_samples, n_features)
         The input data array.
+
+    y: array-like of shape (n_samples, n_classes)
+
+    y_hat: array-like of shpae (n_samples, n_classes)
 
     resp : array-like of shape (n_samples, n_components)
         The responsibilities for each data sample in X.
@@ -42,7 +51,7 @@ def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
         The covariance matrix of the current components.
         The shape depends of the covariance_type.
     """
-    nk = resp.sum(axis=0) + 10 * np.finfo(resp.dtype).eps
+    nk = resp.sum(axis=0) + 10 * np.finfo(resp.dtype).eps  # (n_components, )
     means = np.dot(resp.T, X) / nk[:, np.newaxis]
     covariances = {
         "full": _estimate_gaussian_covariances_full,
@@ -51,11 +60,18 @@ def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
         "spherical": _estimate_gaussian_covariances_spherical,
     }[covariance_type](resp, X, nk, means, reg_covar)
 
-    errors = np.dot(resp.T, np.abs(y - y_hat)) / nk
-    return nk, means, covariances, errors
+    y_probs = np.dot(resp.T, y) / nk[:, np.newaxis]  # (n_components, n_classes)
+    y_hat_probs = np.dot(resp.T, y_hat) / nk[:, np.newaxis]  # (n_components, n_classes)
+
+    return nk, means, covariances, y_probs, y_hat_probs
 
 
 class ErrorGMM(GaussianMixture):
+    @wraps(GaussianMixture.__init__)
+    def __init__(self, *args, weight_y_log_likelihood: float = 1, **kwargs):
+        self.weight_y_log_likelihood = weight_y_log_likelihood
+        super().__init__(*args, **kwargs)
+
     def _initialize_parameters(self, X, y, y_hat, random_state):
         """Initialize the model parameters.
 
@@ -98,14 +114,14 @@ class ErrorGMM(GaussianMixture):
         """
         n_samples, _ = X.shape
 
-        weights, means, covariances, errors = _estimate_parameters(
+        weights, means, covariances, y_probs, y_hat_probs = _estimate_parameters(
             X, y, y_hat, resp, self.reg_covar, self.covariance_type
         )
         weights /= n_samples
 
         self.weights_ = weights if self.weights_init is None else self.weights_init
         self.means_ = means if self.means_init is None else self.means_init
-        self.errors_ = errors
+        self.y_probs, self.y_hat_probs = y_probs, y_hat_probs
         if self.precisions_init is None:
             self.covariances_ = covariances
             self.precisions_cholesky_ = _compute_precision_cholesky(
@@ -126,6 +142,7 @@ class ErrorGMM(GaussianMixture):
             self.precisions_cholesky_ = self.precisions_init
 
     def fit(self, X, y, y_hat):
+
         self.fit_predict(X, y, y_hat)
         return self
 
@@ -152,13 +169,12 @@ class ErrorGMM(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in range(1, self.max_iter + 1):
+            for n_iter in tqdm(range(1, self.max_iter + 1)):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)
                 self._m_step(X, y, y_hat, log_resp)
                 lower_bound = self._compute_lower_bound(log_resp, log_prob_norm)
-
                 change = lower_bound - prev_lower_bound
                 self._print_verbose_msg_iter_end(n_iter, change)
 
@@ -208,7 +224,8 @@ class ErrorGMM(GaussianMixture):
             self.weights_,
             self.means_,
             self.covariances_,
-            self.errors_,
+            self.y_probs,
+            self.y_hat_probs,
         ) = _estimate_parameters(
             X, y, y_hat, resp, self.reg_covar, self.covariance_type
         )
@@ -266,7 +283,7 @@ class ErrorGMM(GaussianMixture):
         return (
             self._estimate_log_prob(X)
             + self._estimate_log_weights()
-            + self._estimate_error_log_prob(y, y_hat)
+            + self._estimate_y_log_prob(y, y_hat) * self.weight_y_log_likelihood
         )
 
     def _get_parameters(self):
@@ -274,7 +291,8 @@ class ErrorGMM(GaussianMixture):
             self.weights_,
             self.means_,
             self.covariances_,
-            self.errors_,
+            self.y_probs,
+            self.y_hat_probs,
             self.precisions_cholesky_,
         )
 
@@ -283,7 +301,8 @@ class ErrorGMM(GaussianMixture):
             self.weights_,
             self.means_,
             self.covariances_,
-            self.errors_,
+            self.y_probs,
+            self.y_hat_probs,
             self.precisions_cholesky_,
         ) = params
 
@@ -306,240 +325,21 @@ class ErrorGMM(GaussianMixture):
         """Return the number of free parameters in the model."""
         return super()._n_parameters() + 2 * self.n_components
 
-    def _estimate_error_log_prob(self, y, y_hat):
+    def _estimate_y_log_prob(self, y, y_hat):
+        """Estimate the Gaussian distribution parameters.
+
+        Parameters
+        ----------
+        y: array-like of shape (n_samples, n_classes)
+
+        y_hat: array-like of shpae (n_samples, n_classes)
+        """
         # CHECK_THIS
-        likelihood = np.zeros((len(y), self.n_components))
-        likelihood += np.expand_dims(1 - self.errors_, axis=0) * np.expand_dims(
-            y_hat ** (1 - y) * (1 - y_hat) ** (y), axis=1
+        # add epsilon to avoid "RuntimeWarning: divide by zero encountered in log"
+        likelihood = np.log(
+            np.dot(y, self.y_probs.T) + np.finfo(self.y_probs.dtype).eps
         )
-        likelihood += np.expand_dims(self.errors_, axis=0) * np.expand_dims(
-            y_hat ** (y) * (1 - y_hat) ** (1 - y), axis=1
+        likelihood += np.log(
+            np.dot(y_hat, self.y_hat_probs.T) + np.finfo(self.y_hat_probs.dtype).eps
         )
-        return np.log(likelihood)
-
-
-class _ErrorGMM:
-    """
-    Full covariance Gaussian Mixture Model,
-    trained using Expectation Maximization.
-
-    Parameters
-    ----------
-    n_components : int
-        Number of clusters/mixture components in which the data will be
-        partitioned into.
-
-    n_iters : int
-        Maximum number of iterations to run the algorithm.
-
-    tol : float
-        Tolerance. If the log-likelihood between two iterations is smaller than
-        the specified tolerance level, the algorithm will stop performing the
-        EM optimization.
-
-    seed : int
-        Seed / random state used to initialize the parameters.
-    """
-
-    def __init__(self, n_components: int, n_iters: int, tol: float, seed: int):
-        self.n_components = n_components
-        self.n_iters = n_iters
-        self.tol = tol
-        self.seed = seed
-
-    def fit(self, X, y, y_hat):
-
-        # data's dimensionality and responsibility vector
-        n_row, n_col = X.shape
-        self.resp = np.zeros((n_row, self.n_components))
-
-        # initialize parameters
-        np.random.seed(self.seed)
-        chosen = np.random.choice(n_row, self.n_components, replace=False)
-        self.means = X[chosen]
-        self.weights = np.full(self.n_components, 1 / self.n_components)
-        self.errors = np.full(self.n_components, 1 / 2)
-
-        # for np.cov, rowvar = False,
-        # indicates that the rows represents obervation
-        shape = self.n_components, n_col, n_col
-        self.covs = np.full(shape, np.cov(X, rowvar=False))
-
-        log_likelihood = 0
-        self.converged = False
-        self.log_likelihood_trace = []
-
-        for i in range(self.n_iters):
-            log_likelihood_new = self._do_estep(X, y, y_hat)
-            self._do_mstep(X, y, y_hat)
-
-            if abs(log_likelihood_new - log_likelihood) <= self.tol:
-                self.converged = True
-                break
-
-            log_likelihood = log_likelihood_new
-            self.log_likelihood_trace.append(log_likelihood)
-
-        return self
-
-    def _do_estep(self, X, y, y_hat):
-        """
-        E-step: compute responsibilities,
-        update resp matrix so that resp[j, k] is the responsibility of cluster k for data point j,
-        to compute likelihood of seeing data point j given cluster k, use multivariate_normal.pdf
-        """
-        self._compute_likelihood(X, y, y_hat)
-        log_likelihood = np.sum(np.log(np.sum(self.resp, axis=1)))
-
-        # normalize over all possible cluster assignments
-        self.resp = self.resp / self.resp.sum(axis=1, keepdims=1)
-        return log_likelihood
-
-    def _compute_likelihood(self, X, y, y_hat):
-        for k in range(self.n_components):
-            likelihood = 1
-            likelihood *= self.weights[k]
-            likelihood *= multivariate_normal(
-                self.means[k], self.covs[k], allow_singular=True
-            ).pdf(X)
-            print(likelihood)
-            for v in range(2):
-                if v == 0:
-                    likelihood *= 1 - self.errors[k]
-                    likelihood *= y_hat ** (1 - y) * (1 - y_hat) ** (y)
-                else:
-                    likelihood *= self.errors[k]
-                    likelihood *= y_hat ** (y) * (1 - y_hat) ** (1 - y)
-
-            self.resp[:, k] = likelihood
-
-        return self
-
-    def _do_mstep(self, X, y, y_hat):
-        """M-step, update parameters"""
-
-        # total responsibility assigned to each cluster, N^{soft}
-        resp_weights = self.resp.sum(axis=0)
-
-        # weights
-        self.weights = resp_weights / X.shape[0]
-
-        # errors
-        self.errors = np.dot(self.resp.T, np.abs(y - y_hat)) / resp_weights
-
-        # means
-        weighted_sum = np.dot(self.resp.T, X)
-        self.means = weighted_sum / resp_weights.reshape(-1, 1)
-        # covariance
-        for k in range(self.n_components):
-            diff = (X - self.means[k]).T
-            weighted_sum = np.dot(self.resp[:, k] * diff, diff.T)
-            self.covs[k] = weighted_sum / resp_weights[k]
-
-        return self
-
-
-class GMM:
-    """
-    http://ethen8181.github.io/machine-learning/clustering/GMM/GMM.html
-    Full covariance Gaussian Mixture Model,
-    trained using Expectation Maximization.
-
-    Parameters
-    ----------
-    n_components : int
-        Number of clusters/mixture components in which the data will be
-        partitioned into.
-
-    n_iters : int
-        Maximum number of iterations to run the algorithm.
-
-    tol : float
-        Tolerance. If the log-likelihood between two iterations is smaller than
-        the specified tolerance level, the algorithm will stop performing the
-        EM optimization.
-
-    seed : int
-        Seed / random state used to initialize the parameters.
-    """
-
-    def __init__(self, n_components: int, n_iters: int, tol: float, seed: int):
-        self.n_components = n_components
-        self.n_iters = n_iters
-        self.tol = tol
-        self.seed = seed
-
-    def fit(self, X):
-
-        # data's dimensionality and responsibility vector
-        n_row, n_col = X.shape
-        self.resp = np.zeros((n_row, self.n_components))
-
-        # initialize parameters
-        np.random.seed(self.seed)
-        chosen = np.random.choice(n_row, self.n_components, replace=False)
-        self.means = X[chosen]
-        self.weights = np.full(self.n_components, 1 / self.n_components)
-
-        # for np.cov, rowvar = False,
-        # indicates that the rows represents obervation
-        shape = self.n_components, n_col, n_col
-        self.covs = np.full(shape, np.cov(X, rowvar=False))
-
-        log_likelihood = 0
-        self.converged = False
-        self.log_likelihood_trace = []
-
-        for i in range(self.n_iters):
-            log_likelihood_new = self._do_estep(X)
-            self._do_mstep(X)
-
-            if abs(log_likelihood_new - log_likelihood) <= self.tol:
-                self.converged = True
-                break
-
-            log_likelihood = log_likelihood_new
-            self.log_likelihood_trace.append(log_likelihood)
-
-        return self
-
-    def _do_estep(self, X):
-        """
-        E-step: compute responsibilities,
-        update resp matrix so that resp[j, k] is the responsibility of cluster k for data point j,
-        to compute likelihood of seeing data point j given cluster k, use multivariate_normal.pdf
-        """
-        self._compute_log_likelihood(X)
-        log_likelihood = np.sum(np.log(np.sum(self.resp, axis=1)))
-
-        # normalize over all possible cluster assignments
-        self.resp = self.resp / self.resp.sum(axis=1, keepdims=1)
-        return log_likelihood
-
-    def _compute_log_likelihood(self, X):
-        for k in range(self.n_components):
-            prior = self.weights[k]
-            likelihood = multivariate_normal(self.means[k], self.covs[k]).pdf(X)
-            self.resp[:, k] = prior * likelihood
-
-        return self
-
-    def _do_mstep(self, X):
-        """M-step, update parameters"""
-
-        # total responsibility assigned to each cluster, N^{soft}
-        resp_weights = self.resp.sum(axis=0)
-
-        # weights
-        self.weights = resp_weights / X.shape[0]
-
-        # means
-        weighted_sum = np.dot(self.resp.T, X)
-        self.means = weighted_sum / resp_weights.reshape(-1, 1)
-        # covariance
-        for k in range(self.n_components):
-            diff = (X - self.means[k]).T
-            weighted_sum = np.dot(self.resp[:, k] * diff, diff.T)
-            self.covs[k] = weighted_sum / resp_weights[k]
-
-        return self
+        return likelihood

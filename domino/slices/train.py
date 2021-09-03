@@ -30,7 +30,7 @@ def train_model(
         num_sanity_val_steps=30,
         batch_size=128,
         val_check_interval=20,
-        max_epochs=3,
+        max_epochs=6,
         **kwargs,
     )
     return metadata
@@ -41,6 +41,7 @@ def train_slices(
     slices_dp: mk.DataPanel,
     split_run_id: int,
     num_samples: int = 1,
+    run_dir: str = None,
     **kwargs,
 ):
     def _train_model(config):
