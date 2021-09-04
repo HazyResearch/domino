@@ -5,7 +5,7 @@ import ray
 import terra
 from ray import tune
 
-from domino.slices.gqa import build_correlation_slice
+from domino.slices.gqa import build_correlation_slice, build_rare_slice
 from domino.vision import train
 
 
@@ -22,6 +22,7 @@ def train_model(
 
     train(
         dp=dp,
+        config={"pretrained": False},
         input_column="input",
         id_column="id",
         target_column="target",
@@ -45,7 +46,12 @@ def train_slices(
     **kwargs,
 ):
     def _train_model(config):
-        dp = build_correlation_slice(**config, split_run_id=split_run_id)
+        if config["slice_category"] == "correlation":
+            dp = build_correlation_slice(**config, split_run_id=split_run_id)
+        elif config["slice_category"] == "rare":
+            dp = build_rare_slice(**config, split_run_id=split_run_id)
+
+        config["parent_run_id"] = int(os.path.basename(run_dir))
         return train_model(
             dp=dp,
             config=config,

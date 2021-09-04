@@ -15,6 +15,7 @@ from sklearn.mixture._gaussian_mixture import (
     _estimate_gaussian_covariances_spherical,
     _estimate_gaussian_covariances_tied,
 )
+from sklearn.preprocessing import label_binarize
 from tqdm import tqdm
 
 
@@ -147,6 +148,11 @@ class ErrorGMM(GaussianMixture):
         return self
 
     def fit_predict(self, X, y, y_hat):
+        y = label_binarize(y, classes=np.arange(np.max(y)))[:, :2]
+        if y.shape[-1] == 1:
+            # binary targets transform to a column vector with label_binarize
+            y = np.array([1 - y[:, 0], y[:, 0]]).T
+
         X = _check_X(X, self.n_components, ensure_min_samples=2)
         self._check_n_features(X, reset=True)
         self._check_initial_parameters(X)
@@ -253,7 +259,7 @@ class ErrorGMM(GaussianMixture):
         log_prob_norm, log_resp = self._estimate_log_prob_resp(X, y, y_hat)
         return np.mean(log_prob_norm), log_resp
 
-    def _estimate_log_prob_resp(self, X, y, y_hat):
+    def _estimate_log_prob_resp(self, X, y=None, y_hat=None):
         """Estimate log probabilities and responsibilities for each sample.
 
         Compute the log probabilities, weighted log probabilities per
@@ -279,12 +285,15 @@ class ErrorGMM(GaussianMixture):
             log_resp = weighted_log_prob - log_prob_norm[:, np.newaxis]
         return log_prob_norm, log_resp
 
-    def _estimate_weighted_log_prob(self, X, y, y_hat):
-        return (
-            self._estimate_log_prob(X)
-            + self._estimate_log_weights()
-            + self._estimate_y_log_prob(y, y_hat) * self.weight_y_log_likelihood
-        )
+    def _estimate_weighted_log_prob(self, X, y=None, y_hat=None):
+        if (y is None) or (y_hat is None):
+            return self._estimate_log_prob(X) + self._estimate_log_weights()
+        else:
+            return (
+                self._estimate_log_prob(X)
+                + self._estimate_log_weights()
+                + self._estimate_y_log_prob(y, y_hat) * self.weight_y_log_likelihood
+            )
 
     def _get_parameters(self):
         return (

@@ -6,7 +6,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.decomposition import PCA, KernelPCA
+from torch.nn.functional import binary_cross_entropy
+from tqdm import tqdm
 
 from domino.utils import VariableColumn, requires_columns
 
@@ -29,7 +30,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
         self.precisions = []
 
     @requires_columns(
-        dp_arg="data_dp", columns=[VariableColumn("self.config.emb"), "loss"]
+        dp_arg="data_dp", columns=[VariableColumn("self.config.emb"), "pred", "target"]
     )
     def fit(
         self,
@@ -38,7 +39,11 @@ class SpotlightSDM(SliceDiscoveryMethod):
     ):
         all_weights = []
         weights_unnorm = None
-        losses = data_dp["loss"].data
+        losses = binary_cross_entropy(
+            torch.tensor(data_dp["pred"].data),
+            torch.tensor(data_dp["target"]).to(torch.double),
+            reduction="none",
+        ).to(torch.float)
         for slice_idx in range(self.config.n_slices):
             if slice_idx != 0:
                 weights_unnorm /= max(weights_unnorm)
@@ -180,8 +185,8 @@ def run_spotlight(
     predictions=None,
     prediction_coeff=0.0,
 ):
-    x = torch.tensor(embeddings, device=device)
-    y = torch.tensor(losses, device=device)
+    x = embeddings.clone().to(device=device)
+    y = losses.clone().to(device=device)
     dimensions = x.shape[1]
 
     mean = torch.zeros((dimensions,), requires_grad=True, device=device)
@@ -201,7 +206,7 @@ def run_spotlight(
 
     start_time = datetime.datetime.now()
 
-    for t in range(num_steps):
+    for t in tqdm(range(num_steps)):
         optimizer.zero_grad()
         precision = torch.exp(log_precision)
         precision_matrix = torch.eye(x.shape[1], device=device) * precision
@@ -242,19 +247,19 @@ def run_spotlight(
             ms_spent = (datetime.datetime.now() - start_time).total_seconds() * 1000
 
             precision_print = torch.exp(log_precision)
-            print(
-                "steps = %5d | ms = %5d | mean = %5.2f | precision = %5.6f | loss = %.3f | total weight = %7.1f | barrier = %6.1f | lr = %.5f"
-                % (
-                    t + 1,
-                    ms_spent,
-                    (mean ** 2).sum(),
-                    precision_print,
-                    weighted_loss,
-                    total_weight,
-                    barrier_x_schedule[t],
-                    get_lr(optimizer),
-                )
-            )
+            # print(
+            #     "steps = %5d | ms = %5d | mean = %5.2f | precision = %5.6f | loss = %.3f | total weight = %7.1f | barrier = %6.1f | lr = %.5f"
+            #     % (
+            #         t + 1,
+            #         ms_spent,
+            #         (mean ** 2).sum(),
+            #         precision_print,
+            #         weighted_loss,
+            #         total_weight,
+            #         barrier_x_schedule[t],
+            #         get_lr(optimizer),
+            #     )
+            # )
 
     final_weights = weights.detach().cpu().numpy()
     final_weights_unnorm = weights_unnorm.detach().cpu().numpy()
