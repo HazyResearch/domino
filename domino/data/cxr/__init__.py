@@ -29,8 +29,8 @@ from domino.vision import score
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
 CXR_STD = 0.24621
-CXR_SIZE = 224
-
+CXR_SIZE = 256
+CROP_SIZE = 224
 
 # @Task.make_task
 def get_cxr_activations(
@@ -66,6 +66,16 @@ def get_cxr_activations(
     elif run_type == "siim":
         model = CXRResnet(model_path=model_path)
         cnn_encoder = model.cnn_encoder
+    elif run_type == "cnc_erm":
+        model = resnet50(num_classes=2, pretrained=False)
+        model.load_state_dict(torch.load(model_path))
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    elif run_type == "cnc_contrastive":
+        model = resnet50(num_classes=2, pretrained=False)
+        model.load_state_dict(torch.load(model_path)["model_state_dict"])
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
 
     act_dp = score(
         model=model,
@@ -184,15 +194,26 @@ def cxr_transform_pil(volume: MedicalVolumeCell):
     return Image.fromarray(np.uint8(array))
 
 
-def cxr_transform(volume: MedicalVolumeCell):
+def cxr_transform(volume: MedicalVolumeCell, train=False):
     img = cxr_transform_pil(volume)
-    img = transforms.Compose(
-        [
-            transforms.Resize([CXR_SIZE, CXR_SIZE]),
-            transforms.ToTensor(),
-            transforms.Normalize(CXR_MEAN, CXR_STD),
-        ]
-    )(img)
+    if train:
+        img = transforms.Compose(
+            [
+                transforms.Resize(CXR_SIZE),
+                transforms.RandomCrop(CROP_SIZE),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
+    else:
+        img = transforms.Compose(
+            [
+                transforms.Resize([CROP_SIZE, CROP_SIZE]),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
     return img.repeat([3, 1, 1])
 
 
@@ -226,16 +247,36 @@ def rle2mask(rle, width, height):
 def get_dp(df: pd.DataFrame):
     dp = DataPanel.from_pandas(df)
     loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    val_split = np.array(dp["split"].data != "train").astype(bool)
+    input_col = [
+        MedicalVolumeCell(
+            paths=dp["filepath"][ndx],
+            loader=loader,
+            transform=partial(cxr_transform, train=dp["split"][ndx] == "train"),
+        )
+        for ndx in range(len(dp))
+    ]
+    # input_col[val_split] = MedicalVolumeCell(
+    #     paths=list(dp["filepath"][val_split].data),
+    #     loader=loader,
+    #     transform=cxr_transform,
+    # )
+    # dp.add_column(
+    #     "input",
+    #     dp["filepath"].map(
+    #         lambda x: MedicalVolumeCell(
+    #             paths=x, loader=loader, transform=cxr_transform
+    #         ),
+    #         num_workers=0,
+    #     ),
+    #     overwrite=True,
+    # )
     dp.add_column(
         "input",
-        dp["filepath"].map(
-            lambda x: MedicalVolumeCell(
-                paths=x, loader=loader, transform=cxr_transform
-            ),
-            num_workers=0,
-        ),
+        input_col,
         overwrite=True,
     )
+
     # dp.add_column(
     #     "input2",
     #     dp["filepath"].map(

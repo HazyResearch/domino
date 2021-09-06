@@ -5,12 +5,12 @@ model:
 
 train:
   multiclass: False # if true, then uses subgroup columns as multiclass labels
-  epochs: 50
+  epochs: 10
   batch_size: 32
   lr: 1e-5
   wd: 0.0
   valid_split: test
-  gaze_split: False
+  gaze_split: True
   val_check_interval: 5
   loss:
     criterion: "cross_entropy"
@@ -30,8 +30,8 @@ dataset:
   id_column: "image_id"
   input_column: "input"
   target_column: "pmx"
-  subgroup_columns: []
-  datapanel_pth: "/media/4tb_hdd/siim/mimicscribble_dp_08-30-21.dp"
+  subgroup_columns: ["chest_tube"]
+  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_09-05-21.dp"
 
 wandb:
   project: domino

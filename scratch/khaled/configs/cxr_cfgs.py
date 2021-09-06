@@ -1,7 +1,21 @@
 from configs.generate import flag, prod
 
 
-def gdro_tube_sweep():
+def erm_sweep():
+
+    sweep = prod(
+        [
+            flag("train.wd", [0, 1e-5, 1e-3, 1e-1]),
+            flag("train.loss.gdro", [False]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+            flag("train.gaze_split", [True]),
+        ]
+    )
+
+    return sweep
+
+
+def gdro_sweep():
 
     sweep = prod(
         [
