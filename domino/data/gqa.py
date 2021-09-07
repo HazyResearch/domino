@@ -1,23 +1,16 @@
-import meerkat as mk
 import os
+
+import meerkat as mk
 import terra
+from meerkat.contrib.gqa import read_gqa_dps
+
 from domino.utils import split_dp
 
-DATASET_DIR = "/home/common/datasets/visual-genome"
-
-
-def read_vg(dataset_dir: str = DATASET_DIR):
-    image_dp = mk.DataPanel.read(os.path.join(dataset_dir, "images.mk"))
-    object_dp = mk.DataPanel.read(os.path.join(dataset_dir, "objects.mk"))
-    attr_dp = mk.DataPanel.read(os.path.join(dataset_dir, "attributes.mk"))
-    object_dp = image_dp.merge(object_dp, on="image_id")
-    attr_dp = object_dp.merge(right=attr_dp, on="object_id")
-    object_dp["object_image"] = object_dp.to_lambda(crop_object)
-    return image_dp, attr_dp, object_dp
+DATASET_DIR = "/home/common/datasets/gqa"
 
 
 @terra.Task.make_task
-def split_vg(
+def split_gqa(
     dataset_dir: str = DATASET_DIR,
     train_frac: float = 0.7,
     valid_frac: float = 0.1,
@@ -26,9 +19,9 @@ def split_vg(
     salt: str = "",
     run_dir: str = None,
 ):
-    image_dp, _, _ = read_vg(dataset_dir=dataset_dir)
+    dps = read_gqa_dps(dataset_dir=dataset_dir)
     return split_dp(
-        image_dp,
+        dps["images"],
         split_on="image_id",
         train_frac=train_frac,
         valid_frac=valid_frac,
