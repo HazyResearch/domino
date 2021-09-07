@@ -13,7 +13,7 @@ spec:
         role: nfs-server
     spec:
       nodeSelector:
-        cloud.google.com/gke-nodepool: main-pool # Make sure this is the name of the non-GPU pool in your cluster!
+        cloud.google.com/gke-nodepool: io-nfs # Make sure this is the name of the non-GPU pool in your cluster!
       containers:
       - name: nfs-server
         image: gcr.io/google_containers/volume-nfs:0.8
