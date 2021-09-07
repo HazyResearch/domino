@@ -6,7 +6,7 @@ from domino.data.cxr import build_cxr_df, get_dp
 from domino.vision import train
 
 
-@terra.Task.make_task
+@terra.Task
 def train_siim(
     df: pd.DataFrame, target_column: str, input_column: str, run_dir: str = None
 ):

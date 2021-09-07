@@ -19,7 +19,7 @@ from domino.data.celeb import build_celeb_df, get_celeb_dp
 from domino.vision import Classifier
 
 
-@Task.make_task
+@Task
 def cache_activations(
     model_df: pd.DataFrame, splits: List[str] = None, run_dir: str = None
 ):

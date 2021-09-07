@@ -19,7 +19,7 @@ from domino.data.celeb import build_celeb_df, get_celeb_dp
 from domino.vision import Classifier
 
 
-@Task.make_task
+@Task
 def score_few_shot(
     model_df: pd.DataFrame,
     targets: List[str],
@@ -76,7 +76,7 @@ def score_few_shot(
     return pd.DataFrame(results)
 
 
-@Task.make_task
+@Task
 def plot_score_few_shot(df: pd.DataFrame, run_dir=None):
     plt.figure(figsize=(25, 3))
     pivot_df = df.pivot(columns="model_target", index="few_shot_target", values="auroc")
@@ -85,7 +85,7 @@ def plot_score_few_shot(df: pd.DataFrame, run_dir=None):
     return pivot_df
 
 
-@Task.make_task
+@Task
 def plot_diff(
     few_dfs: List[pd.DataFrame], scribble_dfs: List[pd.DataFrame], run_dir=None
 ):

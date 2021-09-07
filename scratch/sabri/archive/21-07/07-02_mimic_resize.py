@@ -10,7 +10,7 @@ from torchvision.transforms import Compose, Lambda, Resize
 from domino.data.mimic import build_dp
 
 
-@terra.Task.make_task
+@terra.Task
 def resize_mimic(dp: str, size: int = 512, run_dir: str = None):
     dp = dp.lz[np.isin(dp["ViewPosition"].data, ["PA", "AP"])]
 

@@ -5,7 +5,7 @@ from terra import Task
 from terra.io import json_load
 
 
-@Task.make_task
+@Task
 def collect_models(root_dir: str = "/home/common/models/celeba/_runs", run_dir=None):
     models = []
     for run_id in os.listdir(root_dir):

@@ -1,6 +1,8 @@
-import meerkat as mk
 import os
+
+import meerkat as mk
 import terra
+
 from domino.utils import split_dp
 
 DATASET_DIR = "/home/common/datasets/visual-genome"
@@ -16,7 +18,7 @@ def read_vg(dataset_dir: str = DATASET_DIR):
     return image_dp, attr_dp, object_dp
 
 
-@terra.Task.make_task
+@terra.Task
 def split_vg(
     dataset_dir: str = DATASET_DIR,
     train_frac: float = 0.7,

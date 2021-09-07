@@ -10,7 +10,26 @@ from tqdm import tqdm
 
 from domino.data.gqa import ATTRIBUTE_GROUPS, DATASET_DIR, split_gqa
 
-from . import CorrelationImpossibleError, induce_correlation
+from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
+
+
+@terra.Task.make(no_dump_args={"gqa_dps"})
+def build_slice(
+    slice_category: str,
+    split_dp: mk.DataPanel,
+    synthetic_preds: bool = False,
+    **kwargs,
+) -> mk.DataPanel:
+    if slice_category == "correlation":
+        dp = build_correlation_slice(**kwargs)
+    elif slice_category == "rare":
+        dp = build_rare_slice(**kwargs)
+
+    if synthetic_preds:
+        dp["pred"] = synthesize_preds(dp)
+
+    return dp.merge(split_dp, on="image_id")
+
 
 TASKS = [
     {
@@ -61,7 +80,90 @@ TASKS = [
             {"name": "sleepers", "attributes": ["sleeping"], "objects": []},
             {"name": "sitters", "attributes": ["sitting"], "objects": []},
         ],
-    }
+    },
+    {
+        "target_name": "farm_animal",
+        "target_objects": [
+            "horse",
+            "dog",
+            "cat",
+            "chicken",
+            "cow",
+            "sheep",
+            "goat",
+            "bull",
+        ],
+        "min_h": 20,
+        "min_w": 20,
+        "slices": [
+            {"name": "cat", "attributes": [], "objects": ["cat"]},
+            {"name": "horse", "attributes": [], "objects": ["horse"]},
+            {"name": "cow", "attributes": [], "objects": ["cow"]},
+            {"name": "sheep", "attributes": [], "objects": ["sheep"]},
+            {"name": "goat", "attributes": [], "objects": ["goat"]},
+            {"name": "chicken", "attributes": [], "objects": ["chicken"]},
+        ],
+    },
+    {
+        "target_name": "vehicle",
+        "target_objects": [
+            "plane",
+            "car",
+            "truck",
+            "bike",
+            "motorcycle",
+            "train",
+            "ship",
+            "helicopter",
+        ],
+        "min_h": 20,
+        "min_w": 20,
+        "slices": [
+            {"name": "plane", "attributes": [], "objects": ["plane"]},
+            {"name": "helicopter", "attributes": [], "objects": ["helicopter"]},
+            {"name": "bike", "attributes": [], "objects": ["bike"]},
+            {"name": "motorcycle", "attributes": [], "objects": ["motorcycle"]},
+            {"name": "boat", "attributes": [], "objects": ["boat", "ship"]},
+        ],
+    },
+    {
+        "target_name": "clothing",
+        "target_objects": [
+            "shirt",
+            "t-shirt",
+            "skirt",
+            "scarf",
+            "tie",
+            "pants",
+            "boot",
+            "boots",
+            "shorts",
+            "jacket",
+            "coat",
+            "sweater",
+            "sweatshirt",
+            "dress",
+            "hat",
+            "shoe",
+            "shoes",
+            "glove",
+            "gloves",
+            "suit",
+        ],
+        "min_h": 20,
+        "min_w": 20,
+        "slices": [
+            {
+                "name": "shoe",
+                "attributes": [],
+                "objects": ["shoes", "boots", "boot", "shoe"],
+            },
+            {"name": "glove", "attributes": [], "objects": ["glove", "gloves"]},
+            {"name": "dress", "attributes": [], "objects": ["dress"]},
+            {"name": "coat", "attributes": [], "objects": ["coat", "jacket"]},
+            {"name": "hat", "attributes": [], "objects": ["hat", "helmet"]},
+        ],
+    },
 ]
 
 
@@ -74,7 +176,6 @@ def build_rare_slice(
     n: int,
     min_h: int,
     min_w: int,
-    split_run_id: int,
     dataset_dir: str = DATASET_DIR,
     gqa_dps: Mapping[str, mk.DataPanel] = None,
     **kwargs,
@@ -83,6 +184,7 @@ def build_rare_slice(
     attr_dp, object_dp = dps["attributes"], dps["objects"].view()
 
     object_dp = object_dp.lz[(object_dp["h"] > min_h) | (object_dp["w"] < min_w)]
+
     object_dp["target"] = object_dp["name"].isin(target_objects).astype(int)
 
     object_ids = mk.concat(
@@ -96,18 +198,10 @@ def build_rare_slice(
         == 1
     ).astype(int)
 
-    preprocessing = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    object_dp["input"] = object_dp["object_image"].to_lambda(preprocessing)
+    object_dp["input"] = object_dp["object_image"]
     object_dp["id"] = object_dp["object_id"]
-
     n_pos = int(n * target_frac)
+
     dp = object_dp.lz[
         np.random.permutation(
             np.concatenate(
@@ -131,11 +225,10 @@ def build_rare_slice(
             )
         )
     ]
+    return dp
 
-    return dp.merge(split_gqa.out(split_run_id, load=True), on="image_id")
 
-
-@terra.Task.make_task
+@terra.Task
 def collect_rare_slices(
     tasks: Sequence[dict],
     min_slice_frac: float = 0.005,
@@ -143,7 +236,6 @@ def collect_rare_slices(
     num_frac: int = 5,
     n: int = 40_000,
     dataset_dir: str = DATASET_DIR,
-    run_dir: str = None,
 ):
     tasks = tasks.copy()
     dps = read_gqa_dps(dataset_dir=dataset_dir)
@@ -165,10 +257,14 @@ def collect_rare_slices(
                     ],
                 )
             )
-            slice = np.isin(dp["object_id"], object_ids).astype(int) & targets == 1
-
-            target_frac = min(0.5, slice.sum() / int(max_slice_frac * n))
-            assert int(target_frac * n) <= targets.sum()
+            in_slice = np.isin(dp["object_id"], object_ids).astype(int) & targets == 1
+            out_slice = (in_slice == 0) & (targets == 1)
+            target_frac = min(
+                0.5,
+                in_slice.sum() / int(max_slice_frac * n),
+                out_slice.sum() / int((1 - min_slice_frac) * n),
+                targets.sum() / n,
+            )
             settings.extend(
                 [
                     {
@@ -195,7 +291,6 @@ def build_correlation_slice(
     corr: float,
     n: int,
     dataset_dir: str = DATASET_DIR,
-    split_run_id: int = None,
     **kwargs,
 ):
     group = ATTRIBUTE_GROUPS[group]
@@ -221,25 +316,16 @@ def build_correlation_slice(
         match_mu=True,
         n=n,
     )
-
-    preprocessing = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ]
-    )
-    object_dp["input"] = object_dp["object_image"].to_lambda(preprocessing)
+    object_dp["input"] = object_dp["object_image"]
     object_dp["id"] = object_dp["object_id"]
 
     object_dp = object_dp.lz[indices]
 
     # merge in split
-    return object_dp.merge(split_gqa.out(split_run_id, load=True), on="image_id")
+    return object_dp
 
 
-@terra.Task.make_task
+@terra.Task
 def collect_correlation_slices(
     dataset_dir: str = DATASET_DIR,
     min_dataset_size: int = 40_000,

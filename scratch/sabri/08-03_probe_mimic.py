@@ -10,7 +10,7 @@ from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
 
-@terra.Task.make_task
+@terra.Task
 def probe_layers(
     act_dp: mk.DataPanel,
     model_target: str,

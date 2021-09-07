@@ -31,7 +31,7 @@ CXR_STD = 0.24621
 CXR_SIZE = 224
 
 
-# @Task.make_task
+# @Task
 def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     model = CXRResnet(model_path=model_path)
     act_dp = score(
@@ -47,7 +47,7 @@ def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
     return act_dp
 
 
-@Task.make_task
+@Task
 def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # hypers for CXR gaze features:
@@ -183,7 +183,7 @@ def get_dp(df: pd.DataFrame):
     return dp
 
 
-@Task.make_task
+@Task
 def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))

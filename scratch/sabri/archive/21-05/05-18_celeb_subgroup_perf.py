@@ -9,7 +9,7 @@ from domino.data.celeb import ATTRIBUTES, build_celeb_df, get_celeb_dp
 from domino.utils import auroc_bootstrap_ci
 
 
-@terra.Task.make_task
+@terra.Task
 def get_model_predictions(
     model_df: pd.DataFrame,
     celeb_df: pd.DataFrame,
@@ -34,7 +34,7 @@ def get_model_predictions(
     return celeb_dp
 
 
-@terra.Task.make_task
+@terra.Task
 def compute_celeb_subgroup_perf(
     preds_dp: DataPanel, bs_num_iter: int = 100, run_dir=True
 ):

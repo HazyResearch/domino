@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial, reduce, wraps
 from inspect import getcallargs
-from typing import Collection, Dict, Mapping, Optional, Sequence, Union
+from typing import Collection, Dict, Mapping, MutableMapping, Optional, Sequence, Union
 
 import meerkat as mk
 import numpy as np
@@ -243,28 +243,6 @@ def auroc_bootstrap_ci(
     }
 
 
-def compute_bootstrap_ci(
-    sample: np.ndarray,
-    num_iter: int = 10000,
-    alpha: float = 0.05,
-    estimator: Union[callable, str] = "mean",
-):
-    """Compute an empirical confidence using bootstrap resampling."""
-    bs_samples = np.random.choice(sample, (sample.shape[0], num_iter))
-    if estimator == "mean":
-        bs_sample_estimates = bs_samples.mean(axis=0)
-        sample_estimate = sample.mean(axis=0)
-    else:
-        bs_sample_estimates = np.apply_along_axis(estimator, axis=0, arr=bs_samples)
-        sample_estimate = estimator(sample)
-
-    return {
-        "sample_estimate": sample_estimate,
-        "lower": np.percentile(bs_sample_estimates, alpha * 100),
-        "upper": np.percentile(bs_sample_estimates, 100 * (1 - alpha)),
-    }
-
-
 def format_ci(df: pd.DataFrame):
     return df.apply(lambda x: f"{x.sample_mean:0.} ({x.lower}, {x.upper})", axis=1)
 
@@ -347,3 +325,17 @@ def get_data_dir(nb_dir: str = None):
     data_dir = os.path.join(nb_dir, "data", dirname)
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
+
+
+def flatten_dict(d, parent_key="", sep="_"):
+    """
+    Source: https://stackoverflow.com/questions/6027558/flatten-nested-dictionaries-compressing-keys
+    """
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)

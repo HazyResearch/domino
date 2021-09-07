@@ -41,7 +41,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
         weights_unnorm = None
         losses = binary_cross_entropy(
             torch.tensor(data_dp["pred"].data),
-            torch.tensor(data_dp["target"]).to(torch.double),
+            torch.tensor(data_dp["target"]).to(torch.float),
             reduction="none",
         ).to(torch.float)
         for slice_idx in range(self.config.n_slices):

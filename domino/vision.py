@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Iterable, List, Mapping, Sequence, Union
+from typing import Iterable, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import pandas as pd
@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
+from meerkat.columns.lambda_column import PIL
 from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
@@ -17,9 +18,30 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
-# from domino.bss import SourceSeparator
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
+
+
+def default_transform(img: PIL.Image.Image):
+    return transforms.Compose(
+        [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )(img)
+
+
+def default_train_transform(img: PIL.Image.Image):
+    return transforms.Compose(
+        [
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )(img)
 
 
 class Classifier(pl.LightningModule, TerraModule):
@@ -30,6 +52,8 @@ class Classifier(pl.LightningModule, TerraModule):
         "arch": "resnet18",
         "pretrained": True,
         "num_classes": 2,
+        "transform": default_transform,
+        "train_transform": default_train_transform,
     }
 
     def __init__(self, config: dict = None):
@@ -174,7 +198,7 @@ def train(
     max_epochs: int = 50,
     samples_per_epoch: int = None,
     gpus: Union[int, Iterable] = 1,
-    num_workers: int = 10,
+    num_workers: int = 6,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
     train_split: str = "train",
@@ -261,6 +285,7 @@ def train(
         )
 
     train_dp = dp.lz[dp["split"] == train_split]
+    train_dp["input"] = train_dp["input"].to_lambda(model.config["train_transform"])
     sampler = None
     if weighted_sampling:
         if isinstance(target_column, Sequence):
@@ -285,8 +310,11 @@ def train(
         shuffle=sampler is None,
         sampler=sampler,
     )
+
+    valid_dp = dp.lz[dp["split"] == valid_split]
+    valid_dp["input"] = valid_dp["input"].to_lambda(model.config["transform"])
     valid_dl = DataLoader(
-        dp.lz[dp["split"] == valid_split],
+        valid_dp,
         batch_size=batch_size,
         num_workers=num_workers,
     )
@@ -307,6 +335,9 @@ def score(
     **kwargs,
 ):
     model.to(device).eval()
+
+    dp = dp.view()
+    dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
 
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""

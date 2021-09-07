@@ -42,7 +42,7 @@ def mimic_transform(img: PIL.Image.Image, resolution: int = 224):
     return transform(img)
 
 
-@terra.Task.make_task
+@terra.Task
 def build_dp(
     dataset_dir: str, gcp_project: str, resize: int = 512, run_dir: str = None, **kwargs
 ):
@@ -92,7 +92,7 @@ def hash_for_split(example_id: str, salt=""):
     return hashed / float(GRANULARITY)
 
 
-@terra.Task.make_task
+@terra.Task
 def split_dp(
     dp: mk.DataPanel,
     train_frac: float = 0.7,

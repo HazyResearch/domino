@@ -9,7 +9,7 @@ from domino.evaluate.linear import induce_correlation
 from domino.evaluate.train import score_linear_slices, score_model
 
 
-@terra.Task.make_task
+@terra.Task
 def compute_auroc_on_slices(model_df: pd.DataFrame, run_dir: str = None):
     df = []
     for row in tqdm(

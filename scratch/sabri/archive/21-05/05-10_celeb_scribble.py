@@ -55,7 +55,7 @@ def pool_feedback(x: DataPanel):
     }
 
 
-@Task.make_task
+@Task
 def score_scribbles(
     model_df: pd.DataFrame,
     scribble_run_ids: List[int],
@@ -136,7 +136,7 @@ def score_scribbles(
     return pd.DataFrame(results)
 
 
-@Task.make_task
+@Task
 def plot_score_scribbles(dfs: List[pd.DataFrame], run_dir=None):
     df = pd.concat(dfs)
     plt.figure(figsize=(25, 3))

@@ -8,7 +8,7 @@ from domino.data.mimic import CHEXPERT_COLUMNS, build_dp
 from domino.vision import train
 
 
-@terra.Task.make_task
+@terra.Task
 def train_mimic(
     dp: mk.DataPanel,
     input_column: str,
@@ -37,7 +37,7 @@ def train_mimic(
     )
 
 
-@terra.Task.make_task
+@terra.Task
 def tune_mimic(
     dp_run_id: int,
     run_dir: str = None,

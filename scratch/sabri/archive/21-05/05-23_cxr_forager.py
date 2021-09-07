@@ -7,7 +7,7 @@ from terra import Task
 from domino.data.cxr_tube import build_cxr_df, get_dp
 
 
-@Task.make_task
+@Task
 def convert_cxr_to_png(
     df: pd.DataFrame, dst_dir: str, image_ids: list = None, run_dir: str = None
 ):

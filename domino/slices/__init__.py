@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Tuple, Union
 
 import meerkat as mk
 import numpy as np
@@ -110,3 +110,23 @@ def induce_correlation(
     )
     np.random.shuffle(indices)
     return indices
+
+
+def synthesize_preds(
+    dp: mk.DataPanel,
+    pos_ab: Tuple[float] = (1.5, 0.5),
+    neg_ab: Tuple[float] = (0.5, 1.5),
+    slice_pos_ab: Tuple[float] = (0.5, 0.5),
+    slice_neg_ab: Tuple[float] = (0.5, 0.5),
+):
+    preds = np.zeros(len(dp))
+    preds[dp["target"] == 1] = np.random.beta(*pos_ab, dp["target"].sum())
+
+    mask = dp["target"] == 1 & dp["slice"] == 1
+    preds[mask] = np.random.beta(*slice_pos_ab, mask.sum())
+
+    preds[dp["target"] == 0] = np.random.beta(*neg_ab, (1 - dp["target"]).sum())
+
+    mask = dp["target"] == 0 & dp["slice"] == 1
+    preds[mask] = np.random.beta(*slice_neg_ab, mask.sum())
+    return preds

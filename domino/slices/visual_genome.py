@@ -1,11 +1,14 @@
 import uuid
+
 import meerkat as mk
 import numpy as np
-from . import induce_correlation, CorrelationImpossibleError
-from domino.data.visual_genome import read_vg, split_vg, DATASET_DIR, ATTRIBUTE_GROUPS
-from tqdm import tqdm
 import terra
 from torchvision import transforms
+from tqdm import tqdm
+
+from domino.data.visual_genome import ATTRIBUTE_GROUPS, DATASET_DIR, read_vg, split_vg
+
+from . import CorrelationImpossibleError, induce_correlation
 
 
 def build_correlation_slice(
@@ -58,7 +61,7 @@ def build_correlation_slice(
     return object_dp.merge(split_vg.out(split_run_id, load=True), on="image_id")
 
 
-@terra.Task.make_task
+@terra.Task
 def collect_correlation_slices(
     dataset_dir: str = DATASET_DIR,
     min_dataset_size: int = 40_000,
