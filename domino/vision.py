@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Iterable, List, Mapping, Union
+from typing import Dict, Iterable, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import numpy as np
@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
+from meerkat.nn import ClassificationOutputColumn
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -353,7 +354,9 @@ def train(
     ckpt_metric = "valid_accuracy"
     if len(subgroup_columns) > 0:
         ckpt_metric = "robust val acc"
-    checkpoint_callback = ModelCheckpoint(monitor=ckpt_metric, mode="max")
+    checkpoint_callback = ModelCheckpoint(
+        monitor=ckpt_metric, mode="max", every_n_train_steps=100
+    )
     trainer = pl.Trainer(
         gpus=gpus,
         max_epochs=max_epochs,
@@ -385,8 +388,10 @@ def train(
             group_mask = train_dp["group_id"] == group_i
             # higher weight if rare subclass
             weights[group_mask] = (
-                len(train_dp) - (train_dp["group_id"] == group_i).sum()
-            ) / len(train_dp)
+                1
+                + (len(train_dp) - (train_dp["group_id"] == group_i).sum())
+                / len(train_dp)
+            ) ** config["train"]["loss"]["reweight_class_alpha"]
 
         samples_per_epoch = (
             len(train_dp) if samples_per_epoch is None else samples_per_epoch
@@ -413,11 +418,67 @@ def train(
     return model
 
 
+# def score(
+#     model: nn.Module,
+#     dp: mk.DataPanel,
+#     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+#     input_column: str = "input",
+#     device: int = 0,
+#     run_dir: str = None,
+#     **kwargs,
+# ):
+#     model.to(device).eval()
+
+#     class ActivationExtractor:
+#         """Class for extracting activations a targetted intermediate layer"""
+
+#         def __init__(self):
+#             self.activation = None
+
+#         def add_hook(self, module, input, output):
+#             self.activation = output
+
+#     layer_to_extractor = {}
+#     if layers is not None:
+#         for name, layer in layers.items():
+#             extractor = ActivationExtractor()
+#             layer.register_forward_hook(extractor.add_hook)
+#             layer_to_extractor[name] = extractor
+
+#     @torch.no_grad()
+#     def _score(batch: mk.DataPanel):
+#         # x = torch.stack(batch[input_column].data).to(device)
+#         x = batch[input_column].data.to(device)
+#         out = model(x)  # Run forward pass
+
+#         return {
+#             "output": mknn.ClassificationOutputColumn(
+#                 logits=out.cpu(), multi_label=False
+#             ),
+#             **{
+#                 f"activation_{name}": extractor.activation.cpu()
+#                 for name, extractor in layer_to_extractor.items()
+#             },
+#         }
+
+#     dp = dp.update(
+#         function=_score,
+#         is_batched_fn=True,
+#         pbar=True,
+#         input_columns=[input_column],
+#         materialize=True,
+#         **kwargs,
+#     )
+#     return dp
+
+
 def score(
     model: nn.Module,
     dp: mk.DataPanel,
-    layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+    layers: Mapping[str, nn.Module] = None,
+    reduction_fns: Sequence[callable] = None,
     input_column: str = "input",
+    pbar: bool = True,
     device: int = 0,
     run_dir: str = None,
     **kwargs,
@@ -427,31 +488,39 @@ def score(
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""
 
-        def __init__(self):
+        def __init__(self, reduction_fn: callable = None):
             self.activation = None
+            self.reduction_fn = reduction_fn
 
         def add_hook(self, module, input, output):
+            if self.reduction_fn is not None:
+                output = self.reduction_fn(output)
             self.activation = output
 
     layer_to_extractor = {}
+
     if layers is not None:
         for name, layer in layers.items():
-            extractor = ActivationExtractor()
-            layer.register_forward_hook(extractor.add_hook)
-            layer_to_extractor[name] = extractor
+            if reduction_fns is not None:
+                for reduction_fn in reduction_fns:
+                    extractor = ActivationExtractor(reduction_fn=reduction_fn)
+                    layer.register_forward_hook(extractor.add_hook)
+                    layer_to_extractor[name] = extractor
+                    # layer_to_extractor[f"{name}_{reduction_fn.__name__}"] = extractor
+            else:
+                extractor = ActivationExtractor()
+                layer.register_forward_hook(extractor.add_hook)
+                layer_to_extractor[name] = extractor
 
     @torch.no_grad()
     def _score(batch: mk.DataPanel):
-        # x = torch.stack(batch[input_column].data).to(device)
         x = batch[input_column].data.to(device)
         out = model(x)  # Run forward pass
 
         return {
-            "output": mk.ClassificationOutputColumn(
-                logits=out.cpu(), multi_label=False
-            ),
+            "output": ClassificationOutputColumn(logits=out.cpu(), multi_label=False),
             **{
-                f"activation_{name}": extractor.activation.cpu()
+                name: extractor.activation.cpu()
                 for name, extractor in layer_to_extractor.items()
             },
         }
@@ -459,9 +528,8 @@ def score(
     dp = dp.update(
         function=_score,
         is_batched_fn=True,
-        pbar=True,
+        pbar=pbar,
         input_columns=[input_column],
-        materialize=True,
         **kwargs,
     )
     return dp

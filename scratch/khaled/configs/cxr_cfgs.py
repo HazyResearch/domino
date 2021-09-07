@@ -29,6 +29,37 @@ def gdro_sweep():
     return sweep
 
 
+def multiclass_sweep():
+
+    sweep = prod(
+        [
+            flag("train.wd", [0, 1e-5, 1e-3, 1e-1]),
+            flag("train.multiclass", [True]),
+            flag("train.loss.reweight_class", [True]),
+            flag("train.loss.reweight_class_alpha", [1, 2, 4]),
+            flag("train.gaze_split", [True]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+        ]
+    )
+
+    return sweep
+
+
+def upsampling_sweep():
+
+    sweep = prod(
+        [
+            flag("train.wd", [0, 1e-5, 1e-3, 1e-1]),
+            flag("train.loss.robust_sampler", [True]),
+            flag("train.loss.reweight_class_alpha", [1, 2, 4]),
+            flag("train.gaze_split", [True]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+        ]
+    )
+
+    return sweep
+
+
 def scribble_sweep():
 
     sweep = prod(
@@ -57,28 +88,6 @@ def gazeslicer_time_sweep():
                 ["/media/4tb_hdd/siim/gazeslicer_dp_07-23-21.dp"],
             ),
             flag("dataset.subgroup_columns", [["gazeslicer_time"]]),
-        ]
-    )
-
-    return sweep
-
-
-def multiclass_sweep():
-
-    sweep = prod(
-        [
-            flag("train.epochs", [100]),
-            flag("train.lr", [1e-4]),  # [1e-5, 1e-4, 1e-3]
-            flag("train.wd", [1e-3]),  # [1e-6, 1e-5, 1e-3, 1e-1]
-            flag("train.multiclass", [True]),
-            flag("train.loss.reweight_class", [True]),
-            flag("train.loss.reweight_class_alpha", [1, 2, 5, 10, 20]),
-            flag("train.gaze_split", [True]),
-            flag(
-                "dataset.datapanel_pth",
-                ["/media/4tb_hdd/siim/tubescribble_dp_07-24-21.dp"],
-            ),
-            flag("dataset.subgroup_columns", [["chest_tube"]]),
         ]
     )
 

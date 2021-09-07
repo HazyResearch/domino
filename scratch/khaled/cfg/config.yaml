@@ -5,7 +5,7 @@ model:
 
 train:
   multiclass: False # if true, then uses subgroup columns as multiclass labels
-  epochs: 10
+  epochs: 50
   batch_size: 32
   lr: 1e-5
   wd: 0.0
