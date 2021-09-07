@@ -2,6 +2,7 @@ model:
   model_name: resnet
   arch: resnet50
   dropout: 0
+  resume_ckpt: False
 
 train:
   multiclass: False # if true, then uses subgroup columns as multiclass labels
@@ -31,7 +32,7 @@ dataset:
   input_column: "input"
   target_column: "pmx"
   subgroup_columns: ["chest_tube"]
-  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_09-05-21.dp"
+  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_09-06-21.dp"
 
 wandb:
   project: domino

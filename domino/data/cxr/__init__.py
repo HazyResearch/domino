@@ -99,7 +99,7 @@ def minmax_norm(dict_arr, key):
     return dict_arr
 
 
-@Task.make_task
+# @Task.make_task
 def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # hypers for CXR gaze features:
@@ -143,8 +143,8 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     gaze_df = pd.DataFrame(
         [
             {
-                "gaze_seq": gaze_seq_dict[img_id],
-                "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
+                # "gaze_seq": gaze_seq_dict[img_id],
+                # "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
                 "gaze_max_visit": gaze_feats_dict[img_id]["gaze_max_visit"],
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
                 "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
@@ -189,13 +189,19 @@ class CXRResnet(nn.Module):
         return x
 
 
-def cxr_transform_pil(volume: MedicalVolumeCell):
+def cxr_pil_loader(input_dict):
+    filepath = input_dict["filepath"]
+    loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    volume = loader(filepath)[0]
     array = volume._volume.squeeze()
     return Image.fromarray(np.uint8(array))
 
 
-def cxr_transform(volume: MedicalVolumeCell, train=False):
-    img = cxr_transform_pil(volume)
+def cxr_loader(input_dict):
+    train = input_dict["split"] == "train"
+    # loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    # volume = loader(filepath)
+    img = cxr_pil_loader(input_dict)
     if train:
         img = transforms.Compose(
             [
@@ -217,18 +223,6 @@ def cxr_transform(volume: MedicalVolumeCell, train=False):
     return img.repeat([3, 1, 1])
 
 
-def cxr_transform2(volume: MedicalVolumeCell):
-    img = cxr_transform_pil(volume)
-    img = transforms.Compose(
-        [
-            transforms.Resize([2 * CXR_SIZE, 2 * CXR_SIZE]),
-            transforms.ToTensor(),
-            transforms.Normalize(CXR_MEAN, CXR_STD),
-        ]
-    )(img)
-    return img.repeat([3, 1, 1])
-
-
 def rle2mask(rle, width, height):
     mask = np.zeros(width * height)
     array = np.asarray([int(x) for x in rle.split()])
@@ -246,61 +240,25 @@ def rle2mask(rle, width, height):
 
 def get_dp(df: pd.DataFrame):
     dp = DataPanel.from_pandas(df)
-    loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
-    val_split = np.array(dp["split"].data != "train").astype(bool)
-    input_col = [
-        MedicalVolumeCell(
-            paths=dp["filepath"][ndx],
-            loader=loader,
-            transform=partial(cxr_transform, train=dp["split"][ndx] == "train"),
-        )
-        for ndx in range(len(dp))
-    ]
-    # input_col[val_split] = MedicalVolumeCell(
-    #     paths=list(dp["filepath"][val_split].data),
-    #     loader=loader,
-    #     transform=cxr_transform,
-    # )
-    # dp.add_column(
-    #     "input",
-    #     dp["filepath"].map(
-    #         lambda x: MedicalVolumeCell(
-    #             paths=x, loader=loader, transform=cxr_transform
-    #         ),
-    #         num_workers=0,
-    #     ),
-    #     overwrite=True,
-    # )
+
+    input_col = dp[["filepath", "split"]].to_lambda(fn=cxr_loader)
     dp.add_column(
         "input",
         input_col,
         overwrite=True,
     )
 
-    # dp.add_column(
-    #     "input2",
-    #     dp["filepath"].map(
-    #         lambda x: MedicalVolumeCell(
-    #             paths=x, loader=loader, transform=cxr_transform2
-    #         ),
-    #         num_workers=0,
-    #     ),
-    #     overwrite=True,
-    # )
+    img_col = dp[["filepath"]].to_lambda(fn=cxr_pil_loader)
     dp.add_column(
         "img",
-        dp["filepath"].map(
-            lambda x: MedicalVolumeCell(
-                paths=x, loader=loader, transform=cxr_transform_pil
-            ),
-            num_workers=0,
-        ),
+        img_col,
         overwrite=True,
     )
+
     return dp
 
 
-@Task.make_task
+# @Task.make_task
 def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))
@@ -354,8 +312,8 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     df.split = df.split.fillna("train")
 
     # integrate gaze features
-    create_gaze_df(root_dir)
-    gaze_df = create_gaze_df.out(load=True)
+    gaze_df = create_gaze_df(root_dir)
+    # gaze_df = create_gaze_df.out(load=True)
     df = df.merge(gaze_df, how="left", on="image_id")
 
     return df

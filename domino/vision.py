@@ -229,10 +229,8 @@ def train(
     gpus: Union[int, Iterable] = 1,
     num_workers: int = 10,
     batch_size: int = 16,
-    ckpt_monitor: str = "valid_accuracy",
     train_split: str = "train",
     valid_split: str = "valid",
-    wandb_config: dict = None,
     weighted_sampling: bool = False,
     seed: int = 123,
     **kwargs,
@@ -245,15 +243,18 @@ def train(
     train_mask = dp["split"].data == train_split
     if config["train"]["gaze_split"]:
         # gaze train split is one where chest tube labels exist
-        train_mask = np.logical_and(train_mask, ~np.isnan(dp["chest_tube"].data))
+        train_mask = np.logical_and(
+            train_mask, dp["chest_tube"].data.astype(str) != "nan"
+        )
 
     subgroup_columns = config["dataset"]["subgroup_columns"]
     if len(subgroup_columns) > 0:
-        group_ids = dp[target_column]
+        group_ids = dp[target_column].data
         for i in range(len(subgroup_columns)):
             group_ids = group_ids + (2 ** (i + 1)) * dp[subgroup_columns[i]]
     else:
-        group_ids = dp[target_column]
+        group_ids = dp[target_column].data
+    group_ids[np.isnan(group_ids)] = -1
     if multiclass:
         # make sure gdro and robust sampler are off
         assert (
@@ -276,14 +277,6 @@ def train(
 
     train_dp = dp.lz[train_mask]
     val_dp = dp.lz[dp["split"].data == valid_split]
-
-    # HACK
-    if "gaze" in target_column:
-        train_dp["target"] = train_dp["target"].data.astype(np.float32)
-        num_classes = 1
-        n_train = 800
-        val_dp = train_dp[n_train:]
-        train_dp = train_dp[:n_train]
 
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
@@ -340,7 +333,12 @@ def train(
     if model is None:
         config = {} if config is None else config
         config["dataset"]["num_classes"] = num_classes
-        model = Classifier(config)
+        if config["model"]["resume_ckpt"]:
+            model = Classifier.load_from_checkpoint(
+                config["model"]["resume_ckpt"], config
+            )
+        else:
+            model = Classifier(config)
 
     save_dir = get_save_dir(config)
     logger = WandbLogger(
@@ -416,60 +414,6 @@ def train(
     trainer.fit(model, train_dl, valid_dl)
     wandb.finish()
     return model
-
-
-# def score(
-#     model: nn.Module,
-#     dp: mk.DataPanel,
-#     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
-#     input_column: str = "input",
-#     device: int = 0,
-#     run_dir: str = None,
-#     **kwargs,
-# ):
-#     model.to(device).eval()
-
-#     class ActivationExtractor:
-#         """Class for extracting activations a targetted intermediate layer"""
-
-#         def __init__(self):
-#             self.activation = None
-
-#         def add_hook(self, module, input, output):
-#             self.activation = output
-
-#     layer_to_extractor = {}
-#     if layers is not None:
-#         for name, layer in layers.items():
-#             extractor = ActivationExtractor()
-#             layer.register_forward_hook(extractor.add_hook)
-#             layer_to_extractor[name] = extractor
-
-#     @torch.no_grad()
-#     def _score(batch: mk.DataPanel):
-#         # x = torch.stack(batch[input_column].data).to(device)
-#         x = batch[input_column].data.to(device)
-#         out = model(x)  # Run forward pass
-
-#         return {
-#             "output": mknn.ClassificationOutputColumn(
-#                 logits=out.cpu(), multi_label=False
-#             ),
-#             **{
-#                 f"activation_{name}": extractor.activation.cpu()
-#                 for name, extractor in layer_to_extractor.items()
-#             },
-#         }
-
-#     dp = dp.update(
-#         function=_score,
-#         is_batched_fn=True,
-#         pbar=True,
-#         input_columns=[input_column],
-#         materialize=True,
-#         **kwargs,
-#     )
-#     return dp
 
 
 def score(
