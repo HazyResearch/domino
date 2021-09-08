@@ -7,25 +7,21 @@ class LossComputer:
         criterion,
         is_robust,
         dataset_config,
-        alpha=None,
-        gamma=0.1,
+        gdro_config,
         adj=None,
-        min_var_weight=0,
-        step_size=0.01,
-        normalize_loss=False,
-        btl=False,
     ):
         """
         Sourced from: https://github.com/kohpangwei/group_DRO/blob/master/loss.py
         """
         self.criterion = criterion
         self.is_robust = is_robust
-        self.gamma = gamma
-        self.alpha = alpha
-        self.min_var_weight = min_var_weight
-        self.step_size = step_size
-        self.normalize_loss = normalize_loss
-        self.btl = btl
+
+        self.alpha = gdro_config["alpha"]
+        self.gamma = gdro_config["gamma"]
+        self.step_size = gdro_config["robust_step_size"]
+        self.normalize_loss = gdro_config["use_normalized_loss"]
+        self.btl = gdro_config["btl"]
+        self.min_var_weight = gdro_config["min_var_weight"]
 
         self.n_groups = dataset_config["n_groups"]
         self.group_counts = torch.Tensor(dataset_config["group_counts"]).cuda()
@@ -38,7 +34,7 @@ class LossComputer:
             self.adj = torch.zeros(self.n_groups).float().cuda()
 
         if is_robust:
-            assert alpha, "alpha must be specified"
+            assert self.alpha, "alpha must be specified"
 
         # quantities maintained throughout training
         self.adv_probs = torch.ones(self.n_groups).cuda() / self.n_groups

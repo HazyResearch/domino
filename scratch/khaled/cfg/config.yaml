@@ -5,11 +5,21 @@ model:
   resume_ckpt: False
 
 train:
+  cnc: False
+  cnc_config:
+    contrastive_dp_pth: False
+    save_dp_dir: False
+    contrastive_weight: 0.8
+    temperature: 0.05
+    num_positive: 10
+    num_negative: 10
+    num_anchor: 10
+    
   multiclass: False # if true, then uses subgroup columns as multiclass labels
   epochs: 50
   batch_size: 32
   lr: 1e-5
-  wd: 0.0
+  wd: 0
   valid_split: test
   gaze_split: True
   val_check_interval: 5
@@ -19,12 +29,13 @@ train:
     reweight_class: False
     robust_sampler: False
     gdro: False
-    alpha: 0.01
-    gamma: 0.1
-    min_var_weight: 0
-    robust_step_size: 0.01
-    use_normalized_loss: False
-    btl: False
+    gdro_config:
+      alpha: 0.01
+      gamma: 0.1
+      min_var_weight: 0
+      robust_step_size: 0.01
+      use_normalized_loss: False
+      btl: False
 
 dataset:
   num_workers: 4

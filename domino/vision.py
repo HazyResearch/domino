@@ -16,6 +16,7 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
+from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger
@@ -45,6 +46,8 @@ def get_save_dir(config):
         method = "multiclass"
     elif "upsampled" in config["dataset"]["datapanel_pth"]:
         method = "upsample"
+    elif config["train"]["cnc"]:
+        method = "cnc"
 
     lr = config["train"]["lr"]
     wd = config["train"]["wd"]
@@ -86,27 +89,24 @@ class Classifier(pl.LightningModule, TerraModule):
 
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
+        self.cnc = config["train"]["cnc"]
+        if self.cnc:
+            self.contrastive_loss = SupervisedContrastiveLoss(
+                config["train"]["cnc_config"]
+            )
+            self.encoder = nn.Sequential(*list(self.model.children())[:-1])
+
         self.train_loss_computer = LossComputer(
             criterion,
             is_robust=loss_cfg["gdro"],
             dataset_config=dataset_cfg["train_dataset_config"],
-            alpha=loss_cfg["alpha"],
-            gamma=loss_cfg["gamma"],
-            step_size=loss_cfg["robust_step_size"],
-            normalize_loss=loss_cfg["use_normalized_loss"],
-            btl=loss_cfg["btl"],
-            min_var_weight=loss_cfg["min_var_weight"],
+            gdro_config=loss_cfg["gdro_config"],
         )
         self.val_loss_computer = LossComputer(
             criterion,
             is_robust=loss_cfg["gdro"],
             dataset_config=dataset_cfg["val_dataset_config"],
-            alpha=loss_cfg["alpha"],
-            gamma=loss_cfg["gamma"],
-            step_size=loss_cfg["robust_step_size"],
-            normalize_loss=loss_cfg["use_normalized_loss"],
-            btl=loss_cfg["btl"],
-            min_var_weight=loss_cfg["min_var_weight"],
+            gdro_config=loss_cfg["gdro_config"],
         )
 
         if config["train"]["loss"]["criterion"] == "mse":
@@ -154,11 +154,47 @@ class Classifier(pl.LightningModule, TerraModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        inputs, targets, group_ids = batch["input"], batch["target"], batch["group_id"]
+        if self.cnc:
+            a_inputs, p_inputs, n_inputs = (
+                batch["a_input"],
+                batch["p_input"],
+                batch["n_input"],
+            )
+            a_targets, p_targets, n_targets = (
+                batch["a_target"],
+                batch["p_target"],
+                batch["n_target"],
+            )
+            a_group_ids, p_group_ids, n_group_ids = (
+                batch["a_group_id"],
+                batch["p_group_id"],
+                batch["n_group_id"],
+            )
+
+            inputs = torch.cat([a_inputs, p_inputs, n_inputs])
+            targets = torch.cat([a_targets, p_targets, n_targets])
+            group_ids = torch.cat([a_group_ids, p_group_ids, n_group_ids])
+
+            contrastive_loss = self.contrastive_loss(
+                self.encoder, (a_inputs, p_inputs, n_inputs)
+            )
+
+        else:
+            inputs, targets, group_ids = (
+                batch["input"],
+                batch["target"],
+                batch["group_id"],
+            )
         outs = self.forward(inputs)
         loss = self.train_loss_computer.loss(outs, targets, group_ids)
         self.train_loss_computer.log_stats(self.log, is_training=True)
         self.log("train_loss", loss, on_step=True, logger=True)
+
+        if self.cnc:
+            cw = self.config["train"]["cnc_config"]["contrastive_weight"]
+            loss = (1 - cw) * loss + cw * contrastive_loss
+            self.log("contrastive_loss", contrastive_loss, on_step=True, logger=True)
+
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -272,6 +308,7 @@ def train(
             "id": dp[id_column],
             "split": dp["split"],
             "group_id": group_ids.astype(int),
+            "filepath": dp["filepath"],
         }
     )
 
@@ -335,7 +372,7 @@ def train(
         config["dataset"]["num_classes"] = num_classes
         if config["model"]["resume_ckpt"]:
             model = Classifier.load_from_checkpoint(
-                config["model"]["resume_ckpt"], config
+                checkpoint_path=config["model"]["resume_ckpt"], config=config
             )
         else:
             model = Classifier(config)
@@ -397,6 +434,31 @@ def train(
         sampler = WeightedRandomSampler(weights=weights, num_samples=samples_per_epoch)
     elif samples_per_epoch is not None:
         sampler = RandomSampler(train_dp, num_samples=samples_per_epoch)
+
+    # if doing CnC, we need to create the contrastive train dataloader
+    if config["train"]["cnc"]:
+        cnc_config = config["train"]["cnc_config"]
+        if cnc_config["contrastive_dp_pth"]:
+            contrastive_loader = mk.DataPanel.read(cnc_config["contrastive_dp_pth"])
+        else:
+            contrastive_loader = load_contrastive_dp(
+                train_dp,
+                cnc_config["num_anchor"],
+                cnc_config["num_positive"],
+                cnc_config["num_negative"],
+            )
+            if cnc_config["save_dp_dir"]:
+                n_a = cnc_config["num_anchor"]
+                n_p = cnc_config["num_positive"]
+                n_n = cnc_config["num_negative"]
+                save_dp_dir = os.path.join(
+                    cnc_config["save_dp_dir"],
+                    f"contrastive_dp_na_{n_a}_np_{n_p}_nn_{n_n}.dp",
+                )
+                mk.DataPanel.write(contrastive_loader, save_dp_dir)
+
+        # train_dp_ = train_dp.copy()
+        train_dp = contrastive_loader
 
     train_dl = DataLoader(
         train_dp,
