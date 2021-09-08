@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Union
 
 import meerkat as mk
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -37,4 +38,3 @@ class SliceDiscoveryMethod(ABC):
     @abstractmethod
     def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
         pass
-

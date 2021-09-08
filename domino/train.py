@@ -12,7 +12,7 @@ from ray import tune
 from torch import nn
 from tqdm import tqdm
 
-from domino.metrics import compute_slice_metrics
+from domino.metrics import compute_model_metrics
 from domino.slices.gqa import build_correlation_slice, build_rare_slice, build_slice
 from domino.utils import nested_getattr
 from domino.vision import Classifier, score, train
@@ -167,7 +167,11 @@ def score_slices(
 
 @terra.Task.make(no_load_args={"split_dp"})
 def synthetic_score_slices(
-    slices_dp: mk.DataPanel, split_dp: mk.DataPanel, run_dir: str = None, **kwargs
+    slices_dp: mk.DataPanel,
+    split_dp: mk.DataPanel,
+    synthetic_kwargs: Mapping[str, object] = None,
+    run_dir: str = None,
+    **kwargs,
 ):
     rows = []
     for config in tqdm(slices_dp):
@@ -175,11 +179,10 @@ def synthetic_score_slices(
             split_dp=split_dp,
             return_run_id=True,
             synthetic_preds=True,
+            synthetic_kwargs=synthetic_kwargs,
             **config,
             **kwargs,
         )
-        config["run_id"] = run_id
-        config
         rows.append(
             {
                 "synthetic_preds": True,

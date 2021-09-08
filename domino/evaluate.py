@@ -8,7 +8,9 @@ import terra
 import torch.nn as nn
 from ray import tune
 from ray.tune.utils.placement_groups import PlacementGroupFactory
+from tqdm import tqdm
 
+from domino.metrics import compute_sdm_metrics
 from domino.sdm.abstract import SliceDiscoveryMethod
 from domino.sdm.george import GeorgeSDM
 from domino.slices.gqa import build_correlation_slice, build_rare_slice, build_slice
@@ -68,7 +70,7 @@ def evaluate_sdms(
             return_run_id=True,
         )
         # need to return metadata to tune so we get it in the analysis dp
-        return {"run_id": run_id, **config["slice"], **config["sdm"]}
+        return {"run_sdm_run_id": run_id, **config["slice"], **config["sdm"]}
 
     analysis = tune.run(
         _evaluate,
@@ -83,7 +85,19 @@ def evaluate_sdms(
         max_failures=3,  # retrying when there is a OOM error is a reasonable strategy
         local_dir=run_dir,
     )
-    return analysis.dataframe()
+    return mk.DataPanel.from_pandas(analysis.dataframe())
+
+
+def score_sdms(evaluate_dp: mk.DataPanel):
+    dfs = []
+    for row in tqdm(evaluate_dp):
+        dp = run_sdm.out(run_id=row["run_sdm_run_id"], load=True)
+        metrics_df = compute_sdm_metrics(dp)
+        metrics_df["target"] = row["target_name"]
+        metrics_df["slice"] = row["name"]
+        metrics_df["run_sdm_run_id"] = row["run_sdm_run_id"]
+        dfs.append(metrics_df)
+    return pd.concat(dfs, axis=0)
 
 
 # @terra.Task

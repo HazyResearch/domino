@@ -2,9 +2,82 @@ from typing import Union
 
 import meerkat as mk
 import numpy as np
-from sklearn.metrics import roc_auc_score
+import pandas as pd
+from scipy.stats import rankdata
+from sklearn.metrics import precision_score, recall_score, roc_auc_score
 
 from domino.utils import flatten_dict, requires_columns
+
+
+def precision_at_k(slice: np.ndarray, pred_slice: np.ndarray, k: int = 25):
+    return precision_score(slice, rankdata(-pred_slice) < k)
+
+
+def recall_at_k(slice: np.ndarray, pred_slice: np.ndarray, k: int = 25):
+    return recall_score(slice, rankdata(-pred_slice) < k)
+
+
+PRECISION_K = [10, 25, 100]
+RECALL_K = [50, 100, 200]
+
+
+def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "slice_idx": slice_idx,
+                "auroc": roc_auc_score(dp["slice"], dp["slices"].data[:, slice_idx])
+                if len(np.unique(dp["slice"])) > 1
+                else np.nan,
+                **{
+                    f"precision_at_{k}": precision_at_k(
+                        dp["slice"], dp["slices"].data[:, slice_idx], k=k
+                    )
+                    if len(np.unique(dp["slice"])) > 1
+                    else np.nan
+                    for k in PRECISION_K
+                },
+                **{
+                    f"recall_at_{k}": recall_at_k(
+                        dp["slice"], dp["slices"].data[:, slice_idx], k=k
+                    )
+                    if len(np.unique(dp["slice"])) > 1
+                    else np.nan
+                    for k in RECALL_K
+                },
+            }
+            for slice_idx in range(dp["slices"].shape[1])
+        ]
+    )
+
+
+@requires_columns(dp_arg="dp", columns=["output", "target", "slice"])
+def compute_model_metrics(
+    dp: mk.DataPanel, num_iter: int = 1000, threshold: float = 0.5, flat: bool = False
+):
+    probs = dp["output"].probabilities().data[:, -1]
+    preds = (probs > threshold).numpy()
+
+    metrics = {
+        name: {
+            "auroc": auroc_bootstrap_ci(
+                dp["target"][mask], probs[mask], num_iter=num_iter
+            ),
+            "recall": recall_bootstrap_ci(
+                dp["target"][mask], preds[mask], num_iter=num_iter
+            ),
+            "precision": precision_bootstrap_ci(
+                dp["target"][mask], preds[mask], num_iter=num_iter
+            ),
+        }
+        for name, mask in [
+            ("overall", np.ones_like(probs, dtype=bool)),
+            ("in_slice", (dp["slice"] == 1) | (dp["target"] == 0)),
+            ("out_slice", dp["slice"] != 1),
+        ]
+    }
+
+    return flatten_dict(metrics) if flat else metrics
 
 
 def auroc_bootstrap_ci(
@@ -61,32 +134,3 @@ def precision_bootstrap_ci(
     targets: np.ndarray, preds: np.ndarray, num_iter: int = 10000, alpha: float = 0.05
 ):
     return compute_bootstrap_ci(targets[preds == 1], num_iter=num_iter, alpha=alpha)
-
-
-@requires_columns(dp_arg="dp", columns=["output", "target", "slice"])
-def compute_slice_metrics(
-    dp: mk.DataPanel, num_iter: int = 1000, threshold: float = 0.5, flat: bool = False
-):
-    probs = dp["output"].probabilities().data[:, -1]
-    preds = (probs > threshold).numpy()
-
-    metrics = {
-        name: {
-            "auroc": auroc_bootstrap_ci(
-                dp["target"][mask], probs[mask], num_iter=num_iter
-            ),
-            "recall": recall_bootstrap_ci(
-                dp["target"][mask], preds[mask], num_iter=num_iter
-            ),
-            "precision": precision_bootstrap_ci(
-                dp["target"][mask], preds[mask], num_iter=num_iter
-            ),
-        }
-        for name, mask in [
-            ("overall", np.ones_like(probs, dtype=bool)),
-            ("in_slice", (dp["slice"] == 1) | (dp["target"] == 0)),
-            ("out_slice", dp["slice"] != 1),
-        ]
-    }
-
-    return flatten_dict(metrics) if flat else metrics

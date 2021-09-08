@@ -40,17 +40,17 @@ class SpotlightSDM(SliceDiscoveryMethod):
         all_weights = []
         weights_unnorm = None
         losses = binary_cross_entropy(
-            torch.tensor(data_dp["pred"].data),
-            torch.tensor(data_dp["target"]).to(torch.float),
+            torch.tensor(data_dp["pred"].data).to(torch.float32),
+            torch.tensor(data_dp["target"]).to(torch.float32),
             reduction="none",
-        ).to(torch.float)
+        )
         for slice_idx in range(self.config.n_slices):
             if slice_idx != 0:
                 weights_unnorm /= max(weights_unnorm)
                 losses *= 1 - weights_unnorm
 
             (weights, weights_unnorm, mean, log_precision) = run_spotlight(
-                embeddings=data_dp[self.config.emb].data,
+                embeddings=torch.tensor(data_dp[self.config.emb].data),
                 losses=losses,
                 min_weight=self.config.min_weight,
                 barrier_x_schedule=np.geomspace(
@@ -60,19 +60,34 @@ class SpotlightSDM(SliceDiscoveryMethod):
                 ),
                 learning_rate=self.config.learning_rate,
             )
-            self.means.append(mean)
-            self.precisions.append(log_precision)
+            self.means.append(mean.cpu().detach())
+            self.precisions.append(log_precision.cpu().detach())
             all_weights.append(weights)
-        return all_weights
+        return self
 
     @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
     def transform(
         self,
         data_dp: mk.DataPanel,
     ):
-        acts = data_dp[self.config.emb].data
+        losses = binary_cross_entropy(
+            torch.tensor(data_dp["pred"]).to(torch.float),
+            torch.tensor(data_dp["target"]).to(torch.float),
+            reduction="none",
+        ).to(torch.float)
         dp = data_dp.view()
-        dp["slices"] = self.pca.transform(acts)
+        all_weights = []
+
+        for slice_idx in range(self.config.n_slices):
+            weights, _, _, _ = md_adversary_weights(
+                mean=self.means[slice_idx],
+                precision=torch.eye(self.means[slice_idx].shape[0])
+                * torch.exp(self.precisions[slice_idx]),
+                x=torch.tensor(data_dp[self.config.emb].data),
+                losses=losses,
+            )
+            all_weights.append(weights.numpy())
+        dp["slices"] = np.stack(all_weights, axis=1)
         return dp
 
 
@@ -185,7 +200,7 @@ def run_spotlight(
     predictions=None,
     prediction_coeff=0.0,
 ):
-    x = embeddings.clone().to(device=device)
+    x = embeddings.clone().to(torch.float).to(device=device)
     y = losses.clone().to(device=device)
     dimensions = x.shape[1]
 

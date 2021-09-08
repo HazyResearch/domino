@@ -337,7 +337,9 @@ def score(
     model.to(device).eval()
 
     dp = dp.view()
-    dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
+
+    if hasattr(model, "config"):
+        dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
 
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""

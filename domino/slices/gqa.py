@@ -18,6 +18,7 @@ def build_slice(
     slice_category: str,
     split_dp: mk.DataPanel,
     synthetic_preds: bool = False,
+    synthetic_kwargs: Mapping[str, object] = None,
     **kwargs,
 ) -> mk.DataPanel:
     if slice_category == "correlation":
@@ -26,7 +27,8 @@ def build_slice(
         dp = build_rare_slice(**kwargs)
 
     if synthetic_preds:
-        dp["pred"] = synthesize_preds(dp)
+        synthetic_kwargs = {} if synthetic_kwargs is None else synthetic_kwargs
+        dp["pred"] = synthesize_preds(dp, **synthetic_kwargs)
 
     return dp.merge(split_dp, on="image_id")
 
@@ -198,6 +200,15 @@ def build_rare_slice(
         == 1
     ).astype(int)
 
+    # Issue: other objects in the same image as an in-slice object may overlap with the
+    # in-slice object (e.g. slice=surfer, other object is wave). This leads to a large
+    # number of objects that exclude any other objects from the images containing
+    # in-slice objects.
+    slice_image_ids = object_dp["image_id"][object_dp["slice"] == 1]
+    object_dp = object_dp.lz[
+        (object_dp["slice"] == 1) | (~np.isin(object_dp["image_id"], slice_image_ids))
+    ]
+
     object_dp["input"] = object_dp["object_image"]
     object_dp["id"] = object_dp["object_id"]
     n_pos = int(n * target_frac)
@@ -258,7 +269,17 @@ def collect_rare_slices(
                 )
             )
             in_slice = np.isin(dp["object_id"], object_ids).astype(int) & targets == 1
-            out_slice = (in_slice == 0) & (targets == 1)
+
+            # Issue: other objects in the same image as an in-slice object may overlap
+            # with the in-slice object (e.g. slice=surfer, other object is wave). This
+            # leads to a large number of objects that exclude any other objects from the
+            # images containing in-slice objects.
+            slice_image_ids = dp["image_id"][in_slice == 1]
+            out_slice = (
+                (in_slice == 0)
+                & (targets == 1)
+                & (~np.isin(dp["image_id"], slice_image_ids))
+            )
             target_frac = min(
                 0.5,
                 in_slice.sum() / int(max_slice_frac * n),
