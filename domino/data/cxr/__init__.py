@@ -58,7 +58,8 @@ def get_cxr_activations(
         )
         state_dict = {}
         for name, key in torch.load(model_path)["state_dict"].items():
-            state_dict[name.split("model.")[-1]] = key
+            if "encoder" not in name:
+                state_dict[name.split("model.")[-1]] = key
 
         model.load_state_dict(state_dict)
         modules = list(model.children())[:-2]

@@ -45,6 +45,26 @@ def multiclass_sweep():
     return sweep
 
 
+def cnc_sweep():
+
+    sweep = prod(
+        [
+            flag("train.wd", [1e-1]),
+            flag("train.cnc", [True]),
+            flag("train.cnc_config.contrastive_weight", [0.75, 0.9]),
+            flag(
+                "train.cnc_config.contrastive_dp_pth",
+                ["/media/4tb_hdd/siim/contrastive_dp_na_-1_np_32_nn_32.dp"],
+            ),
+            flag("train.gaze_split", [True]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+            flag("train.epochs", [1]),
+        ]
+    )
+
+    return sweep
+
+
 def upsampling_sweep():
 
     sweep = prod(

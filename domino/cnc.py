@@ -1,3 +1,6 @@
+import copy
+from functools import partial
+
 import meerkat as mk
 import numpy as np
 import torch
@@ -108,6 +111,54 @@ def load_contrastive_dp(dp, num_a=10, num_p=10, num_n=10):
     )
 
     return contrastive_dp
+
+
+def load_contrastive_dp2(dp, num_a=10, num_p=10, num_n=10):
+    """
+    given a datapanel, create a new dp with
+    (anchor,positive,negative) pairs for CnC
+    using information from "group_id" column
+    """
+
+    positive_entries_0 = dp[dp["group_id"].data == 2]
+    negative_entries_0 = dp[dp["group_id"].data == 1]
+    positive_entries_3 = dp[dp["group_id"].data == 1]
+    negative_entries_3 = dp[dp["group_id"].data == 2]
+
+    # filter out minorty classes since anchors are only from majority classes
+    majority_mask = np.logical_or(dp["group_id"].data == 0, dp["group_id"].data == 3)
+    contrastive_dp = dp[majority_mask]
+
+    contastive_col = contrastive_dp[["group_id"]].to_lambda(
+        fn=partial(
+            contrastive_loader,
+            positive_entries=(positive_entries_0, positive_entries_3),
+            negative_entries=(negative_entries_0, negative_entries_3),
+        )
+    )
+
+    contrastive_dp.add_column(
+        "contrastive_pair",
+        contastive_col,
+        overwrite=True,
+    )
+
+    return contrastive_dp
+
+
+def contrastive_loader(input_dict, positive_entries, negative_entries):
+    positive_entries_0, positive_entries_3 = positive_entries
+    negative_entries_0, negative_entries_3 = negative_entries
+
+    anchor_group_id = input_dict["group_id"]
+    if anchor_group_id == 0:
+        positive_entry = np.random.choice(positive_entries_0, 1)[0]
+        negative_entry = np.random.choice(negative_entries_0, 1)[0]
+    elif anchor_group_id == 3:
+        positive_entry = np.random.choice(positive_entries_3, 1)[0]
+        negative_entry = np.random.choice(negative_entries_3, 1)[0]
+
+    return [positive_entry, negative_entry]
 
 
 CXR_MEAN = 0.48865

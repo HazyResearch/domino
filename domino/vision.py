@@ -16,7 +16,7 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
-from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
+from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp2
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger
@@ -53,6 +53,10 @@ def get_save_dir(config):
     wd = config["train"]["wd"]
     dropout = config["model"]["dropout"]
     save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}/dropout_{dropout}"
+
+    if method == "cnc":
+        cw = config["train"]["cnc_config"]["contrastive_weight"]
+        save_dir += f"/cw_{cw}"
 
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
@@ -155,20 +159,40 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def training_step(self, batch, batch_idx):
         if self.cnc:
-            a_inputs, p_inputs, n_inputs = (
-                batch["a_input"],
-                batch["p_input"],
-                batch["n_input"],
+            # a_inputs, p_inputs, n_inputs = (
+            #     batch["a_input"],
+            #     batch["p_input"],
+            #     batch["n_input"],
+            # )
+            # a_targets, p_targets, n_targets = (
+            #     batch["a_target"],
+            #     batch["p_target"],
+            #     batch["n_target"],
+            # )
+            # a_group_ids, p_group_ids, n_group_ids = (
+            #     batch["a_group_id"],
+            #     batch["p_group_id"],
+            #     batch["n_group_id"],
+            # )
+
+            a_inputs, a_targets, a_group_ids = (
+                batch["input"],
+                batch["target"],
+                batch["group_id"],
             )
-            a_targets, p_targets, n_targets = (
-                batch["a_target"],
-                batch["p_target"],
-                batch["n_target"],
+            p_entries, n_entries = (
+                batch["contrastive_pair"][0],
+                batch["contrastive_pair"][1],
             )
-            a_group_ids, p_group_ids, n_group_ids = (
-                batch["a_group_id"],
-                batch["p_group_id"],
-                batch["n_group_id"],
+            p_inputs, p_targets, p_group_ids = (
+                p_entries["input"],
+                p_entries["target"],
+                p_entries["group_id"],
+            )
+            n_inputs, n_targets, n_group_ids = (
+                n_entries["input"],
+                n_entries["target"],
+                n_entries["group_id"],
             )
 
             inputs = torch.cat([a_inputs, p_inputs, n_inputs])
@@ -441,7 +465,7 @@ def train(
         if cnc_config["contrastive_dp_pth"]:
             contrastive_loader = mk.DataPanel.read(cnc_config["contrastive_dp_pth"])
         else:
-            contrastive_loader = load_contrastive_dp(
+            contrastive_loader = load_contrastive_dp2(
                 train_dp,
                 cnc_config["num_anchor"],
                 cnc_config["num_positive"],
