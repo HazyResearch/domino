@@ -10,11 +10,13 @@ from domino.utils import flatten_dict, requires_columns
 
 
 def precision_at_k(slice: np.ndarray, pred_slice: np.ndarray, k: int = 25):
-    return precision_score(slice, rankdata(-pred_slice) < k)
+    return precision_score(
+        slice, rankdata(-pred_slice, method="ordinal") <= k, zero_division=0
+    )
 
 
 def recall_at_k(slice: np.ndarray, pred_slice: np.ndarray, k: int = 25):
-    return recall_score(slice, rankdata(-pred_slice) < k)
+    return recall_score(slice, rankdata(-pred_slice) <= k, zero_division=0)
 
 
 PRECISION_K = [10, 25, 100]

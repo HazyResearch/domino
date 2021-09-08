@@ -88,6 +88,7 @@ def evaluate_sdms(
     return mk.DataPanel.from_pandas(analysis.dataframe())
 
 
+@terra.Task
 def score_sdms(evaluate_dp: mk.DataPanel):
     dfs = []
     for row in tqdm(evaluate_dp):

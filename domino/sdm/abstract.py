@@ -20,11 +20,11 @@ class SliceDiscoveryMethod(ABC):
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 
-    def __init__(self, config: dict = None):
+    def __init__(self, config: dict = None, **kwargs):
         if config is not None:
-            self.config = self.Config(**config)
+            self.config = self.Config(**config, **kwargs)
         else:
-            self.config = self.Config()
+            self.config = self.Config(**kwargs)
 
     @abstractmethod
     @requires_columns(dp_arg="data_dp", columns=["input", "target", "act", "pred"])

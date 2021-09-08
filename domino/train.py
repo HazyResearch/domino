@@ -10,7 +10,7 @@ import terra
 import torch
 from ray import tune
 from torch import nn
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.gqa import build_correlation_slice, build_rare_slice, build_slice

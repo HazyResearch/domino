@@ -1,11 +1,15 @@
 import warnings
+from dataclasses import dataclass
 from functools import wraps
 
+import meerkat as mk
 import numpy as np
 import sklearn.cluster as cluster
+import torch.nn as nn
 from scipy import linalg
 from scipy.special import logsumexp
-from scipy.stats import multivariate_normal
+from sklearn.decomposition import PCA
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.mixture import GaussianMixture
 from sklearn.mixture._base import _check_X, check_random_state
 from sklearn.mixture._gaussian_mixture import (
@@ -16,58 +20,60 @@ from sklearn.mixture._gaussian_mixture import (
     _estimate_gaussian_covariances_tied,
 )
 from sklearn.preprocessing import label_binarize
+from sklearn.utils.validation import check_is_fitted
 from tqdm import tqdm
 
-
-def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
-    """Estimate the Gaussian distribution parameters.
-
-    Parameters
-    ----------
-    X : array-like of shape (n_samples, n_features)
-        The input data array.
-
-    y: array-like of shape (n_samples, n_classes)
-
-    y_hat: array-like of shpae (n_samples, n_classes)
-
-    resp : array-like of shape (n_samples, n_components)
-        The responsibilities for each data sample in X.
-
-    reg_covar : float
-        The regularization added to the diagonal of the covariance matrices.
-
-    covariance_type : {'full', 'tied', 'diag', 'spherical'}
-        The type of precision matrices.
-
-    Returns
-    -------
-    nk : array-like of shape (n_components,)
-        The numbers of data samples in the current components.
-
-    means : array-like of shape (n_components, n_features)
-        The centers of the current components.
-
-    covariances : array-like
-        The covariance matrix of the current components.
-        The shape depends of the covariance_type.
-    """
-    nk = resp.sum(axis=0) + 10 * np.finfo(resp.dtype).eps  # (n_components, )
-    means = np.dot(resp.T, X) / nk[:, np.newaxis]
-    covariances = {
-        "full": _estimate_gaussian_covariances_full,
-        "tied": _estimate_gaussian_covariances_tied,
-        "diag": _estimate_gaussian_covariances_diag,
-        "spherical": _estimate_gaussian_covariances_spherical,
-    }[covariance_type](resp, X, nk, means, reg_covar)
-
-    y_probs = np.dot(resp.T, y) / nk[:, np.newaxis]  # (n_components, n_classes)
-    y_hat_probs = np.dot(resp.T, y_hat) / nk[:, np.newaxis]  # (n_components, n_classes)
-
-    return nk, means, covariances, y_probs, y_hat_probs
+from domino.sdm.abstract import SliceDiscoveryMethod
+from domino.utils import VariableColumn, requires_columns
 
 
-class ErrorGMM(GaussianMixture):
+class MixtureModelSDM(SliceDiscoveryMethod):
+    @dataclass
+    class Config(SliceDiscoveryMethod.Config):
+        emb: str = "emb"
+        weight_y_log_likelihood: float = 1
+        covariance_type: str = "diag"
+        pca_components: int = 128
+        init_params: str = "error"
+
+    RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 0.5}}
+
+    def __init__(self, config: dict = None, **kwargs):
+        super().__init__(config, **kwargs)
+        self.pca = PCA(n_components=self.config.pca_components)
+        self.gmm = ErrorMixtureModel(
+            n_components=self.config.n_slices,
+            weight_y_log_likelihood=self.config.weight_y_log_likelihood,
+            covariance_type=self.config.covariance_type,
+            init_params=self.config.init_params,
+        )
+
+    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    def fit(
+        self,
+        data_dp: mk.DataPanel,
+        model: nn.Module = None,
+    ):
+        emb = data_dp[self.config.emb].data
+        emb_pca = self.pca.fit_transform(X=emb)
+        self.gmm.fit(X=emb_pca, y=data_dp["target"], y_hat=data_dp["pred"])
+        return self
+
+    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    def transform(
+        self,
+        data_dp: mk.DataPanel,
+    ):
+        emb = data_dp[self.config.emb].data
+        emb_pca = self.pca.transform(X=emb)
+        dp = data_dp.view()
+        dp["slices"] = self.gmm.predict_proba(
+            emb_pca, y=data_dp["target"], y_hat=data_dp["pred"]
+        )
+        return dp
+
+
+class ErrorMixtureModel(GaussianMixture):
     @wraps(GaussianMixture.__init__)
     def __init__(self, *args, weight_y_log_likelihood: float = 1, **kwargs):
         self.weight_y_log_likelihood = weight_y_log_likelihood
@@ -99,6 +105,28 @@ class ErrorGMM(GaussianMixture):
         elif self.init_params == "random":
             resp = random_state.rand(n_samples, self.n_components)
             resp /= resp.sum(axis=1)[:, np.newaxis]
+        elif self.init_params == "error":
+            num_classes = y.shape[-1]
+            if self.n_components < num_classes ** 2:
+                raise ValueError(
+                    "Can't use parameter init 'error' when `n_components` < `num_classes **2`"
+                )
+            resp = np.matmul(y[:, :, np.newaxis], y_hat[:, np.newaxis, :]).reshape(
+                len(y), -1
+            )
+            resp = np.concatenate(
+                [resp]
+                * (
+                    int(self.n_components / (num_classes ** 2))
+                    + (self.n_components % (num_classes ** 2) > 0)
+                ),
+                axis=1,
+            )[:, : self.n_components]
+            resp /= resp.sum(axis=1)[:, np.newaxis]
+
+            resp += random_state.rand(n_samples, self.n_components)
+            resp /= resp.sum(axis=1)[:, np.newaxis]
+
         else:
             raise ValueError(
                 "Unimplemented initialization method '%s'" % self.init_params
@@ -147,11 +175,19 @@ class ErrorGMM(GaussianMixture):
         self.fit_predict(X, y, y_hat)
         return self
 
+    def _preprocess_ys(self, y: np.ndarray = None, y_hat: np.ndarray = None):
+        if y is not None:
+            y = label_binarize(y, classes=np.arange(np.max(y) + 1))
+            if y.shape[-1] == 1:
+                # binary targets transform to a column vector with label_binarize
+                y = np.array([1 - y[:, 0], y[:, 0]]).T
+        if y is not None:
+            if len(y_hat.shape) == 1:
+                y_hat = np.array([1 - y_hat, y_hat]).T
+        return y, y_hat
+
     def fit_predict(self, X, y, y_hat):
-        y = label_binarize(y, classes=np.arange(np.max(y)))[:, :2]
-        if y.shape[-1] == 1:
-            # binary targets transform to a column vector with label_binarize
-            y = np.array([1 - y[:, 0], y[:, 0]]).T
+        y, y_hat = self._preprocess_ys(y, y_hat)
 
         X = _check_X(X, self.n_components, ensure_min_samples=2)
         self._check_n_features(X, reset=True)
@@ -214,6 +250,16 @@ class ErrorGMM(GaussianMixture):
         _, log_resp = self._e_step(X, y, y_hat)
 
         return log_resp.argmax(axis=1)
+
+    def predict_proba(
+        self, X: np.ndarray, y: np.ndarray = None, y_hat: np.ndarray = None
+    ):
+        y, y_hat = self._preprocess_ys(y, y_hat)
+
+        check_is_fitted(self)
+        X = _check_X(X, None, self.means_.shape[1])
+        _, log_resp = self._estimate_log_prob_resp(X, y, y_hat)
+        return np.exp(log_resp)
 
     def _m_step(self, X, y, y_hat, log_resp):
         """M step.
@@ -286,14 +332,17 @@ class ErrorGMM(GaussianMixture):
         return log_prob_norm, log_resp
 
     def _estimate_weighted_log_prob(self, X, y=None, y_hat=None):
-        if (y is None) or (y_hat is None):
-            return self._estimate_log_prob(X) + self._estimate_log_weights()
-        else:
-            return (
-                self._estimate_log_prob(X)
-                + self._estimate_log_weights()
-                + self._estimate_y_log_prob(y, y_hat) * self.weight_y_log_likelihood
+        log_prob = self._estimate_log_prob(X) + self._estimate_log_weights()
+
+        if y is not None:
+            log_prob += self._estimate_y_log_prob(y) * self.weight_y_log_likelihood
+
+        if y_hat is not None:
+            log_prob += (
+                self._estimate_y_hat_log_prob(y_hat) * self.weight_y_log_likelihood
             )
+
+        return log_prob
 
     def _get_parameters(self):
         return (
@@ -334,7 +383,7 @@ class ErrorGMM(GaussianMixture):
         """Return the number of free parameters in the model."""
         return super()._n_parameters() + 2 * self.n_components
 
-    def _estimate_y_log_prob(self, y, y_hat):
+    def _estimate_y_log_prob(self, y):
         """Estimate the Gaussian distribution parameters.
 
         Parameters
@@ -343,12 +392,67 @@ class ErrorGMM(GaussianMixture):
 
         y_hat: array-like of shpae (n_samples, n_classes)
         """
-        # CHECK_THIS
         # add epsilon to avoid "RuntimeWarning: divide by zero encountered in log"
-        likelihood = np.log(
-            np.dot(y, self.y_probs.T) + np.finfo(self.y_probs.dtype).eps
-        )
-        likelihood += np.log(
+        return np.log(np.dot(y, self.y_probs.T) + np.finfo(self.y_probs.dtype).eps)
+
+    def _estimate_y_hat_log_prob(self, y_hat):
+        """Estimate the Gaussian distribution parameters.
+
+        Parameters
+        ----------
+        y: array-like of shape (n_samples, n_classes)
+
+        y_hat: array-like of shpae (n_samples, n_classes)
+        """
+        # add epsilon to avoid "RuntimeWarning: divide by zero encountered in log"
+        return np.log(
             np.dot(y_hat, self.y_hat_probs.T) + np.finfo(self.y_hat_probs.dtype).eps
         )
-        return likelihood
+
+
+def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
+    """Estimate the Gaussian distribution parameters.
+
+    Parameters
+    ----------
+    X : array-like of shape (n_samples, n_features)
+        The input data array.
+
+    y: array-like of shape (n_samples, n_classes)
+
+    y_hat: array-like of shpae (n_samples, n_classes)
+
+    resp : array-like of shape (n_samples, n_components)
+        The responsibilities for each data sample in X.
+
+    reg_covar : float
+        The regularization added to the diagonal of the covariance matrices.
+
+    covariance_type : {'full', 'tied', 'diag', 'spherical'}
+        The type of precision matrices.
+
+    Returns
+    -------
+    nk : array-like of shape (n_components,)
+        The numbers of data samples in the current components.
+
+    means : array-like of shape (n_components, n_features)
+        The centers of the current components.
+
+    covariances : array-like
+        The covariance matrix of the current components.
+        The shape depends of the covariance_type.
+    """
+    nk = resp.sum(axis=0) + 10 * np.finfo(resp.dtype).eps  # (n_components, )
+    means = np.dot(resp.T, X) / nk[:, np.newaxis]
+    covariances = {
+        "full": _estimate_gaussian_covariances_full,
+        "tied": _estimate_gaussian_covariances_tied,
+        "diag": _estimate_gaussian_covariances_diag,
+        "spherical": _estimate_gaussian_covariances_spherical,
+    }[covariance_type](resp, X, nk, means, reg_covar)
+
+    y_probs = np.dot(resp.T, y) / nk[:, np.newaxis]  # (n_components, n_classes)
+    y_hat_probs = np.dot(resp.T, y_hat) / nk[:, np.newaxis]  # (n_components, n_classes)
+
+    return nk, means, covariances, y_probs, y_hat_probs
