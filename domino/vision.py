@@ -16,7 +16,7 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
-from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp2
+from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger
@@ -83,7 +83,7 @@ class Classifier(pl.LightningModule, TerraModule):
         criterion_fnc = criterion_dict[config["train"]["loss"]["criterion"]]
         if config["train"]["loss"]["criterion"] == "cross_entropy":
             criterion = criterion_fnc(
-                weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
+                # weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
                 reduction="none",
             )
         else:
@@ -100,21 +100,29 @@ class Classifier(pl.LightningModule, TerraModule):
             )
             self.encoder = nn.Sequential(*list(self.model.children())[:-1])
 
-        self.train_loss_computer = LossComputer(
-            criterion,
-            is_robust=loss_cfg["gdro"],
-            dataset_config=dataset_cfg["train_dataset_config"],
-            gdro_config=loss_cfg["gdro_config"],
-        )
-        self.val_loss_computer = LossComputer(
-            criterion,
-            is_robust=loss_cfg["gdro"],
-            dataset_config=dataset_cfg["val_dataset_config"],
-            gdro_config=loss_cfg["gdro_config"],
-        )
+            self.train_loss_computer = criterion
+            self.val_loss_computer = criterion
+
+        else:
+            self.train_loss_computer = LossComputer(
+                criterion,
+                is_robust=loss_cfg["gdro"],
+                dataset_config=dataset_cfg["train_dataset_config"],
+                gdro_config=loss_cfg["gdro_config"],
+            )
+            self.val_loss_computer = LossComputer(
+                criterion,
+                is_robust=loss_cfg["gdro"],
+                dataset_config=dataset_cfg["val_dataset_config"],
+                gdro_config=loss_cfg["gdro_config"],
+            )
 
         if config["train"]["loss"]["criterion"] == "mse":
             self.metrics = {}
+        elif self.cnc:
+            self.metrics = {}
+            # metrics = self.config.get("metrics", ["accuracy"])
+            # self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
         else:
             metrics = self.config.get("metrics", ["auroc", "accuracy"])
             self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
@@ -159,49 +167,38 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def training_step(self, batch, batch_idx):
         if self.cnc:
-            # a_inputs, p_inputs, n_inputs = (
-            #     batch["a_input"],
-            #     batch["p_input"],
-            #     batch["n_input"],
-            # )
-            # a_targets, p_targets, n_targets = (
-            #     batch["a_target"],
-            #     batch["p_target"],
-            #     batch["n_target"],
-            # )
-            # a_group_ids, p_group_ids, n_group_ids = (
-            #     batch["a_group_id"],
-            #     batch["p_group_id"],
-            #     batch["n_group_id"],
-            # )
 
             a_inputs, a_targets, a_group_ids = (
                 batch["input"],
                 batch["target"],
                 batch["group_id"],
             )
-            p_entries, n_entries = (
-                batch["contrastive_pair"][0],
-                batch["contrastive_pair"][1],
-            )
-            p_inputs, p_targets, p_group_ids = (
-                p_entries["input"],
-                p_entries["target"],
-                p_entries["group_id"],
-            )
-            n_inputs, n_targets, n_group_ids = (
-                n_entries["input"],
-                n_entries["target"],
-                n_entries["group_id"],
-            )
+            p_entries, n_entries = batch["contrastive_pair"]
 
-            inputs = torch.cat([a_inputs, p_inputs, n_inputs])
-            targets = torch.cat([a_targets, p_targets, n_targets])
-            group_ids = torch.cat([a_group_ids, p_group_ids, n_group_ids])
+            contrastive_loss = 0
+            for a_ix in range(len(a_inputs)):
 
-            contrastive_loss = self.contrastive_loss(
-                self.encoder, (a_inputs, p_inputs, n_inputs)
-            )
+                p_inputs, p_targets, p_group_ids = (
+                    p_entries[a_ix]["input"],
+                    p_entries[a_ix]["target"],
+                    p_entries[a_ix]["group_id"],
+                )
+                n_inputs, n_targets, n_group_ids = (
+                    n_entries[a_ix]["input"],
+                    n_entries[a_ix]["target"],
+                    n_entries[a_ix]["group_id"],
+                )
+
+                # inputs = torch.cat([a_inputs, p_inputs, n_inputs])
+                # targets = torch.cat([a_targets, p_targets, n_targets])
+                # group_ids = torch.cat([a_group_ids, p_group_ids, n_group_ids])
+
+                contrastive_loss += self.contrastive_loss(
+                    self.encoder, (a_inputs[a_ix], p_inputs, n_inputs)
+                )
+
+            contrastive_loss /= len(a_inputs)
+            loss = contrastive_loss
 
         else:
             inputs, targets, group_ids = (
@@ -209,15 +206,21 @@ class Classifier(pl.LightningModule, TerraModule):
                 batch["target"],
                 batch["group_id"],
             )
-        outs = self.forward(inputs)
-        loss = self.train_loss_computer.loss(outs, targets, group_ids)
-        self.train_loss_computer.log_stats(self.log, is_training=True)
-        self.log("train_loss", loss, on_step=True, logger=True)
+            outs = self.forward(inputs)
+            loss = self.train_loss_computer.loss(outs, targets, group_ids)
+            self.train_loss_computer.log_stats(self.log, is_training=True)
+            self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
 
         if self.cnc:
             cw = self.config["train"]["cnc_config"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
-            self.log("contrastive_loss", contrastive_loss, on_step=True, logger=True)
+            self.log(
+                "contrastive_loss",
+                contrastive_loss,
+                on_step=True,
+                logger=True,
+                sync_dist=True,
+            )
 
         return loss
 
@@ -229,8 +232,11 @@ class Classifier(pl.LightningModule, TerraModule):
             batch["id"],
         )
         outs = self.forward(inputs)
-        loss = self.val_loss_computer.loss(outs, targets, group_ids)
-        self.log("valid_loss", loss)
+        if self.cnc:
+            loss = self.val_loss_computer(outs, targets)
+        else:
+            loss = self.val_loss_computer.loss(outs, targets, group_ids)
+        self.log("valid_loss", loss, sync_dist=True)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
@@ -238,9 +244,10 @@ class Classifier(pl.LightningModule, TerraModule):
         self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
 
     def validation_epoch_end(self, outputs) -> None:
-        self.val_loss_computer.log_stats(self.log)
+        if not self.cnc:
+            self.val_loss_computer.log_stats(self.log)
         for metric_name, metric in self.metrics.items():
-            self.log(f"valid_{metric_name}", metric.compute())
+            self.log(f"valid_{metric_name}", metric.compute(), sync_dist=True)
 
     def test_epoch_end(self, outputs) -> None:
         return self.validation_epoch_end(outputs)
@@ -261,14 +268,14 @@ class MTClassifier(Classifier):
         inputs, targets, _ = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
-        self.log("train_loss", loss, on_step=True, logger=True)
+        self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
-        self.log("valid_loss", loss)
+        self.log("valid_loss", loss, sync_dist=True)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
@@ -286,7 +293,7 @@ def train(
     num_classes: int = 2,
     max_epochs: int = 50,
     samples_per_epoch: int = None,
-    gpus: Union[int, Iterable] = 1,
+    gpus: Union[int, Iterable] = -1,
     num_workers: int = 10,
     batch_size: int = 16,
     train_split: str = "train",
@@ -411,18 +418,21 @@ def train(
 
     model.train()
     ckpt_metric = "valid_accuracy"
+    mode = "max"
     if len(subgroup_columns) > 0:
         ckpt_metric = "robust val acc"
+    if config["train"]["cnc"]:
+        ckpt_metric = "contrastive_loss"
+        mode = "min"
     checkpoint_callback = ModelCheckpoint(
-        monitor=ckpt_metric, mode="max", every_n_train_steps=100
+        monitor=ckpt_metric, mode=mode, every_n_train_steps=100
     )
     trainer = pl.Trainer(
         gpus=gpus,
+        accelerator="dp",
         max_epochs=max_epochs,
         log_every_n_steps=1,
         logger=logger,
-        accelerator=None,
-        auto_select_gpus=True,
         callbacks=[checkpoint_callback],
         default_root_dir=save_dir,
         **kwargs,
@@ -462,24 +472,12 @@ def train(
     # if doing CnC, we need to create the contrastive train dataloader
     if config["train"]["cnc"]:
         cnc_config = config["train"]["cnc_config"]
-        if cnc_config["contrastive_dp_pth"]:
-            contrastive_loader = mk.DataPanel.read(cnc_config["contrastive_dp_pth"])
-        else:
-            contrastive_loader = load_contrastive_dp2(
-                train_dp,
-                cnc_config["num_anchor"],
-                cnc_config["num_positive"],
-                cnc_config["num_negative"],
-            )
-            if cnc_config["save_dp_dir"]:
-                n_a = cnc_config["num_anchor"]
-                n_p = cnc_config["num_positive"]
-                n_n = cnc_config["num_negative"]
-                save_dp_dir = os.path.join(
-                    cnc_config["save_dp_dir"],
-                    f"contrastive_dp_na_{n_a}_np_{n_p}_nn_{n_n}.dp",
-                )
-                mk.DataPanel.write(contrastive_loader, save_dp_dir)
+        contrastive_loader = load_contrastive_dp(
+            train_dp,
+            cnc_config["num_anchor"],
+            cnc_config["num_positive"],
+            cnc_config["num_negative"],
+        )
 
         # train_dp_ = train_dp.copy()
         train_dp = contrastive_loader
@@ -489,7 +487,7 @@ def train(
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=sampler is None,
-        sampler=sampler,
+        # sampler=sampler,
     )
     valid_dl = DataLoader(
         val_dp,

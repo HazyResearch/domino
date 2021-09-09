@@ -11,114 +11,18 @@ from PIL import Image
 from tqdm import tqdm
 
 
-def load_contrastive_dp(dp, num_a=10, num_p=10, num_n=10):
+def load_contrastive_dp(dp, num_a, num_p, num_n):
     """
     given a datapanel, create a new dp with
     (anchor,positive,negative) pairs for CnC
     using information from "group_id" column
     """
-
-    # TODO: this code is only for 1 subgroup attribute!!
 
     # HACK: we are going to assume that:
     #       0: no pmx, no tube  --> majority group
     #       1: pmx, no tube     --> minority group
     #       2: no pmx, tube     --> minority group
     #       3: pmx, tube        --> majority group
-
-    # loop through each anchor, which are only points from groups 0 and 3
-    data = []
-
-    positive_entries_0 = dp[dp["group_id"].data == 2]
-    negative_entries_0 = dp[dp["group_id"].data == 1]
-    positive_entries_3 = dp[dp["group_id"].data == 1]
-    negative_entries_3 = dp[dp["group_id"].data == 2]
-
-    # positive_entries_0 = np.random.choice(positive_entries_0, num_p)
-    # negative_entries_0 = np.random.choice(negative_entries_0, num_n)
-    # positive_entries_3 = np.random.choice(positive_entries_3, num_p)
-    # negative_entries_3 = np.random.choice(negative_entries_3, num_p)
-
-    if num_a == -1:
-        anchor_idxs = np.arange(len(dp))
-    else:
-        anchor_idxs = np.random.choice(len(dp), num_a)
-
-    print("-- Creating Contrastive DP --")
-    for a_idx in tqdm(anchor_idxs):
-        a_idx = int(a_idx)
-        if dp[a_idx]["group_id"] == 0:
-            # positives are group_id 2 and negatives are group_id 1
-            if num_p == -1:
-                positive_entries = positive_entries_0
-            else:
-                positive_entries = np.random.choice(positive_entries_0, num_p)
-            if num_n == -1:
-                negative_entries = negative_entries_0
-            else:
-                negative_entries = np.random.choice(negative_entries_0, num_n)
-        elif dp[a_idx]["group_id"] == 3:
-            # positives are group_id 1 and negatives are group_id 2
-            if num_p == -1:
-                positive_entries = positive_entries_3
-            else:
-                positive_entries = np.random.choice(positive_entries_3, num_p)
-            if num_n == -1:
-                negative_entries = negative_entries_3
-            else:
-                negative_entries = np.random.choice(negative_entries_3, num_n)
-
-        else:
-            continue
-
-        for p_idx in range(len(positive_entries)):
-            for n_idx in range(len(negative_entries)):
-                contrastive_sample = {
-                    "a_filepath": dp[a_idx]["filepath"],
-                    "p_filepath": positive_entries[p_idx]["filepath"],
-                    "n_filepath": negative_entries[n_idx]["filepath"],
-                    "a_target": dp[a_idx]["target"],
-                    "p_target": positive_entries[p_idx]["target"],
-                    "n_target": negative_entries[n_idx]["target"],
-                    "a_group_id": dp[a_idx]["group_id"],
-                    "p_group_id": positive_entries[p_idx]["group_id"],
-                    "n_group_id": negative_entries[n_idx]["group_id"],
-                    "split": dp[a_idx]["split"],
-                }
-                data.append(contrastive_sample)
-
-    contrastive_dp = mk.DataPanel.from_batch(data)
-
-    input_col_a = contrastive_dp[["a_filepath", "split"]].to_lambda(fn=cxr_loader)
-    contrastive_dp.add_column(
-        "a_input",
-        input_col_a,
-        overwrite=True,
-    )
-
-    input_col_p = contrastive_dp[["p_filepath", "split"]].to_lambda(fn=cxr_loader)
-    contrastive_dp.add_column(
-        "p_input",
-        input_col_p,
-        overwrite=True,
-    )
-
-    input_col_n = contrastive_dp[["n_filepath", "split"]].to_lambda(fn=cxr_loader)
-    contrastive_dp.add_column(
-        "n_input",
-        input_col_n,
-        overwrite=True,
-    )
-
-    return contrastive_dp
-
-
-def load_contrastive_dp2(dp, num_a=10, num_p=10, num_n=10):
-    """
-    given a datapanel, create a new dp with
-    (anchor,positive,negative) pairs for CnC
-    using information from "group_id" column
-    """
 
     positive_entries_0 = dp[dp["group_id"].data == 2]
     negative_entries_0 = dp[dp["group_id"].data == 1]
@@ -134,6 +38,8 @@ def load_contrastive_dp2(dp, num_a=10, num_p=10, num_n=10):
             contrastive_loader,
             positive_entries=(positive_entries_0, positive_entries_3),
             negative_entries=(negative_entries_0, negative_entries_3),
+            num_p=num_p,
+            num_n=num_n,
         )
     )
 
@@ -146,19 +52,19 @@ def load_contrastive_dp2(dp, num_a=10, num_p=10, num_n=10):
     return contrastive_dp
 
 
-def contrastive_loader(input_dict, positive_entries, negative_entries):
+def contrastive_loader(input_dict, positive_entries, negative_entries, num_p, num_n):
     positive_entries_0, positive_entries_3 = positive_entries
     negative_entries_0, negative_entries_3 = negative_entries
 
     anchor_group_id = input_dict["group_id"]
     if anchor_group_id == 0:
-        positive_entry = np.random.choice(positive_entries_0, 1)[0]
-        negative_entry = np.random.choice(negative_entries_0, 1)[0]
+        positive_entry = np.random.choice(positive_entries_0, num_p)
+        negative_entry = np.random.choice(negative_entries_0, num_n)
     elif anchor_group_id == 3:
-        positive_entry = np.random.choice(positive_entries_3, 1)[0]
-        negative_entry = np.random.choice(negative_entries_3, 1)[0]
+        positive_entry = np.random.choice(positive_entries_3, num_p)
+        negative_entry = np.random.choice(negative_entries_3, num_n)
 
-    return [positive_entry, negative_entry]
+    return (list(positive_entry), list(negative_entry))
 
 
 CXR_MEAN = 0.48865
@@ -212,20 +118,21 @@ class SupervisedContrastiveLoss(nn.Module):
 
     def forward(self, encoder, contrastive_batch):
 
-        a_inputs, p_inputs, n_inputs = contrastive_batch
-        a_outputs, p_outputs, n_outputs = (
-            encoder(a_inputs).squeeze(),
+        a_input, p_inputs, n_inputs = contrastive_batch
+        a_output, p_outputs, n_outputs = (
+            encoder(a_input.unsqueeze(0)).squeeze().unsqueeze(0),
             encoder(p_inputs).squeeze(),
             encoder(n_inputs).squeeze(),
         )
 
-        pos_sim = self.sim(a_outputs, p_outputs)
+        pos_sim = self.sim(a_output, p_outputs)
         pos_exp = torch.exp(torch.div(pos_sim, self.temperature))
 
-        neg_sim = self.sim(a_outputs, n_outputs)
+        neg_sim = self.sim(a_output, n_outputs)
         neg_exp = torch.exp(torch.div(neg_sim, self.temperature))
+        neg_exp_sum = neg_exp.sum(0, keepdim=True)
 
-        log_probs = torch.log(pos_exp) - torch.log(pos_exp.sum() + neg_exp.sum())
+        log_probs = torch.log(pos_exp) - torch.log(pos_exp + neg_exp_sum)
 
         loss = -1 * log_probs
 

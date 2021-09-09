@@ -24,6 +24,7 @@ class LossComputer:
         self.min_var_weight = gdro_config["min_var_weight"]
 
         self.n_groups = dataset_config["n_groups"]
+
         self.group_counts = torch.Tensor(dataset_config["group_counts"]).cuda()
         self.group_frac = self.group_counts / self.group_counts.sum()
         self.group_str = dataset_config["group_str"]
@@ -116,11 +117,16 @@ class LossComputer:
 
     def update_exp_avg_loss(self, group_loss, group_count):
         prev_weights = (1 - self.gamma * (group_count > 0).float()) * (
-            self.exp_avg_initialized > 0
+            self.exp_avg_initialized.type_as(group_count) > 0
         ).float()
         curr_weights = 1 - prev_weights
-        self.exp_avg_loss = self.exp_avg_loss * prev_weights + group_loss * curr_weights
-        self.exp_avg_initialized = (self.exp_avg_initialized > 0) + (group_count > 0)
+        self.exp_avg_loss = (
+            self.exp_avg_loss.type_as(group_loss) * prev_weights
+            + group_loss * curr_weights
+        )
+        self.exp_avg_initialized = (
+            self.exp_avg_initialized.type_as(group_count) > 0
+        ) + (group_count > 0)
 
     def reset_stats(self):
         self.processed_data_counts = torch.zeros(self.n_groups).cuda()
@@ -128,8 +134,8 @@ class LossComputer:
         self.update_batch_counts = torch.zeros(self.n_groups).cuda()
         self.avg_group_loss = torch.zeros(self.n_groups).cuda()
         self.avg_group_acc = torch.zeros(self.n_groups).cuda()
-        self.avg_per_sample_loss = 0.0
-        self.avg_actual_loss = 0.0
+        self.avg_per_sample_loss = torch.tensor(0.0).cuda()
+        self.avg_actual_loss = torch.tensor(0.0).cuda()
         self.avg_acc = 0.0
         self.batch_count = 0.0
 
@@ -137,36 +143,49 @@ class LossComputer:
         self, actual_loss, group_loss, group_acc, group_count, weights=None
     ):
         # avg group loss
-        denom = self.processed_data_counts + group_count
+        self.processed_data_counts = self.processed_data_counts.type_as(group_count)
+        denom = torch.tensor(self.processed_data_counts + group_count).type_as(
+            group_count
+        )
         denom += (denom == 0).float()
+        self.processed_data_counts = self.processed_data_counts.type_as(group_count)
         prev_weight = self.processed_data_counts / denom
         curr_weight = group_count / denom
+        self.avg_group_loss = self.avg_group_loss.type_as(group_loss)
         self.avg_group_loss = (
             prev_weight * self.avg_group_loss + curr_weight * group_loss
         )
 
         # avg group acc
+        self.avg_group_acc = self.avg_group_acc.type_as(group_acc)
         self.avg_group_acc = prev_weight * self.avg_group_acc + curr_weight * group_acc
 
         # batch-wise average actual loss
         denom = self.batch_count + 1
+        self.avg_actual_loss = self.avg_actual_loss.type_as(actual_loss)
         self.avg_actual_loss = (self.batch_count / denom) * self.avg_actual_loss + (
             1 / denom
         ) * actual_loss
 
         # counts
+        self.update_data_counts = self.update_data_counts.type_as(group_count)
+        self.update_batch_counts = self.update_batch_counts.type_as(group_count)
+        self.processed_data_counts = self.processed_data_counts.type_as(group_count)
         self.processed_data_counts += group_count
         if self.is_robust:
             self.update_data_counts += group_count * ((weights > 0).float())
             self.update_batch_counts += ((group_count * weights) > 0).float()
         else:
+            self.update_data_counts = self.update_data_counts.type_as(group_count)
             self.update_data_counts += group_count
             self.update_batch_counts += (group_count > 0).float()
         self.batch_count += 1
 
         # avg per-sample quantities
         group_frac = self.processed_data_counts / (self.processed_data_counts.sum())
+        self.avg_group_loss = self.avg_group_loss.type_as(group_frac)
         self.avg_per_sample_loss = group_frac @ self.avg_group_loss
+        self.avg_group_acc = self.avg_group_acc.type_as(group_frac)
         self.avg_acc = group_frac @ self.avg_group_acc
 
     def get_model_stats(self, model, args, stats_dict):
@@ -211,31 +230,38 @@ class LossComputer:
         split = "train" if is_training else "val"
 
         robust_acc = 100
+        self.exp_avg_loss = self.exp_avg_loss.type_as(self.adj)
+        self.group_counts = self.group_counts.type_as(self.adj)
 
         for group_idx in range(self.n_groups):
             logger(
                 f"{self.group_str[group_idx]} {split} loss",
                 self.avg_group_loss[group_idx],
+                sync_dist=True,
             )
             logger(
                 f"{self.group_str[group_idx]} {split} exp loss",
                 self.exp_avg_loss[group_idx],
+                sync_dist=True,
             )
             logger(
                 f"{self.group_str[group_idx]} {split} adjusted loss",
                 self.exp_avg_loss[group_idx]
                 + self.adj[group_idx] / torch.sqrt(self.group_counts)[group_idx],
+                sync_dist=True,
             )
             logger(
                 f"{self.group_str[group_idx]} {split} adv prob",
                 self.adv_probs[group_idx],
+                sync_dist=True,
             )
             logger(
                 f"{self.group_str[group_idx]} {split} acc",
                 self.avg_group_acc[group_idx],
+                sync_dist=True,
             )
 
-        logger(f"robust {split} acc", (self.avg_group_acc).min())
+        logger(f"robust {split} acc", (self.avg_group_acc).min(), sync_dist=True)
 
         self.reset_stats()
 

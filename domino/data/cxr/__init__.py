@@ -56,6 +56,7 @@ def get_cxr_activations(
             arch="resnet50",
             dropout=0,
         )
+
         state_dict = {}
         for name, key in torch.load(model_path)["state_dict"].items():
             if "encoder" not in name:
