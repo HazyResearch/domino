@@ -173,28 +173,35 @@ class Classifier(pl.LightningModule, TerraModule):
                 batch["target"],
                 batch["group_id"],
             )
-            p_entries, n_entries = batch["contrastive_pair"]
+            p_entries, n_entries = batch["contrastive_input_pair"]
 
             contrastive_loss = 0
             for a_ix in range(len(a_inputs)):
 
-                p_inputs, p_targets, p_group_ids = (
-                    p_entries[a_ix]["input"],
-                    p_entries[a_ix]["target"],
-                    p_entries[a_ix]["group_id"],
-                )
-                n_inputs, n_targets, n_group_ids = (
-                    n_entries[a_ix]["input"],
-                    n_entries[a_ix]["target"],
-                    n_entries[a_ix]["group_id"],
-                )
+                # p_inputs, p_targets, p_group_ids = (
+                #     p_entries[a_ix]["input"],
+                #     p_entries[a_ix]["target"],
+                #     p_entries[a_ix]["group_id"],
+                # )
+                # n_inputs, n_targets, n_group_ids = (
+                #     n_entries[a_ix]["input"],
+                #     n_entries[a_ix]["target"],
+                #     n_entries[a_ix]["group_id"],
+                # )
+                p_inputs = p_entries[a_ix]
+                n_inputs = n_entries[a_ix]
 
                 # inputs = torch.cat([a_inputs, p_inputs, n_inputs])
                 # targets = torch.cat([a_targets, p_targets, n_targets])
                 # group_ids = torch.cat([a_group_ids, p_group_ids, n_group_ids])
+                encoded_a = (
+                    self.encoder(a_inputs[a_ix].unsqueeze(0)).squeeze().unsqueeze(0)
+                )
+                encoded_ps = self.encoder(p_inputs).squeeze()
+                encoded_ns = self.encoder(n_inputs).squeeze()
 
                 contrastive_loss += self.contrastive_loss(
-                    self.encoder, (a_inputs[a_ix], p_inputs, n_inputs)
+                    (encoded_a, encoded_ps, encoded_ns)
                 )
 
             contrastive_loss /= len(a_inputs)

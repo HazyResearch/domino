@@ -58,13 +58,17 @@ def get_cxr_activations(
         )
 
         state_dict = {}
+        state_dict_enc = {}
         for name, key in torch.load(model_path)["state_dict"].items():
             if "encoder" not in name:
                 state_dict[name.split("model.")[-1]] = key
+            if "encoder" in name:
+                state_dict_enc[name.split("encoder.")[-1]] = key
 
         model.load_state_dict(state_dict)
         modules = list(model.children())[:-2]
         cnn_encoder = nn.Sequential(*modules)
+        cnn_encoder.load_state_dict(state_dict_enc)
     elif run_type == "siim":
         model = CXRResnet(model_path=model_path)
         cnn_encoder = model.cnn_encoder

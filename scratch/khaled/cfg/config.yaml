@@ -9,8 +9,8 @@ train:
   cnc_config:
     contrastive_weight: 0.8
     temperature: 0.05
-    num_positive: 64
-    num_negative: 64
+    num_positive: 16
+    num_negative: 16
     num_anchor: 1
     
   multiclass: False # if true, then uses subgroup columns as multiclass labels

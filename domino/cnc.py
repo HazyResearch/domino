@@ -33,9 +33,9 @@ def load_contrastive_dp(dp, num_a, num_p, num_n):
     majority_mask = np.logical_or(dp["group_id"].data == 0, dp["group_id"].data == 3)
     contrastive_dp = dp[majority_mask]
 
-    contastive_col = contrastive_dp[["group_id"]].to_lambda(
+    contastive_input_col = contrastive_dp[["group_id"]].to_lambda(
         fn=partial(
-            contrastive_loader,
+            contrastive_input_loader,
             positive_entries=(positive_entries_0, positive_entries_3),
             negative_entries=(negative_entries_0, negative_entries_3),
             num_p=num_p,
@@ -44,27 +44,37 @@ def load_contrastive_dp(dp, num_a, num_p, num_n):
     )
 
     contrastive_dp.add_column(
-        "contrastive_pair",
-        contastive_col,
+        "contrastive_input_pair",
+        contastive_input_col,
         overwrite=True,
     )
 
     return contrastive_dp
 
 
-def contrastive_loader(input_dict, positive_entries, negative_entries, num_p, num_n):
+def contrastive_input_loader(
+    input_dict, positive_entries, negative_entries, num_p, num_n
+):
     positive_entries_0, positive_entries_3 = positive_entries
     negative_entries_0, negative_entries_3 = negative_entries
 
     anchor_group_id = input_dict["group_id"]
     if anchor_group_id == 0:
-        positive_entry = np.random.choice(positive_entries_0, num_p)
-        negative_entry = np.random.choice(negative_entries_0, num_n)
+        positive_idxs = np.random.choice(len(positive_entries_0), num_p)
+        negative_idxs = np.random.choice(len(negative_entries_0), num_n)
+        positive_inputs = positive_entries_0[positive_idxs]["input"].data
+        negative_inputs = negative_entries_0[negative_idxs]["input"].data
     elif anchor_group_id == 3:
-        positive_entry = np.random.choice(positive_entries_3, num_p)
-        negative_entry = np.random.choice(negative_entries_3, num_n)
+        positive_idxs = np.random.choice(len(positive_entries_3), num_p)
+        negative_idxs = np.random.choice(len(negative_entries_3), num_n)
+        positive_inputs = positive_entries_3[positive_idxs]["input"].data
+        negative_inputs = negative_entries_3[negative_idxs]["input"].data
 
-    return (list(positive_entry), list(negative_entry))
+    # return (list(positive_entry), list(negative_entry))
+    return (
+        positive_inputs,
+        negative_inputs,
+    )
 
 
 CXR_MEAN = 0.48865
@@ -116,24 +126,23 @@ class SupervisedContrastiveLoss(nn.Module):
 
         self.sim = nn.CosineSimilarity(dim=1)
 
-    def forward(self, encoder, contrastive_batch):
+    def forward(self, contrastive_batch):
 
-        a_input, p_inputs, n_inputs = contrastive_batch
-        a_output, p_outputs, n_outputs = (
-            encoder(a_input.unsqueeze(0)).squeeze().unsqueeze(0),
-            encoder(p_inputs).squeeze(),
-            encoder(n_inputs).squeeze(),
-        )
+        a_output, p_outputs, n_outputs = contrastive_batch
 
         pos_sim = self.sim(a_output, p_outputs)
         pos_exp = torch.exp(torch.div(pos_sim, self.temperature))
+        pos_exp_sum = pos_exp.sum(0, keepdim=True)
 
         neg_sim = self.sim(a_output, n_outputs)
         neg_exp = torch.exp(torch.div(neg_sim, self.temperature))
         neg_exp_sum = neg_exp.sum(0, keepdim=True)
 
-        log_probs = torch.log(pos_exp) - torch.log(pos_exp + neg_exp_sum)
+        log_probs = torch.log(pos_exp) - torch.log(pos_exp_sum + neg_exp_sum)
 
         loss = -1 * log_probs
+        del log_probs
+        del neg_exp
+        del pos_exp
 
         return loss.mean()
