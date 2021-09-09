@@ -441,7 +441,7 @@ def train(
         ckpt_metric = "contrastive_loss"
         mode = "min"
     checkpoint_callback = ModelCheckpoint(
-        monitor=ckpt_metric, mode=mode, every_n_train_steps=100
+        monitor=ckpt_metric, mode=mode, every_n_train_steps=10
     )
     trainer = pl.Trainer(
         gpus=gpus,
