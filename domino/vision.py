@@ -18,6 +18,7 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
+from domino.eeg_modeling.dense_inception import DenseInception
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
 
@@ -97,6 +98,8 @@ class Classifier(pl.LightningModule, TerraModule):
             self.model = DenseNet(
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
+        elif self.config["model_name"] == "dense_inception":
+            self.model = DenseInception()
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 
@@ -113,6 +116,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("valid_loss", loss)
@@ -204,6 +208,7 @@ def train(
     train_split: str = "train",
     valid_split: str = "valid",
     wandb_config: dict = None,
+    use_terra: bool = True,
     weighted_sampling: bool = False,
     pbar: bool = True,
     seed: int = 123,
@@ -224,7 +229,7 @@ def train(
             model = BinaryMTClassifier(config=config)
         else:
             model = Classifier(config)
-    try:
+    if use_terra:
         run_id = int(os.path.basename(run_dir))
         metadata = terra.get_meta(run_id)
         logger = WandbLogger(
@@ -234,23 +239,23 @@ def train(
             tags=[f"{metadata['module']}.{metadata['fn']}"],
             config={} if wandb_config is None else wandb_config,
         )
-
-    except ValueError:
+        checkpoint_callbacks = [
+            TerraCheckpoint(
+                dirpath=run_dir,
+                monitor=ckpt_monitor,
+                save_top_k=1,
+                mode="max",
+            )
+        ]
+    else:
         logger = WandbLogger(
             project="domino",
             save_dir=run_dir,
             name=run_dir,
             config={} if wandb_config is None else wandb_config,
         )
+        checkpoint_callbacks = []
 
-    checkpoint_callbacks = [
-        TerraCheckpoint(
-            dirpath=run_dir,
-            monitor=ckpt_monitor,
-            save_top_k=1,
-            mode="max",
-        )
-    ]
     model.train()
     trainer = pl.Trainer(
         gpus=gpus,
@@ -285,7 +290,8 @@ def train(
         )
 
     train_dp = dp.lz[dp["split"] == train_split]
-    train_dp["input"] = train_dp["input"].to_lambda(model.config["train_transform"])
+    if model.config.get("train_transform", None) is not None:
+        train_dp["input"] = train_dp["input"].to_lambda(model.config["train_transform"])
     sampler = None
     if weighted_sampling:
         if isinstance(target_column, Sequence):
@@ -312,7 +318,8 @@ def train(
     )
 
     valid_dp = dp.lz[dp["split"] == valid_split]
-    valid_dp["input"] = valid_dp["input"].to_lambda(model.config["transform"])
+    if model.config.get("transform", None) is not None:
+        valid_dp["input"] = valid_dp["input"].to_lambda(model.config["transform"])
     valid_dl = DataLoader(
         valid_dp,
         batch_size=batch_size,
@@ -339,7 +346,8 @@ def score(
     dp = dp.view()
 
     if hasattr(model, "config"):
-        dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
+        if model.config.get("transform", None) is not None:
+            dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
 
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""
