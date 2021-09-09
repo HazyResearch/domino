@@ -205,7 +205,12 @@ class Classifier(pl.LightningModule, TerraModule):
                 )
 
             contrastive_loss /= len(a_inputs)
-            loss = contrastive_loss
+            # loss = contrastive_loss
+            inputs = a_inputs  # torch.cat([a_inputs, p_inputs, n_inputs])
+            targets = a_targets  # torch.cat([a_targets, p_targets, n_targets])
+            group_ids = (
+                a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
+            )
 
         else:
             inputs, targets, group_ids = (
@@ -219,6 +224,10 @@ class Classifier(pl.LightningModule, TerraModule):
             self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
 
         if self.cnc:
+            outs = self.forward(inputs)
+            loss = self.train_loss_computer(outs, targets)
+            self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
+
             cw = self.config["train"]["cnc_config"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
             self.log(
@@ -437,6 +446,7 @@ def train(
     trainer = pl.Trainer(
         gpus=gpus,
         accelerator="dp",
+        accumulate_grad_batches=32,
         max_epochs=max_epochs,
         log_every_n_steps=1,
         logger=logger,
