@@ -30,7 +30,6 @@ from domino.utils import VariableColumn, requires_columns
 class MixtureModelSDM(SliceDiscoveryMethod):
     @dataclass
     class Config(SliceDiscoveryMethod.Config):
-        emb: str = "emb"
         weight_y_log_likelihood: float = 1
         covariance_type: str = "diag"
         pca_components: int = 128

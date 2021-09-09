@@ -5,7 +5,17 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial, reduce, wraps
 from inspect import getcallargs
-from typing import Collection, Dict, Mapping, MutableMapping, Optional, Sequence, Union
+from typing import (
+    Collection,
+    Dict,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import meerkat as mk
 import numpy as np
@@ -17,6 +27,18 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
 from torchmetrics import Metric
+
+
+class ConditionalSample:
+    def __init__(self, classes: Tuple[Type], distrib: dict):
+        self.classes = classes
+        self.distrib = distrib
+
+    def __call__(self, spec):
+        if spec.config.sdm["sdm_class"] in self.classes:
+            return self.distrib
+        else:
+            return np.nan
 
 
 def split_dp(

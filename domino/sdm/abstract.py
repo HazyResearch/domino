@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Union
 
 import meerkat as mk
@@ -16,7 +16,8 @@ class SliceDiscoveryMethod(ABC):
     @dataclass
     class Config:
         n_slices: int = 5
-        layer: str = ""
+        emb_group: str = "main"
+        emb: str = "emb"
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 

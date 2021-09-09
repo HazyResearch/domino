@@ -1,5 +1,7 @@
 import os
+from typing import Sequence, Tuple, Type
 
+import numpy as np
 import ray
 import terra
 from ray import tune
@@ -18,20 +20,23 @@ from domino.sdm import (
     PredSDM,
     SpotlightSDM,
 )
-
-
-def fn(spec):
-    """Need this to not be a lambda for pickling!"""
-    return spec.config.sdm["sdm_class"].RESOURCES_REQUIRED
-
+from domino.utils import ConditionalSample
 
 ray.init(num_gpus=1, num_cpus=6, resources={"ram_gb": 32})
 evaluate_sdms(
-    slices_dp=terra.out(5702),
-    emb_dp=embed_images.out(5145),
+    slices_dp=terra.out(5702).load()[:2],
+    emb_dp={
+        "clip": terra.out(5145),
+        "imagenet": terra.out(5765),
+        "bit": terra.out(5796),
+    },
     sdm_config={
-        "sdm_class": tune.grid_search([MixtureModelSDM]),
-        "sdm_config": {"n_slices": 25, "layer": "emb", "weight_y_log_likelihood": 10},
-        "resources_per_trial": tune.sample_from(fn),
+        "sdm_class": MixtureModelSDM,
+        "sdm_config": {
+            "n_slices": 25,
+            "emb": tune.grid_search(
+                [("clip", "emb"), ("imagenet", "emb"), ("bit", "body")]
+            ),
+        },
     },
 )
