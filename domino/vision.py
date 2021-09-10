@@ -99,6 +99,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 config["train"]["cnc_config"]
             )
             self.encoder = nn.Sequential(*list(self.model.children())[:-1])
+            # self.model.fc = nn.Identity()
 
             self.train_loss_computer = criterion
             self.val_loss_computer = criterion
@@ -174,6 +175,10 @@ class Classifier(pl.LightningModule, TerraModule):
                 batch["group_id"],
             )
             p_entries, n_entries = batch["contrastive_input_pair"]
+            all_p_inputs = p_entries[0]
+            all_n_inputs = n_entries[0]
+            all_p_targets = p_entries[1]
+            all_n_targets = n_entries[1]
 
             contrastive_loss = 0
             for a_ix in range(len(a_inputs)):
@@ -188,8 +193,8 @@ class Classifier(pl.LightningModule, TerraModule):
                 #     n_entries[a_ix]["target"],
                 #     n_entries[a_ix]["group_id"],
                 # )
-                p_inputs = p_entries[a_ix]
-                n_inputs = n_entries[a_ix]
+                p_inputs = all_p_inputs[a_ix]
+                n_inputs = all_n_inputs[a_ix]
 
                 # inputs = torch.cat([a_inputs, p_inputs, n_inputs])
                 # targets = torch.cat([a_targets, p_targets, n_targets])
@@ -205,12 +210,23 @@ class Classifier(pl.LightningModule, TerraModule):
                 )
 
             contrastive_loss /= len(a_inputs)
-            # loss = contrastive_loss
-            inputs = a_inputs  # torch.cat([a_inputs, p_inputs, n_inputs])
-            targets = a_targets  # torch.cat([a_targets, p_targets, n_targets])
-            group_ids = (
-                a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
-            )
+            loss = contrastive_loss
+
+            # inputs = torch.cat(
+            #     [
+            #         a_inputs,
+            #         all_p_inputs.view(-1, *all_p_inputs.shape[-3:]),
+            #         all_p_inputs.view(-1, *all_n_inputs.shape[-3:]),
+            #     ]
+            # )
+            # targets = torch.cat(
+            #     [a_targets, all_p_targets.flatten(), all_n_targets.flatten()]
+            # )
+            inputs = torch.cat([a_inputs, p_inputs, n_inputs])
+            targets = torch.cat([a_targets, all_p_targets[-1], all_n_targets[-1]])
+            # group_ids = (
+            #     a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
+            # )
 
         else:
             inputs, targets, group_ids = (
@@ -225,7 +241,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
         if self.cnc:
             outs = self.forward(inputs)
-            loss = self.train_loss_computer(outs, targets)
+            loss = self.train_loss_computer(outs, targets.long())
             self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
 
             cw = self.config["train"]["cnc_config"]["contrastive_weight"]
@@ -441,12 +457,12 @@ def train(
         ckpt_metric = "contrastive_loss"
         mode = "min"
     checkpoint_callback = ModelCheckpoint(
-        monitor=ckpt_metric, mode=mode, every_n_train_steps=10
+        monitor=ckpt_metric, mode=mode, every_n_train_steps=5
     )
     trainer = pl.Trainer(
         gpus=gpus,
         accelerator="dp",
-        accumulate_grad_batches=32,
+        accumulate_grad_batches=128,
         max_epochs=max_epochs,
         log_every_n_steps=1,
         logger=logger,

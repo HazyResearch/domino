@@ -64,16 +64,20 @@ def contrastive_input_loader(
         negative_idxs = np.random.choice(len(negative_entries_0), num_n)
         positive_inputs = positive_entries_0[positive_idxs]["input"].data
         negative_inputs = negative_entries_0[negative_idxs]["input"].data
+        positive_targets = torch.Tensor(positive_entries_0[positive_idxs]["target"])
+        negative_targets = torch.Tensor(negative_entries_0[negative_idxs]["target"])
     elif anchor_group_id == 3:
         positive_idxs = np.random.choice(len(positive_entries_3), num_p)
         negative_idxs = np.random.choice(len(negative_entries_3), num_n)
         positive_inputs = positive_entries_3[positive_idxs]["input"].data
         negative_inputs = negative_entries_3[negative_idxs]["input"].data
+        positive_targets = torch.Tensor(positive_entries_3[positive_idxs]["target"])
+        negative_targets = torch.Tensor(negative_entries_3[negative_idxs]["target"])
 
     # return (list(positive_entry), list(negative_entry))
     return (
-        positive_inputs,
-        negative_inputs,
+        [positive_inputs, positive_targets],
+        [negative_inputs, negative_targets],
     )
 
 
@@ -138,11 +142,8 @@ class SupervisedContrastiveLoss(nn.Module):
         neg_exp = torch.exp(torch.div(neg_sim, self.temperature))
         neg_exp_sum = neg_exp.sum(0, keepdim=True)
 
-        log_probs = torch.log(pos_exp) - torch.log(pos_exp_sum + neg_exp_sum)
+        log_probs = torch.log(pos_exp) - torch.log(pos_exp + neg_exp_sum)
 
         loss = -1 * log_probs
-        del log_probs
-        del neg_exp
-        del pos_exp
 
         return loss.mean()
