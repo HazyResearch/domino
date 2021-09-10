@@ -20,6 +20,7 @@ from typing import (
 import meerkat as mk
 import numpy as np
 import pandas as pd
+import terra
 import torch
 from cytoolz import concat
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -41,6 +42,7 @@ class ConditionalSample:
             return np.nan
 
 
+@terra.Task
 def split_dp(
     dp: mk.DataPanel,
     split_on: str,
@@ -49,7 +51,6 @@ def split_dp(
     test_frac: float = 0.2,
     other_splits: dict = None,
     salt: str = "",
-    run_dir: str = None,
 ):
     dp = dp.view()
     other_splits = {} if other_splits is None else other_splits
@@ -63,7 +64,7 @@ def split_dp(
     if not math.isclose(sum(splits.values()), 1):
         raise ValueError("Split fractions must sum to 1.")
 
-    dp["split_hash"] = dp[split_on].map(partial(hash_for_split, salt=salt))
+    dp["split_hash"] = dp[split_on].apply(partial(hash_for_split, salt=salt))
     start = 0
     split_column = pd.Series(["unassigned"] * len(dp))
     for split, frac in splits.items():
@@ -72,8 +73,7 @@ def split_dp(
             ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
         ] = split
         start = end
-    dp["split"] = split_column
-    return dp
+    return mk.DataPanel({split_on: dp[split_on], "split": split_column})
 
 
 @dataclass

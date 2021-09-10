@@ -24,7 +24,7 @@ from domino.utils import ConditionalSample
 
 ray.init(num_gpus=1, num_cpus=6, resources={"ram_gb": 32})
 evaluate_sdms(
-    slices_dp=terra.out(5702).load()[:2],
+    slices_dp=terra.out(5702),
     emb_dp={
         "clip": terra.out(5145),
         "imagenet": terra.out(5765),
