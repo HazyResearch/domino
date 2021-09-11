@@ -210,7 +210,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 )
 
             contrastive_loss /= len(a_inputs)
-            loss = contrastive_loss
+            # loss = contrastive_loss
 
             # inputs = torch.cat(
             #     [
@@ -237,12 +237,12 @@ class Classifier(pl.LightningModule, TerraModule):
             outs = self.forward(inputs)
             loss = self.train_loss_computer.loss(outs, targets, group_ids)
             self.train_loss_computer.log_stats(self.log, is_training=True)
-            self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
+            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
         if self.cnc:
             outs = self.forward(inputs)
             loss = self.train_loss_computer(outs, targets.long())
-            self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
+            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
             cw = self.config["train"]["cnc_config"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
@@ -251,7 +251,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 contrastive_loss,
                 on_step=True,
                 logger=True,
-                sync_dist=True,
+                # sync_dist=True,
             )
 
         return loss
@@ -268,7 +268,7 @@ class Classifier(pl.LightningModule, TerraModule):
             loss = self.val_loss_computer(outs, targets)
         else:
             loss = self.val_loss_computer.loss(outs, targets, group_ids)
-        self.log("valid_loss", loss, sync_dist=True)
+        self.log("valid_loss", loss)  # , sync_dist=True)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
@@ -279,7 +279,7 @@ class Classifier(pl.LightningModule, TerraModule):
         if not self.cnc:
             self.val_loss_computer.log_stats(self.log)
         for metric_name, metric in self.metrics.items():
-            self.log(f"valid_{metric_name}", metric.compute(), sync_dist=True)
+            self.log(f"valid_{metric_name}", metric.compute())  # , sync_dist=True)
 
     def test_epoch_end(self, outputs) -> None:
         return self.validation_epoch_end(outputs)
@@ -300,14 +300,14 @@ class MTClassifier(Classifier):
         inputs, targets, _ = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
-        self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
+        self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
-        self.log("valid_loss", loss, sync_dist=True)
+        self.log("valid_loss", loss)  # , sync_dist=True)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
@@ -325,7 +325,7 @@ def train(
     num_classes: int = 2,
     max_epochs: int = 50,
     samples_per_epoch: int = None,
-    gpus: Union[int, Iterable] = -1,
+    gpus: Union[int, Iterable] = [0],
     num_workers: int = 10,
     batch_size: int = 16,
     train_split: str = "train",
@@ -371,6 +371,7 @@ def train(
             "id": dp[id_column],
             "split": dp["split"],
             "group_id": group_ids.astype(int),
+            "chest_tube": dp["chest_tube"],  # DEBUG
             "filepath": dp["filepath"],
         }
     )
@@ -461,8 +462,6 @@ def train(
     )
     trainer = pl.Trainer(
         gpus=gpus,
-        accelerator="dp",
-        accumulate_grad_batches=128,
         max_epochs=max_epochs,
         log_every_n_steps=1,
         logger=logger,
@@ -470,6 +469,7 @@ def train(
         default_root_dir=save_dir,
         **kwargs,
     )
+    # accelerator="dp",
 
     sampler = None
 
