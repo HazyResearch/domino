@@ -241,7 +241,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
         if self.cnc:
             outs = self.forward(inputs)
-            loss = self.train_loss_computer(outs, targets.long())
+            loss = self.train_loss_computer(outs, targets.long()).mean()
             self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
             cw = self.config["train"]["cnc_config"]["contrastive_weight"]
@@ -265,7 +265,7 @@ class Classifier(pl.LightningModule, TerraModule):
         )
         outs = self.forward(inputs)
         if self.cnc:
-            loss = self.val_loss_computer(outs, targets)
+            loss = self.val_loss_computer(outs, targets).mean()
         else:
             loss = self.val_loss_computer.loss(outs, targets, group_ids)
         self.log("valid_loss", loss)  # , sync_dist=True)
@@ -520,7 +520,7 @@ def train(
         batch_size=batch_size,
         num_workers=num_workers,
         shuffle=sampler is None,
-        # sampler=sampler,
+        sampler=sampler,
     )
     valid_dl = DataLoader(
         val_dp,

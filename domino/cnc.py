@@ -142,7 +142,7 @@ class SupervisedContrastiveLoss(nn.Module):
         neg_exp = torch.exp(torch.div(neg_sim, self.temperature))
         neg_exp_sum = neg_exp.sum(0, keepdim=True)
 
-        log_probs = torch.log(pos_exp) - torch.log(pos_exp + neg_exp_sum)
+        log_probs = torch.log(pos_exp) - torch.log(pos_exp_sum + neg_exp_sum)
 
         loss = -1 * log_probs
 
