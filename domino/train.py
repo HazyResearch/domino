@@ -37,10 +37,6 @@ def train_model(
         target_column="target",
         run_dir=run_dir,
         wandb_config=metadata,
-        num_sanity_val_steps=30,
-        batch_size=128,
-        val_check_interval=20,
-        max_epochs=6,
         **kwargs,
     )
     return metadata
@@ -148,7 +144,7 @@ def score_slices(
             "train_run_id": run_id,
             "parent_run_id": int(os.path.basename(run_dir)),
             "score_run_id": score_run_id,
-            **compute_slice_metrics(score_dp.load(), num_iter=1000, flat=True),
+            **compute_model_metrics(score_dp.load(), num_iter=1000, flat=True),
             **config,
         }
 

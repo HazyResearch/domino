@@ -37,7 +37,7 @@ def train_eeg(
 if __name__ == "__main__":
 
     # Load original eeg datapanel
-    dp_art = build_stanford_eeg_dp.out(run_id=211)
+    dp_art = build_stanford_eeg_dp.out(run_id=318)
     dp = dp_art.load()
     dp_train = dp.lz[dp["split"] == "train"]
     dp_val = dp.lz[dp["split"] == "dev"]
@@ -61,7 +61,10 @@ if __name__ == "__main__":
         ).load()
 
         # combine dp_val and dp_train_age
-        # dp_age.append(dp_val)
+        import pdb
+
+        pdb.set_trace()
+        dp_age.append(dp_val)
 
         # train model on spurious dataset
         model = train_eeg(
