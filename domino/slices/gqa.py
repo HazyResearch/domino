@@ -37,7 +37,6 @@ TASKS = [
     {
         "target_name": "person",
         "target_objects": [
-            "person",
             "woman",
             "person",
             "baby",
