@@ -146,4 +146,4 @@ class SupervisedContrastiveLoss(nn.Module):
 
         loss = -1 * log_probs
 
-        return loss.mean()
+        return loss.mean(), pos_sim.sum(), neg_sim.sum()

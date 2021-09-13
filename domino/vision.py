@@ -181,6 +181,8 @@ class Classifier(pl.LightningModule, TerraModule):
             all_n_targets = n_entries[1]
 
             contrastive_loss = 0
+            pos_sim = 0
+            neg_sim = 0
             for a_ix in range(len(a_inputs)):
 
                 # p_inputs, p_targets, p_group_ids = (
@@ -205,9 +207,12 @@ class Classifier(pl.LightningModule, TerraModule):
                 encoded_ps = self.encoder(p_inputs).squeeze()
                 encoded_ns = self.encoder(n_inputs).squeeze()
 
-                contrastive_loss += self.contrastive_loss(
+                c_loss, pos_sim_, neg_sim_ = self.contrastive_loss(
                     (encoded_a, encoded_ps, encoded_ns)
                 )
+                contrastive_loss += c_loss
+                pos_sim += pos_sim_
+                neg_sim += neg_sim_
 
             contrastive_loss /= len(a_inputs)
             # loss = contrastive_loss
@@ -252,6 +257,20 @@ class Classifier(pl.LightningModule, TerraModule):
                 on_step=True,
                 logger=True,
                 # sync_dist=True,
+            )
+
+            self.log(
+                "positive_sim",
+                pos_sim,
+                on_step=True,
+                logger=True,
+            )
+
+            self.log(
+                "negative_sim",
+                neg_sim,
+                on_step=True,
+                logger=True,
             )
 
         return loss
