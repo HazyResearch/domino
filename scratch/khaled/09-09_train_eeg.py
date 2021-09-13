@@ -32,7 +32,7 @@ def train_eeg(
 if __name__ == "__main__":
 
     train_eeg(
-        dp=build_stanford_eeg_dp.out(run_id=192),
+        dp=build_stanford_eeg_dp.out(run_id=211),
         target_column="binary_sz",
         input_column="eeg_input",
     )
