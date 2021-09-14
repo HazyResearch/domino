@@ -51,6 +51,7 @@ def split_dp(
     test_frac: float = 0.2,
     other_splits: dict = None,
     salt: str = "",
+    id_col: str = "id",
 ):
     dp = dp.view()
     other_splits = {} if other_splits is None else other_splits
@@ -73,7 +74,9 @@ def split_dp(
             ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
         ] = split
         start = end
-    return mk.DataPanel({split_on: dp[split_on], "split": split_column})
+    return mk.DataPanel(
+        {split_on: dp[split_on], "split": split_column, id_col: dp[id_col]}
+    )
 
 
 @dataclass
