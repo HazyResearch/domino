@@ -53,9 +53,13 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
     )
 
 
-@requires_columns(dp_arg="dp", columns=["output", "target", "slice"])
+@requires_columns(dp_arg="dp", columns=["output", "target"])
 def compute_model_metrics(
-    dp: mk.DataPanel, num_iter: int = 1000, threshold: float = 0.5, flat: bool = False
+    dp: mk.DataPanel,
+    slice_col: str,
+    num_iter: int = 1000,
+    threshold: float = 0.5,
+    flat: bool = False,
 ):
     probs = dp["output"].probabilities().data[:, -1]
     preds = (probs > threshold).numpy()
@@ -74,8 +78,8 @@ def compute_model_metrics(
         }
         for name, mask in [
             ("overall", np.ones_like(probs, dtype=bool)),
-            ("in_slice", (dp["slice"] == 1) | (dp["target"] == 0)),
-            ("out_slice", dp["slice"] != 1),
+            ("in_slice", (dp[slice_col] == 1) | (dp["target"] == 0)),
+            ("out_slice", dp[slice_col] != 1),
         ]
     }
 
