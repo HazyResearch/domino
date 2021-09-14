@@ -17,8 +17,10 @@ if __name__ == "__main__":
         "ckpt_monitor": "valid_auroc",
         "train_config": config,
         "max_epochs": 10,
+        "drop_last": True,
     }
 
     slices_dp = collect_correlation_slices.out(439)
     splits_dp = split_dp.out(412)
-    train_slices(slices_dp, splits_dp, **kwargs)
+
+    train_slices(slices_dp.load()[2:], splits_dp, **kwargs)

@@ -157,6 +157,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 num_classes=num_classes,
                 arch=model_cfg["arch"],
                 dropout=model_cfg["dropout"],
+                pretrained=model_cfg["pretrained"],
             )
         elif model_cfg["model_name"] == "densenet":
             self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])

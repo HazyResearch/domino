@@ -2,6 +2,7 @@ model:
   model_name: resnet
   arch: resnet50
   dropout: 0
+  pretrained: True
   resume_ckpt: False
 
 train:

@@ -15,7 +15,10 @@ from PIL import Image
 from terra import Task
 from torchvision.models import resnet50
 
-from domino.data.gaze_utils import (
+from domino.modeling import ResNet
+from domino.vision import score
+
+from .gaze_utils import (
     apply_lf,
     diffusivity,
     make_heatmaps,
@@ -23,8 +26,6 @@ from domino.data.gaze_utils import (
     total_time,
     unique_visits,
 )
-from domino.modeling import ResNet
-from domino.vision import score
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865

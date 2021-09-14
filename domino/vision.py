@@ -212,6 +212,7 @@ def train(
     weighted_sampling: bool = False,
     pbar: bool = True,
     seed: int = 123,
+    drop_last: bool = False,
     run_dir: str = None,
     **kwargs,
 ):
@@ -315,6 +316,7 @@ def train(
         num_workers=num_workers,
         shuffle=sampler is None,
         sampler=sampler,
+        drop_last=drop_last,
     )
 
     valid_dp = dp.lz[dp["split"] == valid_split]

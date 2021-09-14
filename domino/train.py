@@ -40,6 +40,7 @@ def train_model(
         batch_size=kwargs["batch_size"],
         ckpt_monitor=kwargs["ckpt_monitor"],
         max_epochs=kwargs["max_epochs"],
+        drop_last=kwargs["drop_last"],
     )
     return metadata
 
