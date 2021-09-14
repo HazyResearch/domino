@@ -24,16 +24,18 @@ def load_contrastive_dp(dp, num_a, num_p, num_n):
     #       2: no pmx, tube     --> minority group
     #       3: pmx, tube        --> majority group
 
-    positive_entries_0 = dp[dp["group_id"].data == 2]
-    negative_entries_0 = dp[dp["group_id"].data == 1]
-    positive_entries_3 = dp[dp["group_id"].data == 1]
-    negative_entries_3 = dp[dp["group_id"].data == 2]
+    positive_entries_0 = dp[dp["target"].data == 0]  # dp[dp["group_id"].data == 2]
+    negative_entries_0 = dp[dp["target"].data == 1]  # dp[dp["group_id"].data == 1]
+    positive_entries_3 = dp[dp["target"].data == 1]  # dp[dp["group_id"].data == 1]
+    negative_entries_3 = dp[dp["target"].data == 0]  # dp[dp["group_id"].data == 2]
 
     # filter out minorty classes since anchors are only from majority classes
-    majority_mask = np.logical_or(dp["group_id"].data == 0, dp["group_id"].data == 3)
+    majority_mask = (
+        dp["group_id"].data > -1
+    )  # np.logical_or(dp["group_id"].data == 0, dp["group_id"].data == 3)
     contrastive_dp = dp[majority_mask]
 
-    contastive_input_col = contrastive_dp[["group_id"]].to_lambda(
+    contastive_input_col = contrastive_dp[["target"]].to_lambda(
         fn=partial(
             contrastive_input_loader,
             positive_entries=(positive_entries_0, positive_entries_3),
@@ -58,15 +60,15 @@ def contrastive_input_loader(
     positive_entries_0, positive_entries_3 = positive_entries
     negative_entries_0, negative_entries_3 = negative_entries
 
-    anchor_group_id = input_dict["group_id"]
-    if anchor_group_id == 0:
+    # anchor_group_id = input_dict["group_id"]
+    if input_dict["target"] == 0:  # anchor_group_id == 0:
         positive_idxs = np.random.choice(len(positive_entries_0), num_p)
         negative_idxs = np.random.choice(len(negative_entries_0), num_n)
         positive_inputs = positive_entries_0[positive_idxs]["input"].data
         negative_inputs = negative_entries_0[negative_idxs]["input"].data
         positive_targets = torch.Tensor(positive_entries_0[positive_idxs]["target"])
         negative_targets = torch.Tensor(negative_entries_0[negative_idxs]["target"])
-    elif anchor_group_id == 3:
+    elif input_dict["target"] == 1:  # anchor_group_id == 3:
         positive_idxs = np.random.choice(len(positive_entries_3), num_p)
         negative_idxs = np.random.choice(len(negative_entries_3), num_n)
         positive_inputs = positive_entries_3[positive_idxs]["input"].data
@@ -146,4 +148,4 @@ class SupervisedContrastiveLoss(nn.Module):
 
         loss = -1 * log_probs
 
-        return loss.mean(), pos_sim.sum(), neg_sim.sum()
+        return loss.mean(), pos_sim.mean(), neg_sim.mean()

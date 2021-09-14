@@ -215,6 +215,8 @@ class Classifier(pl.LightningModule, TerraModule):
                 neg_sim += neg_sim_
 
             contrastive_loss /= len(a_inputs)
+            pos_sim /= len(a_inputs)
+            neg_sim /= len(a_inputs)
             # loss = contrastive_loss
 
             # inputs = torch.cat(

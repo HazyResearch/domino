@@ -2,7 +2,7 @@ import hydra
 import meerkat as mk
 from omegaconf import DictConfig, OmegaConf
 
-from domino.vision import train
+from domino.vision_ks import train
 
 
 def train_cxr(
