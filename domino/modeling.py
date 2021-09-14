@@ -17,7 +17,11 @@ class ResNet(_ResNet):
     RESNET_TO_ARCH = {"resnet18": [2, 2, 2, 2], "resnet50": [3, 4, 6, 3]}
 
     def __init__(
-        self, num_classes: int, arch: str = "resnet18", pretrained: bool = True
+        self,
+        num_classes: int,
+        arch: str = "resnet18",
+        dropout: float = 0.0,
+        pretrained: bool = True,
     ):
         if arch not in self.RESNET_TO_ARCH:
             raise ValueError(
@@ -32,7 +36,10 @@ class ResNet(_ResNet):
             )
             self.load_state_dict(state_dict)
 
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        # self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.fc = nn.Sequential(
+            nn.Dropout(dropout), nn.Linear(512 * block.expansion, num_classes)
+        )
 
 
 class DenseNet(_DenseNet):
