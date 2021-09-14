@@ -13,7 +13,7 @@ from torch import nn
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
-from domino.slices.gqa import build_correlation_slice, build_rare_slice, build_slice
+from domino.slices.eeg import build_slice
 from domino.utils import nested_getattr
 from domino.vision import Classifier, score, train
 
@@ -31,13 +31,15 @@ def train_model(
 
     train(
         dp=dp,
-        config={"pretrained": False},
         input_column="input",
         id_column="id",
         target_column="target",
         run_dir=run_dir,
         wandb_config=metadata,
-        **kwargs,
+        config=kwargs["train_config"],
+        batch_size=kwargs["batch_size"],
+        ckpt_monitor=kwargs["ckpt_monitor"],
+        max_epochs=kwargs["max_epochs"],
     )
     return metadata
 
