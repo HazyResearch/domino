@@ -7,12 +7,14 @@ REQUIRED = [
     "pre-commit",
     "pytorch-lightning",
     "gradio<2.0.0",  # 1.7.7
+    "meerkat @ git+https://github.com/robustness-gym/meerkat@dev",
     "terra @ git+https://github.com/seyuboglu/terra",
     "pandas",
     "numpy>=1.18.0",
     "cytoolz",
     "ujson",
     "jsonlines>=1.2.0",
+    "nlkt",
     "torch>=1.8.0",
     "tqdm>=4.49.0",
     "scikit-learn",
@@ -20,7 +22,6 @@ REQUIRED = [
     "torchvision>=0.9.0",
     "wandb",
     "ray[default]",
-    "torchxrayvision",
 ]
 
 setuptools.setup(
@@ -31,7 +32,7 @@ setuptools.setup(
     description="Research package for automated slice discovery ",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/seyuboglu/domino",
+    url="https://github.com/HazyResearch/domino",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

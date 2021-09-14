@@ -1,11 +1,11 @@
 # 🎴 domino
-Research repository for slice discovery and design. 
+Research repository for slice discovery. 
 
 
 ## Getting started
 1. Clone the repository
 ```bash
-git clone https://github.com/seyuboglu/domino.git
+git clone https://github.com/HazyResearch/domino.git
 cd domino
 ```
 2. Install the package

@@ -1,9 +1,26 @@
 import hashlib
-from functools import reduce
-from typing import Dict, Optional, Sequence, Union
+import math
+import os
+from dataclasses import dataclass
+from datetime import date
+from functools import partial, reduce, wraps
+from inspect import getcallargs
+from typing import (
+    Collection,
+    Dict,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
+import meerkat as mk
 import numpy as np
 import pandas as pd
+import terra
 import torch
 from cytoolz import concat
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -11,6 +28,100 @@ from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
 from torchmetrics import Metric
+
+
+class ConditionalSample:
+    def __init__(self, classes: Tuple[Type], distrib: dict):
+        self.classes = classes
+        self.distrib = distrib
+
+    def __call__(self, spec):
+        if spec.config.sdm["sdm_class"] in self.classes:
+            return self.distrib
+        else:
+            return np.nan
+
+
+@terra.Task
+def split_dp(
+    dp: mk.DataPanel,
+    split_on: str,
+    train_frac: float = 0.7,
+    valid_frac: float = 0.1,
+    test_frac: float = 0.2,
+    other_splits: dict = None,
+    salt: str = "",
+    id_col: str = "id",
+):
+    dp = dp.view()
+    other_splits = {} if other_splits is None else other_splits
+    splits = {
+        "train": train_frac,
+        "valid": valid_frac,
+        "test": test_frac,
+        **other_splits,
+    }
+
+    if not math.isclose(sum(splits.values()), 1):
+        raise ValueError("Split fractions must sum to 1.")
+
+    dp["split_hash"] = dp[split_on].apply(partial(hash_for_split, salt=salt))
+    start = 0
+    split_column = pd.Series(["unassigned"] * len(dp))
+    for split, frac in splits.items():
+        end = start + frac
+        split_column[
+            ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
+        ] = split
+        start = end
+    return mk.DataPanel(
+        {split_on: dp[split_on], "split": split_column, id_col: dp[id_col]}
+    )
+
+
+@dataclass
+class VariableColumn:
+    variable_name: str
+
+    def resolve(self, args_dict: dict):
+        path = self.variable_name.split(".")
+        obj = args_dict[path[0]]
+        if len(path) > 1:
+            return nested_getattr(obj, ".".join(path[1:]))
+        return obj
+
+
+def requires_columns(dp_arg: str, columns: Collection[str]):
+    def _requires(fn: callable):
+        @wraps(fn)
+        def _wrapper(*args, aliases: Mapping[str, str] = None, **kwargs):
+            args_dict = getcallargs(fn, *args, **kwargs)
+            if "kwargs" in args_dict:
+                args_dict.update(args_dict.pop("kwargs"))
+            dp = args_dict[dp_arg]
+            if aliases is not None:
+                dp = dp.view()
+                for column, alias in aliases.items():
+                    dp[column] = dp[alias]
+
+            # resolve variable columns
+            resolved_cols = [
+                (col.resolve(args_dict) if isinstance(col, VariableColumn) else col)
+                for col in columns
+            ]
+
+            missing_cols = [col for col in resolved_cols if col not in dp]
+            if len(missing_cols) > 0:
+                raise ValueError(
+                    f"DataPanel passed to `{fn.__qualname__}` at argument `{dp_arg}` "
+                    f"is missing required columns `{missing_cols}`."
+                )
+            args_dict[dp_arg] = dp
+            return fn(**args_dict)
+
+        return _wrapper
+
+    return _requires
 
 
 def nested_getattr(obj, attr, *args):
@@ -70,7 +181,7 @@ class PredLogger(Metric):
     def compute(self):
         """TODO: this sometimes returns duplicates."""
         if torch.is_tensor(self.sample_ids[0]):
-            sample_ids = torch.cat(self.sample_ids).cpu()
+            sample_ids = torch.tensor(self.sample_ids).cpu()
         else:
             # support for string ids
             sample_ids = self.sample_ids
@@ -157,28 +268,6 @@ def auroc_bootstrap_ci(
     }
 
 
-def compute_bootstrap_ci(
-    sample: np.ndarray,
-    num_iter: int = 10000,
-    alpha: float = 0.05,
-    estimator: Union[callable, str] = "mean",
-):
-    """Compute an empirical confidence using bootstrap resampling."""
-    bs_samples = np.random.choice(sample, (sample.shape[0], num_iter))
-    if estimator == "mean":
-        bs_sample_estimates = bs_samples.mean(axis=0)
-        sample_estimate = sample.mean(axis=0)
-    else:
-        bs_sample_estimates = np.apply_along_axis(estimator, axis=0, arr=bs_samples)
-        sample_estimate = estimator(sample)
-
-    return {
-        "sample_estimate": sample_estimate,
-        "lower": np.percentile(bs_sample_estimates, alpha * 100),
-        "upper": np.percentile(bs_sample_estimates, 100 * (1 - alpha)),
-    }
-
-
 def format_ci(df: pd.DataFrame):
     return df.apply(lambda x: f"{x.sample_mean:0.} ({x.lower}, {x.upper})", axis=1)
 
@@ -251,3 +340,27 @@ def batched_pearsonr(x, y, batch_first=True):
     corr = bessel_corrected_covariance / (x_std * y_std)
 
     return corr
+
+
+def get_data_dir(nb_dir: str = None):
+    if nb_dir is None:
+        nb_dir = os.getcwd()
+    today = date.today()
+    dirname = today.strftime("%y-%m-%d_data")
+    data_dir = os.path.join(nb_dir, "data", dirname)
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def flatten_dict(d, parent_key="", sep="_"):
+    """
+    Source: https://stackoverflow.com/questions/6027558/flatten-nested-dictionaries-compressing-keys
+    """
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)

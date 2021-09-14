@@ -1,0 +1,32 @@
+# Job to submit a Ray program from a pod outside a running Ray cluster.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ray-test-job
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ray
+          image: rayproject/ray:latest-py38
+          imagePullPolicy: Always
+          command: [ "/bin/bash", "-c", "--" ]
+          args:
+            - "source /pd/sabri/ray-startup.sh"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: pv-1 # replace this with the name of the persistent volume you want to mount
+              mountPath: /pd # this will mount the volume pv-1 at /home
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: pv-1 # replace this with the name of the persistent volume you want to mount 
+          persistentVolumeClaim:
+            claimName: pvc-1 # replace this with the name of the persistent volume claim 
+        - name: dshm
+          emptyDir:
+            medium: Memory
