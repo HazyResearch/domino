@@ -43,7 +43,7 @@ def run_sdm(
 
 
 @terra.Task.make(no_load_args={"emb_dp"})
-def evaluate_sdms(
+def run_sdms(
     sdm_config: dict,
     slices_dp: mk.DataPanel,
     emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]] = None,

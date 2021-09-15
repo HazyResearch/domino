@@ -1,3 +1,4 @@
+import warnings
 from itertools import combinations
 from typing import Collection, Dict, Iterable, List, Mapping, Sequence, Union
 
@@ -19,21 +20,24 @@ from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
 def _get_hypernyms(data_dp: mk.DataPanel):
     synsets = set(data_dp["synset"].unique())
     hypernyms = []
+
     for synset in synsets:
         synset = wn.synset(synset)
-        for hypernym in synset.closure(lambda s: s.hypernyms()):
-            hypernyms.append(
-                {
-                    "synset": synset.name(),
-                    "hypernym": hypernym.name(),
-                }
-            )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for hypernym in synset.closure(lambda s: s.hypernyms()):
+                hypernyms.append(
+                    {
+                        "synset": synset.name(),
+                        "hypernym": hypernym.name(),
+                    }
+                )
     df = pd.DataFrame(hypernyms)
     return df
 
 
 class ImageNetSliceBuilder(AbstractSliceBuilder):
-    def build_rare_slice(
+    def build_rare_slices(
         self,
         data_dp: mk.DataPanel,
         target_synset: str,
@@ -101,6 +105,79 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
 
     def buid_noisy_feature_slices(self):
         raise NotImplementedError
+
+
+DEFAULT_TARGET_SYNSETS = [
+    "vehicle.n.01",
+    "clothing.n.01",
+    "food.n.01",
+    "musical_instrument.n.01",
+    "bird.n.01",
+    "vegetable.n.01",
+    "fruit.n.01",
+    "fish.n.01",
+    "car.n.01",
+    "ball.n.01",
+    "building.n.01",
+    "dog.n.01",
+    "cat.n.01",
+    "big_cat.n.01",
+    "timepiece.n.01",
+]
+
+
+@terra.Task
+def collect_rare_slices(
+    data_dp: mk.DataPanel,
+    target_synsets: Iterable[str] = None,
+    min_slice_frac: float = 0.001,
+    max_slice_frac: float = 0.001,
+    num_frac: int = 1,
+    num_slices: int = 3,
+    n: int = 100_000,
+):
+    data_dp = data_dp.view()
+    hypernyms = _get_hypernyms(data_dp=data_dp)
+
+    if target_synsets is None:
+        target_synsets = DEFAULT_TARGET_SYNSETS
+
+    settings = []
+    for target_synset in tqdm(target_synsets):
+        target_synsets = list(
+            hypernyms[hypernyms["hypernym"] == target_synset]["synset"].unique()
+        )
+        targets = data_dp["synset"].isin(target_synsets)
+        wrapped_target_synsets = target_synsets * 2
+        for start_idx in range(0, len(target_synsets), num_slices):
+            slice_synsets = wrapped_target_synsets[start_idx : start_idx + num_slices]
+
+            in_slice = data_dp["synset"].isin(slice_synsets)
+            out_slice = (in_slice == 0) & (targets == 1)
+
+            target_frac = min(
+                0.5,
+                in_slice.sum() / int(max_slice_frac * n),
+                out_slice.sum() / int((1 - min_slice_frac) * n),
+                targets.sum() / n,
+            )
+            settings.extend(
+                [
+                    {
+                        "dataset": "imagenet",
+                        "slice_category": "rare",
+                        "target_frac": target_frac,
+                        "slice_frac": slice_frac,
+                        "n": n,
+                        "slice_synsets": slice_synsets,
+                        "target_synset": target_synset,
+                    }
+                    for slice_frac in np.geomspace(
+                        min_slice_frac, max_slice_frac, num_frac
+                    )
+                ]
+            )
+    return mk.DataPanel(settings)
 
 
 @terra.Task

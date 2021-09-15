@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import Iterable, Tuple, Union
 
 import meerkat as mk
 import numpy as np
@@ -114,19 +114,48 @@ def induce_correlation(
 
 def synthesize_preds(
     dp: mk.DataPanel,
-    pos_ab: Tuple[float] = (1.5, 0.5),
-    neg_ab: Tuple[float] = (0.5, 1.5),
-    slice_pos_ab: Tuple[float] = (0.5, 0.5),
-    slice_neg_ab: Tuple[float] = (0.5, 0.5),
+    sensitivity: float = 0.8,
+    specificity: float = 0.8,
+    slice_sensitivities: Union[float, Iterable[float]] = None,
+    slice_specificities: Union[float, Iterable[float]] = None,
 ):
+    n_slices = dp["slices"].shape[-1]
+
+    if slice_sensitivities is None:
+        slice_sensitivities = [0.5] * n_slices
+    elif isinstance(slice_sensitivities, float):
+        slice_sensitivities = [slice_sensitivities] * n_slices
+
+    if slice_specificities is None:
+        slice_specificities = [0.5] * n_slices
+    elif isinstance(slice_specificities, float):
+        slice_specificities = [slice_specificities] * n_slices
+
+    if len(slice_sensitivities) != n_slices or len(slice_specificities) != n_slices:
+        raise ValueError(
+            "Both `slice_sensitivies` and `slice_specifities` should be "
+            "iterables with length equal to the number of slices."
+        )
+
     preds = np.zeros(len(dp))
-    preds[dp["target"] == 1] = np.random.beta(*pos_ab, dp["target"].sum())
+    preds[dp["target"] == 1] = np.random.beta(
+        sensitivity, 1 - sensitivity, dp["target"].sum()
+    )
+    preds[dp["target"] == 0] = np.random.beta(
+        1 - specificity, specificity, (1 - dp["target"]).sum()
+    )
+    for slice_idx in range(n_slices):
+        mask = (dp["target"] == 1) & (dp["slices"][:, slice_idx] == 1)
+        preds[mask] = np.random.beta(
+            slice_sensitivities[slice_idx],
+            1 - slice_sensitivities[slice_idx],
+            mask.sum(),
+        )
+        mask = (dp["target"] == 0) & (dp["slices"][:, slice_idx] == 1)
+        preds[mask] = np.random.beta(
+            1 - slice_specificities[slice_idx],
+            slice_specificities[slice_idx],
+            mask.sum(),
+        )
 
-    mask = dp["target"] == 1 & dp["slice"] == 1
-    preds[mask] = np.random.beta(*slice_pos_ab, mask.sum())
-
-    preds[dp["target"] == 0] = np.random.beta(*neg_ab, (1 - dp["target"]).sum())
-
-    mask = dp["target"] == 0 & dp["slice"] == 1
-    preds[mask] = np.random.beta(*slice_neg_ab, mask.sum())
     return preds

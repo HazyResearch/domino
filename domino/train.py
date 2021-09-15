@@ -13,7 +13,7 @@ from torch import nn
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
-from domino.slices.gqa import build_correlation_slice, build_rare_slice, build_slice
+from domino.slices.abstract import build_setting
 from domino.utils import nested_getattr
 from domino.vision import Classifier, score, train
 
@@ -21,14 +21,13 @@ from domino.vision import Classifier, score, train
 @terra.Task
 def train_model(
     dp: mk.DataPanel,
-    config: dict,
+    setting_config: dict,
     run_dir: str = None,
     **kwargs,
 ):
     # set seed
-    metadata = config
+    metadata = setting_config
     metadata["run_id"] = int(os.path.basename(run_dir))
-
     train(
         dp=dp,
         config={"pretrained": False},
@@ -46,20 +45,21 @@ def train_model(
     return metadata
 
 
-@terra.Task
+@terra.Task.make(no_load_args={"data_dp", "split_dp"})
 def train_slices(
     slices_dp: mk.DataPanel,
+    data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
     num_samples: int = 1,
     run_dir: str = None,
     **kwargs,
 ):
-    def _train_model(config):
-        dp = build_slice(split_dp=split_dp, **config)
-        config["parent_run_id"] = int(os.path.basename(run_dir))
+    def _train_model(setting_config):
+        dp = build_setting(data_dp=data_dp, split_dp=split_dp, **setting_config)
+        setting_config["parent_run_id"] = int(os.path.basename(run_dir))
         return train_model(
             dp=dp,
-            config=config,
+            setting_config=setting_config,
             pbar=False,
             **kwargs,
         )
@@ -165,9 +165,10 @@ def score_slices(
     return mk.DataPanel.from_pandas(analysis.dataframe())
 
 
-@terra.Task.make(no_load_args={"split_dp"})
+@terra.Task.make(no_load_args={"data_dp", "split_dp"})
 def synthetic_score_slices(
     slices_dp: mk.DataPanel,
+    data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
     synthetic_kwargs: Mapping[str, object] = None,
     run_dir: str = None,
@@ -175,7 +176,8 @@ def synthetic_score_slices(
 ):
     rows = []
     for config in tqdm(slices_dp):
-        run_id, _ = build_slice(
+        run_id, _ = build_setting(
+            data_dp=data_dp,
             split_dp=split_dp,
             return_run_id=True,
             synthetic_preds=True,
