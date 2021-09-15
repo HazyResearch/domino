@@ -143,6 +143,7 @@ def score_slices(
             return_run_id=True,
             **kwargs,
         )
+        config.pop("timesteps_total", None)
         return {
             "synthetic_preds": False,
             "train_run_id": run_id,
