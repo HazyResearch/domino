@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
-from domino.utils import nested_getattr
+from domino.utils import nested_getattr, requires_columns
 from domino.vision import Classifier, score, train
 
 
@@ -122,10 +122,10 @@ def score_model(
 @terra.Task
 def score_slices(
     model_df: pd.DataFrame,
-    slice_col: str,
     split: Union[str, Collection[str]] = "test",
     layers: Union[nn.Module, Mapping[str, str]] = None,
     reduction_fns: Sequence[str] = None,
+    slice_col: str = "slices",
     num_gpus: int = 1,
     num_cpus: int = 8,
     run_dir: str = None,
@@ -134,7 +134,7 @@ def score_slices(
     def _score_model(config):
         run_id = config.pop("run_id")
         score_run_id, score_dp = score_model(
-            model=train_model.get_artifacts(run_id, "best_chkpt")["model"],
+            model=train_model.get(run_id, "best_chkpt")["model"],
             dp=train_model.inp(run_id)["dp"],
             split=split,
             layers=layers,
@@ -149,7 +149,7 @@ def score_slices(
             "parent_run_id": int(os.path.basename(run_dir)),
             "score_run_id": score_run_id,
             **compute_model_metrics(
-                score_dp.load(), slice_col, num_iter=1000, flat=True
+                score_dp.load(), num_iter=1000, flat=True, aliases={"slices": slice_col}
             ),
             **config,
         }

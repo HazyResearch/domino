@@ -48,9 +48,8 @@ def embed_images(
     **kwargs,
 ) -> mk.DataPanel:
     if splits is not None:
-        dp = merge_in_split(split_dp)
-
-    dp.merge(split_dp[["image_id", "split"]], on="image_id")
+        dp = merge_in_split(dp, split_dp)
+        dp = dp.lz[dp["split"].isin(splits)]
 
     model, preprocess = clip.load(model, device=torch.device(0))
 
