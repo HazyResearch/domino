@@ -53,22 +53,23 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
     )
 
 
-@requires_columns(dp_arg="dp", columns=["output", "target"])
+@requires_columns(dp_arg="dp", columns=["pred", "target", "slices"])
 def compute_model_metrics(
     dp: mk.DataPanel,
-    slice_col: str,
     num_iter: int = 1000,
     threshold: float = 0.5,
     flat: bool = False,
 ):
-    probs = dp["output"].probabilities().data[:, -1]
-    preds = (probs > threshold).numpy()
+    probs = dp["pred"]
+    preds = probs > threshold
 
     metrics = {
         name: {
             "auroc": auroc_bootstrap_ci(
                 dp["target"][mask], probs[mask], num_iter=num_iter
-            ),
+            )
+            if len(np.unique(dp["target"][mask])) == 2
+            else np.nan,
             "recall": recall_bootstrap_ci(
                 dp["target"][mask], preds[mask], num_iter=num_iter
             ),
@@ -78,8 +79,11 @@ def compute_model_metrics(
         }
         for name, mask in [
             ("overall", np.ones_like(probs, dtype=bool)),
-            ("in_slice", (dp[slice_col] == 1) | (dp["target"] == 0)),
-            ("out_slice", dp[slice_col] != 1),
+            *(
+                (f"in_slice_{slice_idx}", (dp["slices"][:, slice_idx] == 1))
+                for slice_idx in range(dp["slices"].shape[-1])
+            ),
+            ("out_slice", dp["slices"].sum(axis=1) == 0),
         ]
     }
 

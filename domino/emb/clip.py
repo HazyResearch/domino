@@ -1,4 +1,5 @@
 import os
+from typing import Iterable
 
 import clip
 import meerkat as mk
@@ -10,7 +11,7 @@ import torchvision.transforms as transforms
 from terra import Task
 from tqdm.auto import tqdm
 
-from domino.utils import batched_pearsonr
+from domino.utils import batched_pearsonr, merge_in_split
 
 
 @Task
@@ -41,9 +42,15 @@ def embed_images(
     num_workers: int = 4,
     model: str = "ViT-B/32",
     mmap: bool = False,
+    split_dp: mk.DataPanel = None,
+    splits: Iterable[str] = None,
     run_dir: str = None,
     **kwargs,
 ) -> mk.DataPanel:
+    if splits is not None:
+        dp = merge_in_split(dp, split_dp)
+        dp = dp.lz[dp["split"].isin(splits)]
+
     model, preprocess = clip.load(model, device=torch.device(0))
 
     dp["__embed_images_input__"] = dp[img_column].to_lambda(preprocess)

@@ -42,6 +42,16 @@ class ConditionalSample:
             return np.nan
 
 
+def merge_in_split(dp: mk.DataPanel, split_dp: mk.DataPanel):
+    split_dp.columns
+    if "split" in dp:
+        dp.remove_column("split")
+    split_on = [col for col in split_dp.columns if (col != "split") and col != "index"]
+    assert len(split_on) == 1
+    split_on = split_on[0]
+    return dp.merge(split_dp, on=split_on)
+
+
 @terra.Task
 def split_dp(
     dp: mk.DataPanel,
@@ -51,7 +61,6 @@ def split_dp(
     test_frac: float = 0.2,
     other_splits: dict = None,
     salt: str = "",
-    id_col: str = "id",
 ):
     dp = dp.view()
     other_splits = {} if other_splits is None else other_splits
@@ -74,9 +83,10 @@ def split_dp(
             ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
         ] = split
         start = end
-    return mk.DataPanel(
-        {split_on: dp[split_on], "split": split_column, id_col: dp[id_col]}
-    )
+
+    # need to drop duplicates, since split_on might not be unique
+    df = pd.DataFrame({split_on: dp[split_on], "split": split_column}).drop_duplicates()
+    return mk.DataPanel.from_pandas(df)
 
 
 @dataclass
@@ -187,8 +197,9 @@ class PredLogger(Metric):
             sample_ids = self.sample_ids
         preds = torch.cat(self.preds).cpu()
         targets = torch.cat(self.targets).cpu()
+        self.preds, self.targets, self.sample_ids = [], [], []
 
-        return {"preds": preds, "targets": targets, "sample_ids": sample_ids}
+        return mk.DataPanel({"preds": preds, "targets": targets, "ids": sample_ids})
 
     def _apply(self, fn):
         """
