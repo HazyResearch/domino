@@ -30,17 +30,16 @@ def train_model(
     metadata["run_id"] = int(os.path.basename(run_dir))
     train(
         dp=dp,
-        config={"pretrained": False},
         input_column="input",
         id_column="id",
         target_column="target",
         run_dir=run_dir,
         wandb_config=metadata,
-        num_sanity_val_steps=30,
-        batch_size=128,
-        val_check_interval=20,
-        max_epochs=6,
-        **kwargs,
+        config=kwargs["train_config"],
+        batch_size=kwargs["batch_size"],
+        ckpt_monitor=kwargs["ckpt_monitor"],
+        max_epochs=kwargs["max_epochs"],
+        drop_last=kwargs["drop_last"],
     )
     return metadata
 
@@ -123,6 +122,7 @@ def score_model(
 @terra.Task
 def score_slices(
     model_df: pd.DataFrame,
+    slice_col: str,
     split: Union[str, Collection[str]] = "test",
     layers: Union[nn.Module, Mapping[str, str]] = None,
     reduction_fns: Sequence[str] = None,
@@ -134,7 +134,7 @@ def score_slices(
     def _score_model(config):
         run_id = config.pop("run_id")
         score_run_id, score_dp = score_model(
-            model=train_model.get_artifacts("best_chkpt", run_id)["model"],
+            model=train_model.get_artifacts(run_id, "best_chkpt")["model"],
             dp=train_model.inp(run_id)["dp"],
             split=split,
             layers=layers,
@@ -148,18 +148,16 @@ def score_slices(
             "train_run_id": run_id,
             "parent_run_id": int(os.path.basename(run_dir)),
             "score_run_id": score_run_id,
-            **compute_slice_metrics(score_dp.load(), num_iter=1000, flat=True),
+            **compute_model_metrics(
+                score_dp.load(), slice_col, num_iter=1000, flat=True
+            ),
             **config,
         }
 
     ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     analysis = tune.run(
         _score_model,
-        config=tune.grid_search(
-            model_df[
-                ["run_id", "target_name", "name", "slice_frac", "target_frac"]
-            ].to_dict("records")
-        ),
+        config=tune.grid_search(model_df[list(model_df)].to_dict("records")),
         resources_per_trial={"gpu": 1},
     )
     return mk.DataPanel.from_pandas(analysis.dataframe())

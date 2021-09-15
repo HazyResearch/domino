@@ -198,11 +198,7 @@ class ScribbleModel:
                 kernel_size=kernel_size,
             ).numpy()
             activation_dim = train_dp[activation_col].shape[1]
-            x = (
-                train_dp[activation_col]
-                .transpose(0, 2, 3, 1)
-                .reshape(-1, activation_dim)
-            )
+            x = train_dp[activation_col].permute(0, 2, 3, 1).reshape(-1, activation_dim)
             y = pos_mask_pool.flatten() > self.threshold
 
             if neg_weight_mask:
@@ -232,11 +228,7 @@ class ScribbleModel:
     ):
         if self.strategy in ["mask_pos_v", "mask_pos_v_neg"]:
             activation_dim = test_dp[activation_col].shape[1]
-            x = (
-                test_dp[activation_col]
-                .transpose(0, 2, 3, 1)
-                .reshape(-1, activation_dim)
-            )
+            x = test_dp[activation_col].permute(0, 2, 3, 1).reshape(-1, activation_dim)
         else:
             x = test_dp[activation_col].data.mean(axis=(2, 3))
 

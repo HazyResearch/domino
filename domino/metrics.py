@@ -55,7 +55,10 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
 
 @requires_columns(dp_arg="dp", columns=["pred", "target", "slices"])
 def compute_model_metrics(
-    dp: mk.DataPanel, num_iter: int = 1000, threshold: float = 0.5, flat: bool = False
+    dp: mk.DataPanel,
+    num_iter: int = 1000,
+    threshold: float = 0.5,
+    flat: bool = False,
 ):
     probs = dp["pred"]
     preds = probs > threshold
