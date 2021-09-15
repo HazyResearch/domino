@@ -87,7 +87,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
                 losses=losses,
             )
             all_weights.append(weights.numpy())
-        dp["slices"] = np.stack(all_weights, axis=1)
+        dp["pred_slices"] = np.stack(all_weights, axis=1)
         return dp
 
 

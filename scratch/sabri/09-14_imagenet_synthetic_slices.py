@@ -15,10 +15,15 @@ data_dp = get_imagenet_dp.out(6617)
 split = split_dp.out(6478)
 
 
-if False:
+if True:
 
-    if False:
-        slices_dp = collect_rare_slices(data_dp=data_dp)
+    if True:
+        slices_dp = collect_rare_slices(
+            data_dp=data_dp,
+            num_slices=1,
+            min_slice_frac=0.01,
+            max_slice_frac=0.01,
+        ).load()
     else:
         slices_dp = collect_rare_slices.out(6654).load()
 
@@ -27,7 +32,7 @@ if False:
         slices_dp=slices_dp,
         data_dp=data_dp,
         split_dp=split,
-        synthetic_kwargs={"slice_sensitivities": 0.1},
+        synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.5},
     )
 else:
     slices_dp = synthetic_score_slices.out(6703)
