@@ -35,7 +35,6 @@ class AbstractSliceBuilder:
         synthetic_kwargs: Mapping[str, object] = None,
         **kwargs,
     ) -> mk.DataPanel:
-        print("building")
         if slice_category == "correlation":
             dp = self.build_correlation_slices(data_dp=data_dp, **kwargs)
         elif slice_category == "rare":
@@ -48,7 +47,6 @@ class AbstractSliceBuilder:
             dp["pred"] = synthesize_preds(dp, **synthetic_kwargs)
 
         dp = merge_in_split(dp, split_dp)
-        print("done.")
         return dp
 
     def build_correlation_slices(self) -> mk.DataPanel:

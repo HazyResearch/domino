@@ -66,7 +66,7 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         emb = data_dp[self.config.emb].data
         emb_pca = self.pca.transform(X=emb)
         dp = data_dp.view()
-        dp["slices"] = self.gmm.predict_proba(
+        dp["pred_slices"] = self.gmm.predict_proba(
             emb_pca, y=data_dp["target"], y_hat=data_dp["pred"]
         )
         return dp
