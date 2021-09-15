@@ -16,6 +16,10 @@ def build_setting(dataset: str, data_dp: mk.DataPanel, **kwargs):
         from .imagenet import ImageNetSliceBuilder
 
         sb = ImageNetSliceBuilder()
+    elif dataset == "eeg":
+        from .eeg import EegSliceBuilder
+
+        sb = EegSliceBuilder()
     else:
         raise ValueError(f"Dataset {dataset} not supported.")
 

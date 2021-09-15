@@ -20,16 +20,16 @@ if __name__ == "__main__":
         "drop_last": True,
     }
 
-    slices_dp = collect_correlation_slices.out(439)
-    splits_dp = split_dp.out(412)
+    slices_dp = collect_correlation_slices.out(516)
+    split_dp_ = split_dp.out(515)
 
-    # train_slices(slices_dp.load()[2:], splits_dp, **kwargs)
+    train_slices(slices_dp, data_dp=dp_art, split_dp=split_dp_, **kwargs)
 
-    score_slices(
-        model_df=train_slices.out(494),
-        slice_col="binarized_age",
-        batch_size=10,
-        reduction_fns=["mean"],
-    )
+    # score_slices(
+    #     model_df=train_slices.out(494),
+    #     slice_col="binarized_age",
+    #     batch_size=10,
+    #     reduction_fns=["mean"],
+    # )
 
 #        layers={"fc1": "model.fc1"},
