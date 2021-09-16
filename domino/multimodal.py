@@ -20,6 +20,7 @@ from torchvision import transforms as transforms
 
 from domino.eeg_modeling.dense_inception import DenseInception
 from domino.modeling import DenseNet, ResNet
+from domino.text_modeling import TextCheXbert
 from domino.utils import PredLogger, TerraCheckpoint
 
 
@@ -64,7 +65,13 @@ class Classifier(pl.LightningModule, TerraModule):
             self.config.update(config)
 
         self._set_model()
+        # TODO this is specific for denseinception model
+        self.fc = self.model.fc2  # list(self.model.children())[-1]
+        self.model.fc2 = nn.Identity()
 
+        self.text_model = TextCheXbert(
+            self.config["chexbert_pth"], projection_dim=self.config["projection_dim"]
+        )
         metrics = self.config.get("metrics", ["auroc", "accuracy"])
         self.metrics = self._get_metrics(
             metrics, num_classes=self.config["num_classes"]
@@ -104,14 +111,31 @@ class Classifier(pl.LightningModule, TerraModule):
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 
     def forward(self, x):
-        return self.model(x)
+        return self.fc(self.model(x))
 
     def training_step(self, batch, batch_idx):
-        inputs, targets, _ = batch["input"], batch["target"], batch["id"]
-        outs = self.forward(inputs)
+        inputs, texts, targets, _ = (
+            batch["input"],
+            batch["text"],
+            batch["target"],
+            batch["id"],
+        )
 
-        loss = nn.functional.cross_entropy(outs, targets)
+        embs = self.model(inputs)
+        text_embs = self.text_model(texts)
+
+        cosine_loss = nn.functional.cosine_embedding_loss(
+            embs, text_embs, torch.ones_like(text_embs)[:, 0]
+        )
+
+        outs = self.forward(inputs)
+        ce_loss = nn.functional.cross_entropy(outs, targets)
+
+        loss = ce_loss + self.config["cosine_weight"] * cosine_loss
+
         self.log("train_loss", loss, on_step=True, logger=True)
+        self.log("CE train_loss", ce_loss, on_step=True, logger=True)
+        self.log("COS train_loss", cosine_loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -194,6 +218,7 @@ class BinaryMTClassifier(Classifier):
 def train(
     dp: mk.DataPanel,
     input_column: str,
+    text_column: str,
     target_column: Union[Sequence[str], str],
     id_column: str,
     model: Classifier = None,
@@ -275,6 +300,7 @@ def train(
         dp = mk.DataPanel.from_batch(
             {
                 "input": dp[input_column],
+                "text": dp[text_column],
                 "target": dp[target_column].astype(int),
                 "id": dp[id_column],
                 "split": dp["split"],
