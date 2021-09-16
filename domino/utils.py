@@ -53,6 +53,31 @@ def merge_in_split(dp: mk.DataPanel, split_dp: mk.DataPanel):
 
 
 @terra.Task
+def balance_dp(
+    dp: mk.DataPanel,
+    target_col: str = "target",
+):
+
+    targets = dp[target_col].data
+    print(f"Class balance: {targets.mean():.3f}")
+    num_pos = (targets == 1).sum()
+    num_neg = (targets == 0).sum()
+
+    new_indices = np.random.choice(
+        max(num_neg, num_pos), size=min(num_neg, num_pos), replace=False
+    )
+    minority_class = num_neg > num_pos
+    dp = dp.lz[targets == minority_class].append(
+        dp.lz[targets == (not minority_class)].lz[new_indices]
+    )
+
+    new_targets = dp[target_col].data
+    print(f"New class balance: {new_targets.mean():.3f}")
+
+    return dp
+
+
+@terra.Task
 def split_dp(
     dp: mk.DataPanel,
     split_on: str,

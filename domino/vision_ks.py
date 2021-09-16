@@ -485,7 +485,7 @@ def train(
     trainer = pl.Trainer(
         gpus=gpus,
         max_epochs=max_epochs,
-        accumulate_grad_batches=64,
+        accumulate_grad_batches=1,
         log_every_n_steps=1,
         logger=logger,
         callbacks=[checkpoint_callback],

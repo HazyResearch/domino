@@ -53,15 +53,20 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
     )
 
 
-@requires_columns(dp_arg="dp", columns=["pred", "target", "slices"])
+@requires_columns(dp_arg="dp", columns=["output", "target", "slices"])
 def compute_model_metrics(
     dp: mk.DataPanel,
     num_iter: int = 1000,
     threshold: float = 0.5,
     flat: bool = False,
 ):
-    probs = dp["pred"]
-    preds = probs > threshold
+
+    probs = dp["output"].softmax(1)[:, 1]
+    preds = (probs > threshold).float()
+
+    # # KS: Hacky way to get around having one slice for now
+    # if len(dp["slices"].shape) == 1:
+    #     dp["slices"] = dp["slices"].reshape(-1, 1)
 
     metrics = {
         name: {
