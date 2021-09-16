@@ -33,15 +33,19 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         weight_y_log_likelihood: float = 1
         covariance_type: str = "diag"
         pca_components: int = 128
+        n_clusters: int = 25
         init_params: str = "error"
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 0.5}}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
-        self.pca = PCA(n_components=self.config.pca_components)
+        if self.config.pca_components is None:
+            self.pca = None
+        else:
+            self.pca = PCA(n_components=self.config.pca_components)
         self.gmm = ErrorMixtureModel(
-            n_components=self.config.n_slices,
+            n_components=self.config.n_clusters,
             weight_y_log_likelihood=self.config.weight_y_log_likelihood,
             covariance_type=self.config.covariance_type,
             init_params=self.config.init_params,
@@ -54,8 +58,10 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         model: nn.Module = None,
     ):
         emb = data_dp[self.config.emb].data
-        emb_pca = self.pca.fit_transform(X=emb)
-        self.gmm.fit(X=emb_pca, y=data_dp["target"], y_hat=data_dp["pred"])
+        if self.pca is not None:
+            self.pca.fit(X=emb[:1000])
+            emb = self.pca.transform(X=emb)
+        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["pred"])
         return self
 
     @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
@@ -64,11 +70,16 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         data_dp: mk.DataPanel,
     ):
         emb = data_dp[self.config.emb].data
-        emb_pca = self.pca.transform(X=emb)
+        if self.pca is not None:
+            emb = self.pca.transform(X=emb)
         dp = data_dp.view()
-        dp["pred_slices"] = self.gmm.predict_proba(
-            emb_pca, y=data_dp["target"], y_hat=data_dp["pred"]
+        clusters = self.gmm.predict_proba(
+            emb, y=data_dp["target"], y_hat=data_dp["pred"]
         )
+        error_cluster_idx = (
+            -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
+        ).argsort()[: self.config.n_slices]
+        dp["pred_slices"] = clusters[:, error_cluster_idx]
         return dp
 
 

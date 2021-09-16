@@ -4,7 +4,7 @@ from ray import tune
 
 from domino import evaluate
 from domino.data.imagenet import get_imagenet_dp
-from domino.emb.clip import embed_images
+from domino.emb.clip import embed_images, embed_words, pca_embeddings
 from domino.evaluate import run_sdms, score_sdms
 from domino.sdm import MixtureModelSDM
 from domino.slices.imagenet import collect_rare_slices
@@ -13,21 +13,24 @@ from domino.utils import split_dp
 
 data_dp = get_imagenet_dp.out(6617)
 split = split_dp.out(6478)
+words_dp = embed_words.out(5143).load()
 
 
 if True:
 
     if True:
+
         slices_dp = collect_rare_slices(
             data_dp=data_dp,
+            words_dp=words_dp.lz[: int(10_000)],
             num_slices=1,
             min_slice_frac=0.01,
             max_slice_frac=0.01,
         ).load()
     else:
-        slices_dp = collect_rare_slices.out(6654).load()
+        slices_dp = collect_rare_slices.out(6654)
 
-    slices_dp = slices_dp.lz[np.random.choice(len(slices_dp), 5)]
+    # slices_dp = slices_dp.lz[np.random.choice(len(slices_dp), 20)]
     slices_dp = synthetic_score_slices(
         slices_dp=slices_dp,
         data_dp=data_dp,
@@ -36,8 +39,10 @@ if True:
     )
 else:
     slices_dp = synthetic_score_slices.out(6703)
+
 if False:
-    dp = embed_images(
+
+    emb_dp = embed_images(
         dp=data_dp,
         split_dp=split,
         splits=["valid", "test"],
@@ -47,6 +52,7 @@ if False:
     )
 else:
     emb_dp = embed_images.out(6662)
+
 
 if True:
     ray.init(num_gpus=1, num_cpus=6, resources={"ram_gb": 32})
@@ -60,8 +66,8 @@ if True:
         sdm_config={
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "n_slices": 25,
-                "weight_y_log_likelihood": 10,
+                "n_slices": tune.grid_search([15, 25, 35, 45]),
+                "weight_y_log_likelihood": tune.grid_search([5, 10, 15, 20]),
                 "emb": tune.grid_search([("clip", "emb")]),
             },
         },

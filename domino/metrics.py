@@ -25,6 +25,7 @@ RECALL_K = [50, 100, 200]
 
 @requires_columns(dp_arg="dp", columns=["pred_slices", "slices"])
 def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
+    pred_slice = dp["pred_slices"].argmax(axis=-1)
     return pd.DataFrame(
         [
             {
@@ -55,6 +56,14 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                     else np.nan
                     for k in RECALL_K
                 },
+                "recall": recall_score(
+                    dp["slices"][:, slice_idx],
+                    (pred_slice == pred_slice_idx).astype(int),
+                ),
+                "precision": precision_score(
+                    dp["slices"][:, slice_idx],
+                    (pred_slice == pred_slice_idx).astype(int),
+                ),
             }
             for slice_idx in range(dp["slices"].shape[1])
             for pred_slice_idx in range(dp["pred_slices"].shape[1])
