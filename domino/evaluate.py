@@ -46,19 +46,19 @@ def run_sdm(
 @terra.Task.make(no_load_args={"emb_dp"})
 def run_sdms(
     sdm_config: dict,
-    slices_dp: mk.DataPanel,
+    setting_dp: mk.DataPanel,
     emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]] = None,
     id_column: str = "image_id",
     run_dir: str = None,
 ):
     def _evaluate(config):
-
+        score_run_id = config["slice"]["score_model_run_id"]
         if config["slice"]["synthetic_preds"]:
-            dp = build_setting.out(config["slice"]["build_run_id"])
+            dp = build_setting.out(score_run_id)
             model = None
         else:
-            dp = score_model.out(config["slice"]["score_run_id"])
-            model = score_model.inp(config["slice"]["score_run_id"])["model"]
+            dp = score_model.out(score_run_id)
+            model = score_model.inp(score_run_id)["model"]
 
         if isinstance(emb_dp, Mapping):
             emb_tuple = config["sdm"]["sdm_config"]["emb"]
@@ -83,12 +83,16 @@ def run_sdms(
         )
 
         # need to return metadata to tune so we get it in the analysis dp
-        return {"run_sdm_run_id": run_id, **config["sdm"]}
+        return {
+            "run_sdm_run_id": run_id,
+            "score_model_run_id": score_run_id,
+            **config["sdm"],
+        }
 
     analysis = tune.run(
         _evaluate,
         config={
-            "slice": tune.grid_search(list(slices_dp)),
+            "slice": tune.grid_search(list(setting_dp)),
             "sdm": sdm_config,
         },
         resources_per_trial=tune.sample_from(
@@ -97,9 +101,12 @@ def run_sdms(
         raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
         local_dir=run_dir,
     )
-    result_dp = mk.concat(
-        [slices_dp, mk.DataPanel.from_pandas(analysis.dataframe())], axis="columns"
+    result_dp = mk.merge(
+        setting_dp,
+        mk.DataPanel.from_pandas(analysis.dataframe()),
+        on="score_model_run_id",
     )
+
     result_dp["sdm_class"] = (
         result_dp["sdm_class"].str.extract(r"'(.*)'", expand=False).data
     )

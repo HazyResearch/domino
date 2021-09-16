@@ -7,8 +7,8 @@ from domino.data.imagenet import get_imagenet_dp
 from domino.emb.clip import embed_images, embed_words, pca_embeddings
 from domino.evaluate import run_sdms, score_sdms
 from domino.sdm import MixtureModelSDM
-from domino.slices.imagenet import collect_rare_slices
-from domino.train import synthetic_score_slices
+from domino.slices import collect_settings
+from domino.train import synthetic_score_settings
 from domino.utils import split_dp
 
 data_dp = get_imagenet_dp.out(6617)
@@ -20,7 +20,9 @@ if True:
 
     if True:
 
-        slices_dp = collect_rare_slices(
+        setting_dp = collect_settings(
+            dataset="imagenet",
+            slice_category="rare",
             data_dp=data_dp,
             words_dp=words_dp.lz[: int(10_000)],
             num_slices=1,
@@ -28,17 +30,17 @@ if True:
             max_slice_frac=0.01,
         ).load()
     else:
-        slices_dp = collect_rare_slices.out(6654)
+        setting_dp = collect_settings.out(6654)
 
-    # slices_dp = slices_dp.lz[np.random.choice(len(slices_dp), 20)]
-    slices_dp = synthetic_score_slices(
-        slices_dp=slices_dp,
+    setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 25)]
+    setting_dp = synthetic_score_settings(
+        setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
         synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.5},
     )
 else:
-    slices_dp = synthetic_score_slices.out(6703)
+    setting_dp = synthetic_score_settings.out()
 
 if False:
 
@@ -56,8 +58,8 @@ else:
 
 if True:
     ray.init(num_gpus=1, num_cpus=6, resources={"ram_gb": 32})
-    slices_dp = run_sdms(
-        slices_dp=slices_dp,
+    setting_dp = run_sdms(
+        setting_dp=setting_dp,
         emb_dp={
             "clip": emb_dp,  # terra.out(5145),
             # "imagenet": emb_dp,
@@ -66,13 +68,13 @@ if True:
         sdm_config={
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "n_slices": tune.grid_search([15, 25, 35, 45]),
-                "weight_y_log_likelihood": tune.grid_search([5, 10, 15, 20]),
+                "n_slices": 5,
+                "weight_y_log_likelihood": tune.grid_search([10]),
                 "emb": tune.grid_search([("clip", "emb")]),
             },
         },
     )
 else:
-    slices_dp = run_sdms.out(6678)
+    setting_dp = run_sdms.out(6678)
 
-slices_df = score_sdms(slices_dp)
+slices_df = score_sdms(setting_dp)

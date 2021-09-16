@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from domino.slices.abstract import AbstractSliceBuilder
 
-from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
+from .utils import induce_correlation
 
 
 class EegSliceBuilder(AbstractSliceBuilder):

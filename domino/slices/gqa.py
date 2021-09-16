@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from domino.data.gqa import ATTRIBUTE_GROUPS, DATASET_DIR, split_gqa
 
-from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
+from .utils import CorrelationImpossibleError, induce_correlation, synthesize_preds
 
 
 @terra.Task.make(no_dump_args={"gqa_dps"})
