@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from domino.metrics import compute_sdm_metrics
 from domino.sdm.abstract import SliceDiscoveryMethod
-from domino.slices.gqa import build_slice
+from domino.slices.abstract import build_setting
 from domino.train import score_model
 
 
@@ -22,6 +22,7 @@ def run_sdm(
     emb_dp: Union[mk.DataPanel, Mapping[str, mk.DataPanel]],
     sdm_class: type,
     sdm_config: SliceDiscoveryMethod.Config,
+    id_column: str,
     **kwargs,
 ):
     print("Creating slice discovery method...")
@@ -29,7 +30,7 @@ def run_sdm(
 
     print("Loading embeddings...")
     data_dp = data_dp.lz[data_dp["split"].isin(["valid", "test"])].merge(
-        emb_dp[["object_id", sdm.config.emb]], on="object_id"
+        emb_dp[[id_column, sdm.config.emb]], on=id_column
     )
 
     print("Fitting slice discovery method...")
@@ -47,12 +48,13 @@ def run_sdms(
     sdm_config: dict,
     slices_dp: mk.DataPanel,
     emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]] = None,
+    id_column: str = "image_id",
     run_dir: str = None,
 ):
     def _evaluate(config):
 
         if config["slice"]["synthetic_preds"]:
-            dp = build_slice.out(config["slice"]["build_run_id"])
+            dp = build_setting.out(config["slice"]["build_run_id"])
             model = None
         else:
             dp = score_model.out(config["slice"]["score_run_id"])
@@ -74,13 +76,14 @@ def run_sdms(
             data_dp=dp,
             emb_dp=_emb_dp,
             model=model,
+            id_column=id_column,
             **config["slice"],
             **config["sdm"],
             return_run_id=True,
         )
 
         # need to return metadata to tune so we get it in the analysis dp
-        return {"run_sdm_run_id": run_id, **config["slice"], **config["sdm"]}
+        return {"run_sdm_run_id": run_id, **config["sdm"]}
 
     analysis = tune.run(
         _evaluate,
@@ -94,8 +97,9 @@ def run_sdms(
         raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
         local_dir=run_dir,
     )
-
-    result_dp = mk.DataPanel.from_pandas(analysis.dataframe())
+    result_dp = mk.concat(
+        [slices_dp, mk.DataPanel.from_pandas(analysis.dataframe())], axis="columns"
+    )
     result_dp["sdm_class"] = (
         result_dp["sdm_class"].str.extract(r"'(.*)'", expand=False).data
     )
@@ -104,7 +108,7 @@ def run_sdms(
 
 @terra.Task
 def score_sdms(evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
-    cols = ["target_name", "name", "run_sdm_run_id"]
+    cols = ["target_synset", "run_sdm_run_id"]
     if spec_columns is not None:
         cols += spec_columns
     dfs = []
@@ -113,5 +117,9 @@ def score_sdms(evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
         metrics_df = compute_sdm_metrics(dp)
         for col in cols:
             metrics_df[col] = row[col]
+        metrics_df["slice"] = metrics_df["slice_idx"].apply(
+            lambda x: row["slice_synsets"][x]
+        )
         dfs.append(metrics_df)
+
     return pd.concat(dfs, axis=0)

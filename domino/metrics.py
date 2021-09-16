@@ -23,32 +23,50 @@ PRECISION_K = [10, 25, 100]
 RECALL_K = [50, 100, 200]
 
 
+@requires_columns(dp_arg="dp", columns=["pred_slices", "slices"])
 def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
+    pred_slice = dp["pred_slices"].argmax(axis=-1)
     return pd.DataFrame(
         [
             {
+                "pred_slice_idx": pred_slice_idx,
                 "slice_idx": slice_idx,
-                "auroc": roc_auc_score(dp["slice"], dp["slices"].data[:, slice_idx])
-                if len(np.unique(dp["slice"])) > 1
+                "auroc": roc_auc_score(
+                    dp["slices"][:, slice_idx], dp["pred_slices"][:, pred_slice_idx]
+                )
+                if len(np.unique(dp["slices"][:, slice_idx])) > 1
                 else np.nan,
                 **{
                     f"precision_at_{k}": precision_at_k(
-                        dp["slice"], dp["slices"].data[:, slice_idx], k=k
+                        dp["slices"][:, slice_idx],
+                        dp["pred_slices"][:, pred_slice_idx],
+                        k=k,
                     )
-                    if len(np.unique(dp["slice"])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
                     else np.nan
                     for k in PRECISION_K
                 },
                 **{
                     f"recall_at_{k}": recall_at_k(
-                        dp["slice"], dp["slices"].data[:, slice_idx], k=k
+                        dp["slices"][:, slice_idx],
+                        dp["pred_slices"][:, pred_slice_idx],
+                        k=k,
                     )
-                    if len(np.unique(dp["slice"])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
                     else np.nan
                     for k in RECALL_K
                 },
+                "recall": recall_score(
+                    dp["slices"][:, slice_idx],
+                    (pred_slice == pred_slice_idx).astype(int),
+                ),
+                "precision": precision_score(
+                    dp["slices"][:, slice_idx],
+                    (pred_slice == pred_slice_idx).astype(int),
+                ),
             }
             for slice_idx in range(dp["slices"].shape[1])
+            for pred_slice_idx in range(dp["pred_slices"].shape[1])
         ]
     )
 

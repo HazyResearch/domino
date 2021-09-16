@@ -1,6 +1,6 @@
 import warnings
 from itertools import combinations
-from typing import Collection, Dict, Iterable, List, Mapping, Sequence, Union
+from typing import Collection, Dict, Iterable, List, Mapping, Sequence, Set, Union
 
 import meerkat as mk
 import numpy as np
@@ -32,8 +32,21 @@ def _get_hypernyms(data_dp: mk.DataPanel):
                         "hypernym": hypernym.name(),
                     }
                 )
+
+    # run through the hypernyms to get their hypernyms
     df = pd.DataFrame(hypernyms)
-    return df
+    for hypernym in df["hypernym"].unique():
+        synset = wn.synset(hypernym)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for hypernym in synset.closure(lambda s: s.hypernyms()):
+                hypernyms.append(
+                    {
+                        "synset": synset.name(),
+                        "hypernym": hypernym.name(),
+                    }
+                )
+    return pd.DataFrame(hypernyms)
 
 
 class ImageNetSliceBuilder(AbstractSliceBuilder):
@@ -59,7 +72,13 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
         n_slices = len(slice_synsets)
         slices = np.zeros((len(data_dp), n_slices))
         for slice_idx, slice_synset in enumerate(slice_synsets):
-            slices[:, slice_idx] = (data_dp["synset"] == slice_synset).astype(int)
+            slices[:, slice_idx] = (
+                data_dp["synset"].isin(
+                    [slice_synset]
+                    + list(hypernyms["synset"][hypernyms["hypernym"] == slice_synset])
+                    # include all hyponyms of the slice_synset when filtering datapanel
+                )
+            ).astype(int)
         data_dp["slices"] = slices
 
         data_dp["input"] = data_dp["image"]
@@ -126,9 +145,20 @@ DEFAULT_TARGET_SYNSETS = [
 ]
 
 
+def _filter_synsets(synsets: Iterable[str], words: Set[str]):
+    filtered_synsets = []
+    for synset in synsets:
+        synset = wn.synset(synset)
+        if len(set(map(lambda x: x.lower(), synset.lemma_names())) & words) > 0:
+            filtered_synsets.append(synset.name())
+
+    return filtered_synsets
+
+
 @terra.Task
 def collect_rare_slices(
     data_dp: mk.DataPanel,
+    words_dp: mk.DataPanel,
     target_synsets: Iterable[str] = None,
     min_slice_frac: float = 0.001,
     max_slice_frac: float = 0.001,
@@ -138,7 +168,7 @@ def collect_rare_slices(
 ):
     data_dp = data_dp.view()
     hypernyms = _get_hypernyms(data_dp=data_dp)
-
+    words = set(words_dp["word"])
     if target_synsets is None:
         target_synsets = DEFAULT_TARGET_SYNSETS
 
@@ -148,13 +178,24 @@ def collect_rare_slices(
             hypernyms[hypernyms["hypernym"] == target_synset]["synset"].unique()
         )
         targets = data_dp["synset"].isin(target_synsets)
-        wrapped_target_synsets = target_synsets * 2
-        for start_idx in range(0, len(target_synsets), num_slices):
-            slice_synsets = wrapped_target_synsets[start_idx : start_idx + num_slices]
 
-            in_slice = data_dp["synset"].isin(slice_synsets)
+        # only use synsets that are in our set of explanation words for slice, so that
+        # we can compute mrr on natural languge explanations
+        candidate_slice_synsets = _filter_synsets(target_synsets, words)
+        # double list length so we can wrap around
+        candidate_slice_synsets = candidate_slice_synsets * 2
+        for start_idx in range(0, len(candidate_slice_synsets), num_slices):
+            # TODO: ensure no overlapping
+            slice_synsets = candidate_slice_synsets[start_idx : start_idx + num_slices]
+
+            in_slice = data_dp["synset"].isin(
+                slice_synsets
+                + list(hypernyms["synset"][hypernyms["hypernym"].isin(slice_synsets)])
+                # include all hyponyms of the slice_synsets when filtering datapanel
+            )
             out_slice = (in_slice == 0) & (targets == 1)
 
+            # get the maximum class balance (up to 0.5) for which the n is possible
             target_frac = min(
                 0.5,
                 in_slice.sum() / int(max_slice_frac * n),

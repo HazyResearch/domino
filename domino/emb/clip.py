@@ -69,6 +69,27 @@ def embed_images(
 
 
 @Task
+def pca_embeddings(
+    images_dp: mk.DataPanel,
+    words_dp: mk.DataPanel,
+    n_components: int = 128,
+    top_k: int = 10_000,
+):
+    from sklearn.decomposition import PCA
+
+    pca = PCA(n_components=n_components)
+    pca.fit(words_dp["emb"].lz[:top_k])
+    images_dp[f"emb_{n_components}"] = images_dp["emb"].map(
+        lambda x: pca.transform(x),
+        is_batched_fn=True,
+        batch_size=1024,
+        mmap=True,
+        pbar=True,
+    )
+    return images_dp
+
+
+@Task
 def get_wiki_words(top_k: int = 1e5, eng_only: bool = False, run_dir: str = None):
     df = pd.read_csv(
         "https://github.com/IlyaSemenov/wikipedia-word-frequency/raw/master/results/enwiki-20190320-words-frequency.txt",

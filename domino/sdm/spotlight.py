@@ -24,8 +24,8 @@ class SpotlightSDM(SliceDiscoveryMethod):
 
     RESOURCES_REQUIRED = {"cpu": 1, "gpu": 1, "custom_resources": {"ram_gb": 2}}
 
-    def __init__(self, config: dict = None):
-        super().__init__(config)
+    def __init__(self, config: dict = None, **kwargs):
+        super().__init__(config, **kwargs)
         self.means = []
         self.precisions = []
 
@@ -87,7 +87,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
                 losses=losses,
             )
             all_weights.append(weights.numpy())
-        dp["slices"] = np.stack(all_weights, axis=1)
+        dp["pred_slices"] = np.stack(all_weights, axis=1)
         return dp
 
 
