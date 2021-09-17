@@ -9,7 +9,7 @@ from ray import tune
 from ray.tune.utils.placement_groups import PlacementGroupFactory
 from tqdm import tqdm
 
-from domino.metrics import compute_sdm_metrics
+from domino.metrics import compute_expl_metrics, compute_sdm_metrics
 from domino.sdm.abstract import SliceDiscoveryMethod
 from domino.slices.abstract import build_setting
 from domino.train import score_model
@@ -23,6 +23,7 @@ def run_sdm(
     sdm_class: type,
     sdm_config: SliceDiscoveryMethod.Config,
     id_column: str,
+    word_dp: mk.DataPanel = None,
     **kwargs,
 ):
     print("Creating slice discovery method...")
@@ -40,14 +41,21 @@ def run_sdm(
     )
     print("Transforming slice discovery method...")
     slice_dp = sdm.transform(data_dp=data_dp.lz[data_dp["split"] == "test"])
-    return slice_dp
+
+    if word_dp is not None:
+        print("Explaining slices...")
+        expl_dp = sdm.explain(word_dp, data_dp=slice_dp)
+        return slice_dp, expl_dp
+
+    return slice_dp, None
 
 
-@terra.Task.make(no_load_args={"emb_dp"})
+@terra.Task.make(no_load_args={"emb_dp", "word_dp"})
 def run_sdms(
     sdm_config: dict,
     setting_dp: mk.DataPanel,
     emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]] = None,
+    word_dp: mk.DataPanel = None,
     id_column: str = "image_id",
     run_dir: str = None,
 ):
@@ -77,6 +85,7 @@ def run_sdms(
             emb_dp=_emb_dp,
             model=model,
             id_column=id_column,
+            word_dp=word_dp,
             **config["slice"],
             **config["sdm"],
             return_run_id=True,
@@ -120,10 +129,37 @@ def score_sdms(evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
         cols += spec_columns
     dfs = []
     for row in tqdm(evaluate_dp):
-        dp = run_sdm.out(run_id=row["run_sdm_run_id"], load=True)
-        metrics_df = compute_sdm_metrics(dp)
+        dp, _ = run_sdm.out(run_id=row["run_sdm_run_id"])
+        metrics_df = compute_sdm_metrics(dp.load())
+
         for col in cols:
             metrics_df[col] = row[col]
+
+        metrics_df["slice"] = metrics_df["slice_idx"].apply(
+            lambda x: row["slice_synsets"][x]
+        )
+        dfs.append(metrics_df)
+
+    return pd.concat(dfs, axis=0)
+
+
+@terra.Task
+def score_sdm_explanations(
+    evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None
+):
+    cols = ["target_synset", "run_sdm_run_id"]
+    if spec_columns is not None:
+        cols += spec_columns
+    dfs = []
+    for row in tqdm(evaluate_dp):
+        _, words_dp = run_sdm.out(run_id=row["run_sdm_run_id"])
+        metrics_df = compute_expl_metrics(
+            words_dp.load(), slice_synsets=row["slice_synsets"]
+        )
+
+        for col in cols:
+            metrics_df[col] = row[col]
+
         metrics_df["slice"] = metrics_df["slice_idx"].apply(
             lambda x: row["slice_synsets"][x]
         )

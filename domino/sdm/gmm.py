@@ -34,9 +34,10 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         covariance_type: str = "diag"
         pca_components: int = 128
         n_clusters: int = 25
+        explain_w_model: bool = False
         init_params: str = "error"
 
-    RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 0.5}}
+    RESOURCES_REQUIRED = {"cpu": 1}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
@@ -62,6 +63,10 @@ class MixtureModelSDM(SliceDiscoveryMethod):
             self.pca.fit(X=emb[:1000])
             emb = self.pca.transform(X=emb)
         self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["pred"])
+
+        self.slice_cluster_indices = (
+            -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
+        ).argsort()[: self.config.n_slices]
         return self
 
     @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
@@ -76,11 +81,24 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         clusters = self.gmm.predict_proba(
             emb, y=data_dp["target"], y_hat=data_dp["pred"]
         )
-        error_cluster_idx = (
-            -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
-        ).argsort()[: self.config.n_slices]
-        dp["pred_slices"] = clusters[:, error_cluster_idx]
+
+        dp["pred_slices"] = clusters[:, self.slice_cluster_indices]
         return dp
+
+    @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
+    def explain(
+        self, words_dp: mk.DataPanel, data_dp: mk.DataPanel = None
+    ) -> mk.DataPanel:
+        if not self.config.explain_w_model:
+            return super().explain(words_dp, data_dp)
+        words_dp = words_dp.view()
+        emb = words_dp["emb"]
+        if self.pca is not None:
+            emb = self.pca.transform(X=emb)
+        words_dp["pred_slices"] = self.gmm.predict_proba(X=emb)[
+            :, self.slice_cluster_indices
+        ]
+        return words_dp[["word", "pred_slices", "frequency"]]
 
 
 class ErrorMixtureModel(GaussianMixture):

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from domino.utils import requires_columns
+from domino.utils import VariableColumn, requires_columns
 
 
 class SliceDiscoveryMethod(ABC):
@@ -39,3 +39,18 @@ class SliceDiscoveryMethod(ABC):
     @abstractmethod
     def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
         pass
+
+    @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
+    def explain(self, words_dp: mk.DataPanel, data_dp: mk.DataPanel) -> mk.DataPanel:
+        words_dp = words_dp.view()
+        slice_proto = (
+            np.dot(data_dp["pred_slices"].T, data_dp["emb"])
+            / data_dp["pred_slices"].sum(axis=0, keepdims=True).T
+        )
+
+        ref_proto = data_dp.lz[data_dp["target"] == 1]["emb"].data.mean(axis=0)
+
+        words_dp["pred_slices"] = np.dot(
+            words_dp["emb"].data.numpy(), (slice_proto - ref_proto).T
+        )
+        return words_dp[["word", "pred_slices", "frequency"]]

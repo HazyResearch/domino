@@ -3,6 +3,7 @@ from itertools import combinations
 from typing import Collection, Dict, Iterable, List, Mapping, Sequence, Set, Union
 
 import meerkat as mk
+import nltk
 import numpy as np
 import pandas as pd
 import terra
@@ -14,10 +15,12 @@ from tqdm import tqdm
 from domino.data.gqa import ATTRIBUTE_GROUPS, DATASET_DIR, split_gqa
 from domino.slices.abstract import AbstractSliceBuilder
 
-from .utils import CorrelationImpossibleError, induce_correlation, synthesize_preds
-
 
 def _get_hypernyms(data_dp: mk.DataPanel):
+    try:
+        nltk.data.find("corpora/wordnet")
+    except LookupError:
+        nltk.download("wordnet")
     synsets = set(data_dp["synset"].unique())
     hypernyms = []
 

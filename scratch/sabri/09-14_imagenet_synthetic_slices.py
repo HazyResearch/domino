@@ -5,7 +5,7 @@ from ray import tune
 from domino import evaluate
 from domino.data.imagenet import get_imagenet_dp
 from domino.emb.clip import embed_images, embed_words, pca_embeddings
-from domino.evaluate import run_sdms, score_sdms
+from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM
 from domino.slices import collect_settings
 from domino.train import synthetic_score_settings
@@ -26,18 +26,18 @@ if True:
             data_dp=data_dp,
             words_dp=words_dp.lz[: int(10_000)],
             num_slices=1,
-            min_slice_frac=0.01,
-            max_slice_frac=0.01,
+            min_slice_frac=0.03,
+            max_slice_frac=0.03,
         ).load()
     else:
         setting_dp = collect_settings.out(6654)
 
-    setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 25)]
+    setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
-        synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.5},
+        synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.4},
     )
 else:
     setting_dp = synthetic_score_settings.out()
@@ -57,7 +57,7 @@ else:
 
 
 if True:
-    ray.init(num_gpus=1, num_cpus=6, resources={"ram_gb": 32})
+    ray.init(num_gpus=0, num_cpus=28)
     setting_dp = run_sdms(
         setting_dp=setting_dp,
         emb_dp={
@@ -65,6 +65,7 @@ if True:
             # "imagenet": emb_dp,
             # "bit": terra.out(5796),
         },
+        word_dp=words_dp,
         sdm_config={
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
@@ -78,3 +79,4 @@ else:
     setting_dp = run_sdms.out(6678)
 
 slices_df = score_sdms(setting_dp)
+slices_df = score_sdm_explanations(setting_dp)
