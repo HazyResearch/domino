@@ -1,4 +1,4 @@
-from typing import Dict, Mapping, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Sequence, Tuple, Union
 
 import meerkat as mk
 import pandas as pd
@@ -6,6 +6,7 @@ import terra
 import torch.nn as nn
 from meerkat.datapanel import DataPanel
 from ray import tune
+from ray.tune.suggest.variant_generator import _generate_variants
 from ray.tune.utils.placement_groups import PlacementGroupFactory
 from tqdm import tqdm
 
@@ -97,6 +98,15 @@ def run_sdms(
             "score_model_run_id": score_run_id,
             **config["sdm"],
         }
+
+    if isinstance(sdm_config, List):
+        # ray tune does not supported nested grid_searches by default, but this is
+        # necessary when running searches over multiple different SDMs
+        # here we support this common use case
+        expanded_config = []
+        for config in sdm_config:
+            expanded_config.extend(list(zip(*_generate_variants(config)))[1])
+        sdm_config = tune.grid_search(expanded_config)
 
     analysis = tune.run(
         _evaluate,

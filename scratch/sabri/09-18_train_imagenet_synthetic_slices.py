@@ -8,7 +8,7 @@ from domino.emb.clip import embed_images, embed_words, pca_embeddings
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
-from domino.train import synthetic_score_settings
+from domino.train import synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
 data_dp = get_imagenet_dp.out(6617)
@@ -16,9 +16,9 @@ split = split_dp.out(6478)
 words_dp = embed_words.out(5143).load()
 
 
-if False:
+if True:
 
-    if True:
+    if False:
 
         setting_dp = collect_settings(
             dataset="imagenet",
@@ -30,14 +30,18 @@ if False:
             max_slice_frac=0.03,
         ).load()
     else:
-        setting_dp = collect_settings.out(6654)
+        setting_dp = collect_settings.out().load()
 
     setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
-    setting_dp = synthetic_score_settings(
+    setting_dp = train_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
-        synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.4},
+        model_config={"pretrained": False},
+        batch_size=128,
+        val_check_interval=20,
+        max_epochs=6,
+        ckpt_monitor="valid_auroc",
     )
 else:
     setting_dp = synthetic_score_settings.out()

@@ -22,6 +22,7 @@ from domino.vision import Classifier, score, train
 def train_model(
     dp: mk.DataPanel,
     setting_config: dict,
+    model_config: dict,
     run_dir: str = None,
     **kwargs,
 ):
@@ -35,11 +36,8 @@ def train_model(
             "train_model_run_id": int(os.path.basename(run_dir)),
             **setting_config,
         },
-        config=kwargs["train_config"],
-        batch_size=kwargs["batch_size"],
-        ckpt_monitor=kwargs["ckpt_monitor"],
-        max_epochs=kwargs["max_epochs"],
-        drop_last=kwargs["drop_last"],
+        config=model_config,
+        **kwargs,
     )
 
 
@@ -48,17 +46,19 @@ def train_settings(
     setting_dp: mk.DataPanel,
     data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
+    model_config: dict,
     num_samples: int = 1,
     run_dir: str = None,
     **kwargs,
 ):
     def _train_model(setting_config):
         build_setting_run_id, dp = build_setting(
-            data_dp=data_dp, split_dp=split_dp, **setting_config
+            data_dp=data_dp, split_dp=split_dp, return_run_id=True, **setting_config
         )
         run_id, _ = train_model(
             dp=dp,
             setting_config=setting_config,
+            model_config=model_config,
             pbar=False,
             **kwargs,
             return_run_id=True,
