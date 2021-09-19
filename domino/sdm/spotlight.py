@@ -1,5 +1,6 @@
 import datetime
 from dataclasses import dataclass
+from typing import Union
 
 import meerkat as mk
 import numpy as np
@@ -21,8 +22,9 @@ class SpotlightSDM(SliceDiscoveryMethod):
         min_weight: int = 100
         num_steps: int = 1000
         learning_rate: float = 1e-2
+        device: Union[str, int] = 0
 
-    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 1, "custom_resources": {"ram_gb": 2}}
+    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 1}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
@@ -59,6 +61,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
                     self.config.num_steps,
                 ),
                 learning_rate=self.config.learning_rate,
+                device=self.config.device,
             )
             self.means.append(mean.cpu().detach())
             self.precisions.append(log_precision.cpu().detach())
@@ -92,7 +95,6 @@ class SpotlightSDM(SliceDiscoveryMethod):
 
 
 ## Source below from spotlight implementation https://github.com/gregdeon/spotlight/blob/main/torch_spotlight/spotlight.py
-max_svd_attempts = 10
 
 
 def gaussian_probs(mean, precision, x):
@@ -259,22 +261,6 @@ def run_spotlight(
             weights, weights_unnorm, weighted_loss, total_weight = md_adversary_weights(
                 mean, precision_matrix, x, y
             )
-            ms_spent = (datetime.datetime.now() - start_time).total_seconds() * 1000
-
-            precision_print = torch.exp(log_precision)
-            # print(
-            #     "steps = %5d | ms = %5d | mean = %5.2f | precision = %5.6f | loss = %.3f | total weight = %7.1f | barrier = %6.1f | lr = %.5f"
-            #     % (
-            #         t + 1,
-            #         ms_spent,
-            #         (mean ** 2).sum(),
-            #         precision_print,
-            #         weighted_loss,
-            #         total_weight,
-            #         barrier_x_schedule[t],
-            #         get_lr(optimizer),
-            #     )
-            # )
 
     final_weights = weights.detach().cpu().numpy()
     final_weights_unnorm = weights_unnorm.detach().cpu().numpy()

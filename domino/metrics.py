@@ -1,4 +1,4 @@
-from typing import Union
+from typing import List, Union
 
 import meerkat as mk
 import numpy as np
@@ -69,6 +69,39 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
             for pred_slice_idx in range(dp["pred_slices"].shape[1])
         ]
     )
+
+
+@requires_columns(dp_arg="word_dp", columns=["pred_slices", "word"])
+def compute_expl_metrics(
+    word_dp: mk.DataPanel, slice_synsets: List[str]
+) -> pd.DataFrame:
+    from nltk.corpus import wordnet as wn
+
+    rows = []
+    ranks = rankdata(-word_dp["pred_slices"], axis=0, method="ordinal")
+    for slice_idx, slice_synset in enumerate(slice_synsets):
+        slice_synset = wn.synset(slice_synset)
+        lemmas = set(map(lambda x: x.lower(), slice_synset.lemma_names()))
+        mask = word_dp["word"].isin(lemmas)
+        lemma_ranks = ranks[mask]
+        metrics = {
+            "mean_reciprocal_rank": (1 / lemma_ranks).mean(axis=0),
+            "max_reciprocal_rank": (1 / lemma_ranks).max(axis=0),
+            "mean_rank": lemma_ranks.mean(axis=0),
+            "min_rank": lemma_ranks.min(axis=0),
+        }
+        rows.extend(
+            [
+                {
+                    "pred_slice_idx": pred_slice_idx,
+                    "slice_idx": slice_idx,
+                    "slice_synset": slice_synset.name(),
+                    **{k: v[pred_slice_idx] for k, v in metrics.items()},
+                }
+                for pred_slice_idx in range(ranks.shape[1])
+            ]
+        )
+    return pd.DataFrame(rows)
 
 
 @requires_columns(dp_arg="dp", columns=["output", "target", "slices"])

@@ -1,18 +1,21 @@
 from typing import Dict, List, Mapping, Sequence
 
 import meerkat as mk
+import meerkat.contrib.mimic.gcs
 import numpy as np
 import terra
 from torchvision import transforms
 from tqdm import tqdm
-import meerkat.contrib.mimic.gcs
 
-from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
+from .utils import CorrelationImpossibleError, induce_correlation, synthesize_preds
 
-def build_correlation_slice(target: str, correlate: str, corr: float, n: int, dataset_dir: str, **kwargs) -> mk.DataPanel:
+
+def build_correlation_slice(
+    target: str, correlate: str, corr: float, n: int, dataset_dir: str, **kwargs
+) -> mk.DataPanel:
 
     dp = mk.DataPanel.read(dataset_dir)
-    
+
     indices = induce_correlation(
         dp=dp,
         corr=corr,
@@ -26,7 +29,8 @@ def build_correlation_slice(target: str, correlate: str, corr: float, n: int, da
 
     return dp
 
-'''
+
+"""
 def build_rare_slice(target_objects: Sequence[str], objects: Sequence[str], attributes: Sequence[str], slice_frac: float, target_frac: float, n: int, \
                      dataset_dir: str = DATASET_DIR, gqa_dps: Mapping[str, mk.DataPanel] = None, **kwargs):
     dps = read_gqa_dps(dataset_dir=dataset_dir) if gqa_dps is None else gqa_dps
@@ -83,4 +87,4 @@ def build_rare_slice(target_objects: Sequence[str], objects: Sequence[str], attr
     ]
     return dp
 
-'''
+"""

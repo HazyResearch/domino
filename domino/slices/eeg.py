@@ -9,11 +9,11 @@ from tqdm import tqdm
 
 from domino.slices.abstract import AbstractSliceBuilder
 
-from . import CorrelationImpossibleError, induce_correlation, synthesize_preds
+from .utils import induce_correlation
 
 
 class EegSliceBuilder(AbstractSliceBuilder):
-    def build_correlation_slices(
+    def build_correlation_setting(
         self,
         data_dp: int,
         correlate: str,
@@ -47,36 +47,35 @@ class EegSliceBuilder(AbstractSliceBuilder):
 
         return dp
 
-    def build_rare_slices(self):
+    def build_rare_setting(self):
         raise NotImplementedError
 
-    def build_noisy_label_slices(self):
+    def build_noisy_label_setting(self):
         raise NotImplementedError
 
-    def buid_noisy_feature_slices(self):
+    def buid_noisy_feature_setting(self):
         raise NotImplementedError
 
+    def collect_correlation_settings(
+        self,
+        correlate_list: List[str],
+        corr_list: List[float],
+        correlate_thresholds: List[float] = None,
+        n: int = 2500,
+    ) -> mk.DataPanel:
 
-@terra.Task
-def collect_correlation_slices(
-    correlate_list: List[str],
-    corr_list: List[float],
-    correlate_thresholds: List[float] = None,
-    n: int = 2500,
-) -> mk.DataPanel:
+        settings = []
+        for ndx, correlate in enumerate(correlate_list):
+            for corr in corr_list:
+                settings.append(
+                    {
+                        "dataset": "eeg",
+                        "slice_category": "correlation",
+                        "correlate": correlate,
+                        "corr": corr,
+                        "correlate_threshold": correlate_thresholds[ndx],
+                        "n": n,
+                    }
+                )
 
-    settings = []
-    for ndx, correlate in enumerate(correlate_list):
-        for corr in corr_list:
-            settings.append(
-                {
-                    "dataset": "eeg",
-                    "slice_category": "correlation",
-                    "correlate": correlate,
-                    "corr": corr,
-                    "correlate_threshold": correlate_thresholds[ndx],
-                    "n": n,
-                }
-            )
-
-    return mk.DataPanel(settings)
+        return mk.DataPanel(settings)

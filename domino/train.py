@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
-from domino.utils import nested_getattr, requires_columns
+from domino.utils import nested_getattr
 from domino.vision import Classifier, score, train
 
 
@@ -22,55 +22,66 @@ from domino.vision import Classifier, score, train
 def train_model(
     dp: mk.DataPanel,
     setting_config: dict,
+    model_config: dict,
     run_dir: str = None,
     **kwargs,
 ):
-    # set seed
-    metadata = setting_config
-    metadata["run_id"] = int(os.path.basename(run_dir))
-    train(
+    return train(
         dp=dp,
         input_column="input",
         id_column="id",
         target_column="target",
         run_dir=run_dir,
-        wandb_config=metadata,
-        config=kwargs["train_config"],
-        batch_size=kwargs["batch_size"],
-        ckpt_monitor=kwargs["ckpt_monitor"],
-        max_epochs=kwargs["max_epochs"],
-        drop_last=kwargs["drop_last"],
+        wandb_config={
+            "train_model_run_id": int(os.path.basename(run_dir)),
+            **setting_config,
+        },
+        config=model_config,
+        **kwargs,
     )
-    return metadata
 
 
 @terra.Task.make(no_load_args={"data_dp", "split_dp"})
-def train_slices(
-    slices_dp: mk.DataPanel,
+def train_settings(
+    setting_dp: mk.DataPanel,
     data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
+    model_config: dict,
     num_samples: int = 1,
     run_dir: str = None,
     **kwargs,
 ):
     def _train_model(setting_config):
-        dp = build_setting(data_dp=data_dp, split_dp=split_dp, **setting_config)
-        setting_config["parent_run_id"] = int(os.path.basename(run_dir))
-        return train_model(
+        build_setting_run_id, dp = build_setting(
+            data_dp=data_dp, split_dp=split_dp, return_run_id=True, **setting_config
+        )
+        run_id, _ = train_model(
             dp=dp,
             setting_config=setting_config,
+            model_config=model_config,
             pbar=False,
             **kwargs,
+            return_run_id=True,
         )
+        return {
+            "setting_id": setting_config["setting_id"],
+            "parent_run_id": int(os.path.basename(run_dir)),
+            "train_model_run_id": run_id,
+            "build_setting_run_id": build_setting_run_id,
+        }
 
     ray.init(num_gpus=1, num_cpus=6)
     analysis = tune.run(
         _train_model,
-        config=tune.grid_search(list(slices_dp)),
+        config=tune.grid_search(list(setting_dp)),
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
     )
-    return analysis.dataframe()
+    return mk.merge(
+        setting_dp,
+        mk.DataPanel.from_pandas(analysis.dataframe()),
+        on="setting_id",
+    )
 
 
 @terra.Task
@@ -120,8 +131,8 @@ def score_model(
 
 
 @terra.Task
-def score_slices(
-    model_df: pd.DataFrame,
+def score_settings(
+    model_dp: pd.DataFrame,
     split: Union[str, Collection[str]] = "test",
     layers: Union[nn.Module, Mapping[str, str]] = None,
     reduction_fns: Sequence[str] = None,
@@ -132,7 +143,7 @@ def score_slices(
     **kwargs,
 ):
     def _score_model(config):
-        run_id = config.pop("run_id")
+        run_id = config.pop("train_model_run_id")
         score_run_id, score_dp = score_model(
             model=train_model.get(run_id, "best_chkpt")["model"],
             dp=train_model.inp(run_id)["dp"],
@@ -143,30 +154,32 @@ def score_slices(
             return_run_id=True,
             **kwargs,
         )
-        config.pop("timesteps_total", None)
         return {
             "synthetic_preds": False,
-            "train_run_id": run_id,
+            "train_model_run_id": run_id,
             "parent_run_id": int(os.path.basename(run_dir)),
-            "score_run_id": score_run_id,
+            "score_model_run_id": score_run_id,
             **compute_model_metrics(
                 score_dp.load(), num_iter=1000, flat=True, aliases={"slices": slice_col}
             ),
-            **config,
         }
 
     ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     analysis = tune.run(
         _score_model,
-        config=tune.grid_search(model_df[list(model_df)].to_dict("records")),
+        config=tune.grid_search(model_dp[list(model_dp)].to_dict("records")),
         resources_per_trial={"gpu": 1},
     )
-    return mk.DataPanel.from_pandas(analysis.dataframe())
+    return mk.merge(
+        model_dp,
+        mk.DataPanel.from_pandas(analysis.dataframe()),
+        on="train_model_run_id",
+    )
 
 
 @terra.Task.make(no_load_args={"data_dp", "split_dp"})
-def synthetic_score_slices(
-    slices_dp: mk.DataPanel,
+def synthetic_score_settings(
+    setting_dp: mk.DataPanel,
     data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
     synthetic_kwargs: Mapping[str, object] = None,
@@ -174,7 +187,7 @@ def synthetic_score_slices(
     **kwargs,
 ):
     rows = []
-    for config in tqdm(slices_dp):
+    for config in tqdm(setting_dp):
         run_id, _ = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,
@@ -187,7 +200,8 @@ def synthetic_score_slices(
         rows.append(
             {
                 "synthetic_preds": True,
-                "build_run_id": run_id,
+                "build_setting_run_id": run_id,
+                "score_model_run_id": run_id,
                 "parent_run_id": int(os.path.basename(run_dir)),
                 **config,
             }
