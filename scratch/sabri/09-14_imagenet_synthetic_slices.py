@@ -16,7 +16,7 @@ split = split_dp.out(6478)
 words_dp = embed_words.out(5143).load()
 
 
-if False:
+if True:
 
     if True:
 
@@ -28,11 +28,11 @@ if False:
             num_slices=1,
             min_slice_frac=0.03,
             max_slice_frac=0.03,
-        ).load()
+        )
     else:
         setting_dp = collect_settings.out(6654)
 
-    setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
+    # setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -72,13 +72,13 @@ if True:
         },
         word_dp=words_dp,
         sdm_config=[
-            # {
-            #     "sdm_class": SpotlightSDM,
-            #     "sdm_config": {
-            #         "learning_rate": tune.grid_search([1e-2, 1e-3]),
-            #         **common_config,
-            #     },
-            # },
+            {
+                "sdm_class": SpotlightSDM,
+                "sdm_config": {
+                    "learning_rate": tune.grid_search([1e-2, 1e-3]),
+                    **common_config,
+                },
+            },
             {
                 "sdm_class": MixtureModelSDM,
                 "sdm_config": {

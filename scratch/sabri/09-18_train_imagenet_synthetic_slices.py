@@ -8,7 +8,7 @@ from domino.emb.clip import embed_images, embed_words, pca_embeddings
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
-from domino.train import synthetic_score_settings, train_settings
+from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
 data_dp = get_imagenet_dp.out(6617)
@@ -28,21 +28,35 @@ if True:
             num_slices=1,
             min_slice_frac=0.03,
             max_slice_frac=0.03,
+            n=20_000,
         ).load()
     else:
         setting_dp = collect_settings.out().load()
 
-    setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
-    setting_dp = train_settings(
-        setting_dp=setting_dp,
-        data_dp=data_dp,
-        split_dp=split,
-        model_config={"pretrained": False},
-        batch_size=128,
-        val_check_interval=20,
-        max_epochs=6,
-        ckpt_monitor="valid_auroc",
-    )
+    if True:
+        setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 30)]
+        setting_dp = train_settings(
+            setting_dp=setting_dp,
+            data_dp=data_dp,
+            split_dp=split,
+            model_config={"pretrained": False},
+            batch_size=256,
+            val_check_interval=50,
+            max_epochs=5,
+            ckpt_monitor="valid_auroc",
+        )
+    else:
+        model_dp = train_settings.out()
+
+    if False:
+        score_settings(
+            model_dp=model_dp,
+            layers={"layer4": "model.layer4"},
+            batch_size=512,
+            reduction_fns=["mean"],
+        )
+    else:
+        pass
 else:
     setting_dp = synthetic_score_settings.out()
 
@@ -60,7 +74,7 @@ else:
     emb_dp = embed_images.out(6662)
 
 
-if True:
+if False:
     common_config = {
         "n_slices": 5,
         "emb": tune.grid_search([("clip", "emb")]),
@@ -95,5 +109,6 @@ if True:
 else:
     setting_dp = run_sdms.out(6678)
 
-slices_df = score_sdms(setting_dp)
-slices_df = score_sdm_explanations(setting_dp)
+if False:
+    slices_df = score_sdms(setting_dp)
+    slices_df = score_sdm_explanations(setting_dp)
