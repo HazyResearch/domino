@@ -3,7 +3,7 @@
 # RayCluster settings:
 
 # image is Ray image to use for the head and workers of this Ray cluster.
-image: rayproject/ray:latest-py38
+image: gcr.io/hai-gcp-fine-grained/domino-ray
 # headPodType is the podType used for the Ray head node (as configured below).
 headPodType: rayHeadType
 # podTypes is the list of pod configurations available for use as Ray nodes.

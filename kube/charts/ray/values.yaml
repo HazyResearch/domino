@@ -55,7 +55,6 @@ podTypes:
         # Optionally, set a node selector for this Pod type. See https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
         nodeSelector: {}
 
-
 # Operator settings:
 
 # operatorOnly - If true, will only set up the Operator with this release,

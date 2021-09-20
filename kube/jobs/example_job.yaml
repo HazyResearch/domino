@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ray-test-job
+spec:
+  template:  # this is just a pod template, it has exactly the same schema as a pod https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-template
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ray
+          image: rayproject/ray:latest
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c", "--"]
+          args:
+            - "python /pd/sabri/code/domino/kube/scripts/example.py"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: pv-1 # replace this with the name of the persistent volume you want to mount
+              mountPath: /pd # this will mount the volume pv-1 at /home
+
+      volumes:
+        - name: pv-1 # replace this with the name of the persistent volume you want to mount 
+          persistentVolumeClaim:
+            claimName: pvc-1 # replace this with the name of the persistent volume claim 
+        - name: dshm
+          emptyDir:
+            medium: Memory
+  backoffLimit: 1 # https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-backoff-failure-policy
