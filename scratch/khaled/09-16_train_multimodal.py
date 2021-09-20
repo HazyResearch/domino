@@ -37,24 +37,20 @@ def train_eeg(
         num_workers=6,
         valid_split="valid",
         use_terra=True,
-        max_epochs=10,
+        max_epochs=100,
         drop_last=True,
     )
 
 
 if __name__ == "__main__":
 
-    # dp = balance_dp.out(
-    #     623, load=True
-    # )  # build_stanford_eeg_dp.out(run_id=409, load=True)
-    # split_dp_ = split_dp.out(625, load=True)
+    dp = build_stanford_eeg_dp.out(run_id=409, load=True)
+    split_dp_ = split_dp(dp, split_on="patient_id").load()
 
-    # dp["binarized_age"] = dp["age"] > 1
-
-    # dp = merge_in_split(dp, split_dp_)
+    dp = merge_in_split(dp, split_dp_)
 
     train_eeg(
-        dp=train_model.inp(578)["dp"],
+        dp=dp,
         target_column="target",
         input_column="input",
         text_column="findings",

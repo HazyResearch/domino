@@ -230,8 +230,8 @@ class Classifier(pl.LightningModule, TerraModule):
             # targets = torch.cat(
             #     [a_targets, all_p_targets.flatten(), all_n_targets.flatten()]
             # )
-            inputs = torch.cat([a_inputs, p_inputs, n_inputs])
-            targets = torch.cat([a_targets, all_p_targets[-1], all_n_targets[-1]])
+            inputs = a_inputs  # torch.cat([a_inputs, p_inputs, n_inputs])
+            targets = a_targets  # torch.cat([a_targets, all_p_targets[-1], all_n_targets[-1]])
             # group_ids = (
             #     a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
             # )

@@ -4,7 +4,7 @@ import meerkat as mk
 import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
-from sklearn.metrics import precision_score, recall_score, roc_auc_score
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 from domino.utils import flatten_dict, requires_columns
 
@@ -119,19 +119,37 @@ def compute_model_metrics(
     # if len(dp["slices"].shape) == 1:
     #     dp["slices"] = dp["slices"].reshape(-1, 1)
 
+    # metrics = {
+    #     name: {
+    #         "auroc": auroc_bootstrap_ci(
+    #             dp["target"][mask], probs[mask], num_iter=num_iter
+    #         )
+    #         if len(np.unique(dp["target"][mask])) == 2
+    #         else np.nan,
+    #         "recall": recall_bootstrap_ci(
+    #             dp["target"][mask], preds[mask], num_iter=num_iter
+    #         ),
+    #         "precision": precision_bootstrap_ci(
+    #             dp["target"][mask], preds[mask], num_iter=num_iter
+    #         ),
+    #     }
+    #     for name, mask in [
+    #         ("overall", np.ones_like(probs, dtype=bool)),
+    #         *(
+    #             (f"in_slice_{slice_idx}", (dp["slices"][:, slice_idx] == 1))
+    #             for slice_idx in range(dp["slices"].shape[-1])
+    #         ),
+    #         ("out_slice", dp["slices"].sum(axis=1) == 0),
+    #     ]
+    # }
     metrics = {
         name: {
-            "auroc": auroc_bootstrap_ci(
-                dp["target"][mask], probs[mask], num_iter=num_iter
-            )
+            "auroc": roc_auc_score(dp["target"][mask], probs[mask])
             if len(np.unique(dp["target"][mask])) == 2
             else np.nan,
-            "recall": recall_bootstrap_ci(
-                dp["target"][mask], preds[mask], num_iter=num_iter
-            ),
-            "precision": precision_bootstrap_ci(
-                dp["target"][mask], preds[mask], num_iter=num_iter
-            ),
+            "recall": recall_score(dp["target"][mask], preds[mask]),
+            "precision": precision_score(dp["target"][mask], preds[mask]),
+            "f1_score": f1_score(dp["target"][mask], preds[mask]),
         }
         for name, mask in [
             ("overall", np.ones_like(probs, dtype=bool)),
