@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Iterable, List, Mapping, Sequence, Union
+from typing import Iterable, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import pandas as pd
@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 import wandb
+from meerkat.columns.lambda_column import PIL
 from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
@@ -17,9 +18,31 @@ from terra.torch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
-# from domino.bss import SourceSeparator
+from domino.eeg_modeling.dense_inception import DenseInception
 from domino.modeling import DenseNet, ResNet
 from domino.utils import PredLogger, TerraCheckpoint
+
+
+def default_transform(img: PIL.Image.Image):
+    return transforms.Compose(
+        [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )(img)
+
+
+def default_train_transform(img: PIL.Image.Image):
+    return transforms.Compose(
+        [
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ]
+    )(img)
 
 
 class Classifier(pl.LightningModule, TerraModule):
@@ -30,6 +53,8 @@ class Classifier(pl.LightningModule, TerraModule):
         "arch": "resnet18",
         "pretrained": True,
         "num_classes": 2,
+        "transform": default_transform,
+        "train_transform": default_train_transform,
     }
 
     def __init__(self, config: dict = None):
@@ -73,6 +98,8 @@ class Classifier(pl.LightningModule, TerraModule):
             self.model = DenseNet(
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
+        elif self.config["model_name"] == "dense_inception":
+            self.model = DenseInception()
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 
@@ -89,6 +116,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+
         outs = self.forward(inputs)
         loss = nn.functional.cross_entropy(outs, targets)
         self.log("valid_loss", loss)
@@ -100,7 +128,10 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
+            if metric_name == "auroc":
+                print("len auroc", len(metric.preds))
             self.log(f"valid_{metric_name}", metric.compute())
+            metric.reset()
 
     def test_epoch_end(self, outputs) -> None:
         return self.validation_epoch_end(outputs)
@@ -154,6 +185,7 @@ class BinaryMTClassifier(Classifier):
         for idx, target in enumerate(self.targets):
             for metric in self.metrics[target].values():
                 metric(torch.sigmoid(outs[:, idx]), targets[:, idx])
+            metric.reset()
 
         self.valid_preds.update(torch.sigmoid(outs), targets, sample_id)
 
@@ -174,15 +206,17 @@ def train(
     max_epochs: int = 50,
     samples_per_epoch: int = None,
     gpus: Union[int, Iterable] = 1,
-    num_workers: int = 10,
+    num_workers: int = 6,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
     train_split: str = "train",
     valid_split: str = "valid",
     wandb_config: dict = None,
+    use_terra: bool = True,
     weighted_sampling: bool = False,
     pbar: bool = True,
     seed: int = 123,
+    drop_last: bool = False,
     run_dir: str = None,
     **kwargs,
 ):
@@ -200,7 +234,7 @@ def train(
             model = BinaryMTClassifier(config=config)
         else:
             model = Classifier(config)
-    try:
+    if use_terra:
         run_id = int(os.path.basename(run_dir))
         metadata = terra.get_meta(run_id)
         logger = WandbLogger(
@@ -210,23 +244,23 @@ def train(
             tags=[f"{metadata['module']}.{metadata['fn']}"],
             config={} if wandb_config is None else wandb_config,
         )
-
-    except ValueError:
+        checkpoint_callbacks = [
+            TerraCheckpoint(
+                dirpath=run_dir,
+                monitor=ckpt_monitor,
+                save_top_k=1,
+                mode="max",
+            )
+        ]
+    else:
         logger = WandbLogger(
             project="domino",
             save_dir=run_dir,
             name=run_dir,
             config={} if wandb_config is None else wandb_config,
         )
+        checkpoint_callbacks = []
 
-    checkpoint_callbacks = [
-        TerraCheckpoint(
-            dirpath=run_dir,
-            monitor=ckpt_monitor,
-            save_top_k=1,
-            mode="max",
-        )
-    ]
     model.train()
     trainer = pl.Trainer(
         gpus=gpus,
@@ -261,6 +295,8 @@ def train(
         )
 
     train_dp = dp.lz[dp["split"] == train_split]
+    if model.config.get("train_transform", None) is not None:
+        train_dp["input"] = train_dp["input"].to_lambda(model.config["train_transform"])
     sampler = None
     if weighted_sampling:
         if isinstance(target_column, Sequence):
@@ -284,12 +320,16 @@ def train(
         num_workers=num_workers,
         shuffle=sampler is None,
         sampler=sampler,
+        drop_last=drop_last,
     )
+
+    valid_dp = dp.lz[dp["split"] == valid_split]
+    if model.config.get("transform", None) is not None:
+        valid_dp["input"] = valid_dp["input"].to_lambda(model.config["transform"])
     valid_dl = DataLoader(
-        dp.lz[dp["split"] == valid_split],
-        batch_size=batch_size,
-        num_workers=num_workers,
+        valid_dp, batch_size=batch_size, num_workers=num_workers, shuffle=True
     )
+
     trainer.fit(model, train_dl, valid_dl)
     wandb.finish()
     return model
@@ -307,6 +347,12 @@ def score(
     **kwargs,
 ):
     model.to(device).eval()
+
+    dp = dp.view()
+
+    if hasattr(model, "config"):
+        if model.config.get("transform", None) is not None:
+            dp[input_column] = dp[input_column].to_lambda(model.config["transform"])
 
     class ActivationExtractor:
         """Class for extracting activations a targetted intermediate layer"""

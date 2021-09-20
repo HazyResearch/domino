@@ -16,7 +16,7 @@ from domino.utils import nested_getattr
 from domino.vision import Classifier, score, train
 
 
-@terra.Task.make_task
+@terra.Task
 def train_model(
     dp: mk.DataPanel,
     target_correlate: Tuple[str],
@@ -63,7 +63,7 @@ def train_model(
     return metadata
 
 
-@terra.Task.make_task
+@terra.Task
 def train_linear_slices(
     dp_run_id: int,
     target_correlate_pairs: Sequence[Tuple[str]],
@@ -102,7 +102,7 @@ def train_linear_slices(
     return analysis.dataframe()
 
 
-@terra.Task.make_task
+@terra.Task
 def score_model(
     dp: mk.DataPanel,
     model: Classifier,
@@ -169,7 +169,7 @@ def score_model(
     return score_dp[cols], metadata
 
 
-@terra.Task.make_task
+@terra.Task
 def score_linear_slices(
     dp_run_id: int,
     model_df: pd.DataFrame,

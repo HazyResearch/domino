@@ -13,7 +13,7 @@ def mean(x):
     return torch.mean(x, dim=[-1, -2])
 
 
-@terra.Task.make_task
+@terra.Task
 def score_model(
     dp: mk.DataPanel,
     model: Classifier,

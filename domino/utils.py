@@ -5,11 +5,22 @@ from dataclasses import dataclass
 from datetime import date
 from functools import partial, reduce, wraps
 from inspect import getcallargs
-from typing import Collection, Dict, Mapping, Optional, Sequence, Union
+from typing import (
+    Collection,
+    Dict,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import meerkat as mk
 import numpy as np
 import pandas as pd
+import terra
 import torch
 from cytoolz import concat
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -19,6 +30,54 @@ from terra import Task
 from torchmetrics import Metric
 
 
+class ConditionalSample:
+    def __init__(self, classes: Tuple[Type], distrib: dict):
+        self.classes = classes
+        self.distrib = distrib
+
+    def __call__(self, spec):
+        if spec.config.sdm["sdm_class"] in self.classes:
+            return self.distrib
+        else:
+            return np.nan
+
+
+def merge_in_split(dp: mk.DataPanel, split_dp: mk.DataPanel):
+    split_dp.columns
+    if "split" in dp:
+        dp.remove_column("split")
+    split_on = [col for col in split_dp.columns if (col != "split") and col != "index"]
+    assert len(split_on) == 1
+    split_on = split_on[0]
+    return dp.merge(split_dp, on=split_on)
+
+
+@terra.Task
+def balance_dp(
+    dp: mk.DataPanel,
+    target_col: str = "target",
+):
+
+    targets = dp[target_col].data
+    print(f"Class balance: {targets.mean():.3f}")
+    num_pos = (targets == 1).sum()
+    num_neg = (targets == 0).sum()
+
+    new_indices = np.random.choice(
+        max(num_neg, num_pos), size=min(num_neg, num_pos), replace=False
+    )
+    minority_class = num_neg > num_pos
+    dp = dp.lz[targets == minority_class].append(
+        dp.lz[targets == (not minority_class)].lz[new_indices]
+    )
+
+    new_targets = dp[target_col].data
+    print(f"New class balance: {new_targets.mean():.3f}")
+
+    return dp
+
+
+@terra.Task
 def split_dp(
     dp: mk.DataPanel,
     split_on: str,
@@ -27,7 +86,6 @@ def split_dp(
     test_frac: float = 0.2,
     other_splits: dict = None,
     salt: str = "",
-    run_dir: str = None,
 ):
     dp = dp.view()
     other_splits = {} if other_splits is None else other_splits
@@ -41,7 +99,7 @@ def split_dp(
     if not math.isclose(sum(splits.values()), 1):
         raise ValueError("Split fractions must sum to 1.")
 
-    dp["split_hash"] = dp[split_on].map(partial(hash_for_split, salt=salt))
+    dp["split_hash"] = dp[split_on].apply(partial(hash_for_split, salt=salt))
     start = 0
     split_column = pd.Series(["unassigned"] * len(dp))
     for split, frac in splits.items():
@@ -50,8 +108,10 @@ def split_dp(
             ((start < dp["split_hash"]) & (dp["split_hash"] <= end)).data
         ] = split
         start = end
-    dp["split"] = split_column
-    return dp
+
+    # need to drop duplicates, since split_on might not be unique
+    df = pd.DataFrame({split_on: dp[split_on], "split": split_column}).drop_duplicates()
+    return mk.DataPanel.from_pandas(df)
 
 
 @dataclass
@@ -162,8 +222,9 @@ class PredLogger(Metric):
             sample_ids = self.sample_ids
         preds = torch.cat(self.preds).cpu()
         targets = torch.cat(self.targets).cpu()
+        self.preds, self.targets, self.sample_ids = [], [], []
 
-        return {"preds": preds, "targets": targets, "sample_ids": sample_ids}
+        return mk.DataPanel({"preds": preds, "targets": targets, "ids": sample_ids})
 
     def _apply(self, fn):
         """
@@ -240,28 +301,6 @@ def auroc_bootstrap_ci(
         "auroc": sample_estimate,
         "auroc_lower": np.percentile(bs_sample_estimates, alpha * 100),
         "auroc_upper": np.percentile(bs_sample_estimates, 100 * (1 - alpha)),
-    }
-
-
-def compute_bootstrap_ci(
-    sample: np.ndarray,
-    num_iter: int = 10000,
-    alpha: float = 0.05,
-    estimator: Union[callable, str] = "mean",
-):
-    """Compute an empirical confidence using bootstrap resampling."""
-    bs_samples = np.random.choice(sample, (sample.shape[0], num_iter))
-    if estimator == "mean":
-        bs_sample_estimates = bs_samples.mean(axis=0)
-        sample_estimate = sample.mean(axis=0)
-    else:
-        bs_sample_estimates = np.apply_along_axis(estimator, axis=0, arr=bs_samples)
-        sample_estimate = estimator(sample)
-
-    return {
-        "sample_estimate": sample_estimate,
-        "lower": np.percentile(bs_sample_estimates, alpha * 100),
-        "upper": np.percentile(bs_sample_estimates, 100 * (1 - alpha)),
     }
 
 
@@ -347,3 +386,17 @@ def get_data_dir(nb_dir: str = None):
     data_dir = os.path.join(nb_dir, "data", dirname)
     os.makedirs(data_dir, exist_ok=True)
     return data_dir
+
+
+def flatten_dict(d, parent_key="", sep="_"):
+    """
+    Source: https://stackoverflow.com/questions/6027558/flatten-nested-dictionaries-compressing-keys
+    """
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, MutableMapping):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)

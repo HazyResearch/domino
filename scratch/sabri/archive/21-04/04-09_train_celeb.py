@@ -4,7 +4,7 @@ from domino.data.celeb import build_celeb_df, celeb_task_config
 from domino.vision import train
 
 
-@Task.make_task
+@Task
 def train_celeb_models(run_dir: str = None):
 
     ATTRIBUTES = [

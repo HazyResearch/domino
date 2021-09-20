@@ -15,7 +15,10 @@ from PIL import Image
 from terra import Task
 from torchvision.models import resnet50
 
-from domino.data.gaze_utils import (
+from domino.modeling import ResNet
+from domino.vision import score
+
+from .gaze_utils import (
     apply_lf,
     diffusivity,
     make_heatmaps,
@@ -23,31 +26,83 @@ from domino.data.gaze_utils import (
     total_time,
     unique_visits,
 )
-from domino.vision import score
 
 ROOT_DIR = "/home/common/datasets/cxr-tube"
 CXR_MEAN = 0.48865
 CXR_STD = 0.24621
-CXR_SIZE = 224
-
+CXR_SIZE = 256
+CROP_SIZE = 224
 
 # @Task.make_task
-def get_cxr_activations(dp: DataPanel, model_path: str, run_dir: str = None):
-    model = CXRResnet(model_path=model_path)
+def get_cxr_activations(
+    dp: DataPanel,
+    model_path: str,
+    run_type: str = "siim",
+    num_classes=2,
+    run_dir: str = None,
+):
+    if run_type == "mimic":
+        model = resnet50(num_classes=14, pretrained=False)
+        state_dict = {}
+        for name, key in torch.load(model_path)["state_dict"].items():
+
+            state_dict[name.split("model.")[-1]] = key
+        model.load_state_dict(state_dict)
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    elif run_type == "domino":
+        # model = resnet50(num_classes=num_classes, pretrained=False)
+        model = ResNet(
+            num_classes=num_classes,
+            arch="resnet50",
+            dropout=0,
+        )
+
+        state_dict = {}
+        for name, key in torch.load(model_path)["state_dict"].items():
+            if "encoder" not in name:
+                state_dict[name.split("model.")[-1]] = key
+
+        model.load_state_dict(state_dict, strict=False)
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    elif run_type == "siim":
+        model = CXRResnet(model_path=model_path)
+        cnn_encoder = model.cnn_encoder
+    elif run_type == "cnc_erm":
+        model = resnet50(num_classes=2, pretrained=False)
+        model.load_state_dict(torch.load(model_path))
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+    elif run_type == "cnc_contrastive":
+        model = resnet50(num_classes=2, pretrained=False)
+        model.load_state_dict(torch.load(model_path)["model_state_dict"])
+        modules = list(model.children())[:-2]
+        cnn_encoder = nn.Sequential(*modules)
+
     act_dp = score(
         model=model,
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
-            "block3": model.cnn_encoder[-2],
-            "block4": model.cnn_encoder[-1],
+            "block3": cnn_encoder[-2],
+            "block4": cnn_encoder[-1],
         },
-        batch_size=16,
+        batch_size=64,
     )
     return act_dp
 
 
-@Task.make_task
+def minmax_norm(dict_arr, key):
+    arr = np.array([dict_arr[id][key] for id in dict_arr])
+    for id in dict_arr:
+        dict_arr[id][key] -= arr.min()
+        dict_arr[id][key] /= arr.max()
+
+    return dict_arr
+
+
+# @Task.make_task
 def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # hypers for CXR gaze features:
@@ -81,12 +136,18 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
             "gaze_diffusivity": gaze_diffusivity,
         }
 
+    # normalize features
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_time")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_max_visit")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_unique")
+    gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_diffusivity")
+
     # merge sequences and features into a df
     gaze_df = pd.DataFrame(
         [
             {
-                "gaze_seq": gaze_seq_dict[img_id],
-                "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
+                # "gaze_seq": gaze_seq_dict[img_id],
+                # "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
                 "gaze_max_visit": gaze_feats_dict[img_id]["gaze_max_visit"],
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
                 "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
@@ -102,7 +163,7 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
 
 class CXRResnet(nn.Module):
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, domino_run: bool = False):
         super().__init__()
         input_module = resnet50(pretrained=False)
         modules = list(input_module.children())[:-2]
@@ -111,11 +172,17 @@ class CXRResnet(nn.Module):
         self.fc = nn.Linear(in_features=2048, out_features=2)
         if model_path is not None:
             state_dict = torch.load(model_path)
-            self.cnn_encoder.load_state_dict(state_dict["model"]["module_pool"]["cnn"])
-            self.load_state_dict(
-                state_dict["model"]["module_pool"]["classification_module_target"],
-                strict=False,
-            )
+            if domino_run:
+                state_dict = state_dict["state_dict"]
+
+            else:
+                self.cnn_encoder.load_state_dict(
+                    state_dict["model"]["module_pool"]["cnn"]
+                )
+                self.load_state_dict(
+                    state_dict["model"]["module_pool"]["classification_module_target"],
+                    strict=False,
+                )
 
     def forward(self, x):
         x = self.cnn_encoder(x)
@@ -125,20 +192,37 @@ class CXRResnet(nn.Module):
         return x
 
 
-def cxr_transform_pil(volume: MedicalVolumeCell):
+def cxr_pil_loader(input_dict):
+    filepath = input_dict["filepath"]
+    loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    volume = loader(filepath)[0]
     array = volume._volume.squeeze()
     return Image.fromarray(np.uint8(array))
 
 
-def cxr_transform(volume: MedicalVolumeCell):
-    img = cxr_transform_pil(volume)
-    img = transforms.Compose(
-        [
-            transforms.Resize([CXR_SIZE, CXR_SIZE]),
-            transforms.ToTensor(),
-            transforms.Normalize(CXR_MEAN, CXR_STD),
-        ]
-    )(img)
+def cxr_loader(input_dict):
+    train = input_dict["split"] == "train"
+    # loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    # volume = loader(filepath)
+    img = cxr_pil_loader(input_dict)
+    if train:
+        img = transforms.Compose(
+            [
+                transforms.Resize(CXR_SIZE),
+                transforms.RandomCrop(CROP_SIZE),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
+    else:
+        img = transforms.Compose(
+            [
+                transforms.Resize([CROP_SIZE, CROP_SIZE]),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
     return img.repeat([3, 1, 1])
 
 
@@ -159,31 +243,25 @@ def rle2mask(rle, width, height):
 
 def get_dp(df: pd.DataFrame):
     dp = DataPanel.from_pandas(df)
-    loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+
+    input_col = dp[["filepath", "split"]].to_lambda(fn=cxr_loader)
     dp.add_column(
         "input",
-        dp["filepath"].map(
-            lambda x: MedicalVolumeCell(
-                paths=x, loader=loader, transform=cxr_transform
-            ),
-            num_workers=0,
-        ),
+        input_col,
         overwrite=True,
     )
+
+    img_col = dp[["filepath"]].to_lambda(fn=cxr_pil_loader)
     dp.add_column(
         "img",
-        dp["filepath"].map(
-            lambda x: MedicalVolumeCell(
-                paths=x, loader=loader, transform=cxr_transform_pil
-            ),
-            num_workers=0,
-        ),
+        img_col,
         overwrite=True,
     )
+
     return dp
 
 
-@Task.make_task
+# @Task.make_task
 def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))
@@ -237,8 +315,8 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     df.split = df.split.fillna("train")
 
     # integrate gaze features
-    create_gaze_df(root_dir)
-    gaze_df = create_gaze_df.out(load=True)
+    gaze_df = create_gaze_df(root_dir)
+    # gaze_df = create_gaze_df.out(load=True)
     df = df.merge(gaze_df, how="left", on="image_id")
 
     return df

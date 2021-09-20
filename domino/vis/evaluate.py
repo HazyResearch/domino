@@ -10,7 +10,7 @@ import terra
 from tqdm import tqdm
 
 
-@terra.Task.make_task
+@terra.Task
 def plot_evaluate_sdms(
     df: Union[pd.DataFrame, Sequence[pd.DataFrame]], run_dir: str = None
 ):

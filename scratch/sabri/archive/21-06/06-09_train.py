@@ -5,7 +5,7 @@ from domino.data.celeb import build_celeb_df, get_celeb_dp
 from domino.vision import train
 
 
-@terra.Task.make_task
+@terra.Task
 def train_celeb(df: pd.DataFrame, target: str, correlate: str, run_dir: str = None):
 
     dp = get_celeb_dp(df)

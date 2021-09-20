@@ -1,16 +1,16 @@
 import os
-from typing import Union, List
+from dataclasses import dataclass
+from typing import List, Mapping, Union
+
+import numpy as np
 import torch
 import torch.nn as nn
-from dataclasses import dataclass
-from torch.utils.data.dataloader import DataLoader
+import torch.nn.functional as F
+from meerkat import DataPanel
 from torch.utils.data import TensorDataset
-from tqdm.auto import tqdm
-import numpy as np
+from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
-from domino.loss import SoftCrossEntropyLoss
-from domino.utils import nested_getattr
+from tqdm.auto import tqdm
 
 
 class ActivationExtractor:
@@ -23,31 +23,8 @@ class ActivationExtractor:
         self.activation = output
 
 
-@dataclass
-class ActivationDataset:
-    acts: torch.Tensor
-    outs: torch.Tensor
-    targets: torch.Tensor
-    batch_size: int
-
-    def __getitem__(self, batch_index):
-        start = self.batch_size * batch_index
-        end = start + self.batch_size
-        return (
-            self.acts[start:end],
-            self.outs[start:end],
-            self.targets[start:end],
-        )
-
-    def __len__(self):
-        return len(self.acts) // self.batch_size + int(
-            len(self.acts) % self.batch_size != 0
-        )
-
-
 class SourceSeparator(nn.Module):
     CONFIG = {
-        "target_module": "model.layer4",
         "num_classes": 2,
         "class_idx": None,  # only applicable if num_classes > 2
         "activation_dim": 512,
@@ -57,6 +34,7 @@ class SourceSeparator(nn.Module):
         "dropout_prob": 0.0,
         "pred_loss_weight": 100,
         "cov_loss_weight": 1e-7,
+        "batch_size": 2048,
     }
 
     def __init__(self, model: nn.Module, config: dict = None):
@@ -66,14 +44,6 @@ class SourceSeparator(nn.Module):
             self.config.update(config)
 
         self.model = model
-        try:
-            target_module = nested_getattr(model, self.config["target_module"])
-        except nn.modules.module.ModuleAttributeError:
-            raise ValueError(
-                f"model does not have a submodule {self.config['target_module']}"
-            )
-        self.extractor = ActivationExtractor()
-        target_module.register_forward_hook(self.extractor.add_hook)
 
         # initialize parameters
         self.unmixer = nn.Sequential(
@@ -84,10 +54,64 @@ class SourceSeparator(nn.Module):
         input_size = self.config["num_components"] + self.config["cond_on_target"]
         self.component_classifier = nn.Linear(input_size, 2)
 
-    def forward(self, x):
+    def prepare_dp(
+        self,
+        dp: DataPanel,
+        layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
+        device: int = 0,
+        input_col: str = "input",
+        *args,
+        **kwargs,
+    ):
+        if layers is None:
+            layers = {"0": self.model.model.layer4}
+        elif isinstance(layers, nn.Module):
+            layers = {"0": layers}
+        elif not isinstance(layers, Mapping):
+            raise ValueError(
+                "Layers must be `nn.Module` or mapping from str to `nn.Module`"
+            )
+
+        layer_to_extractor = {}
+        for name, layer in layers.items():
+            extractor = ActivationExtractor()
+            layer.register_forward_hook(extractor.add_hook)
+            layer_to_extractor[name] = extractor
+
+        self.model.to(device).eval()
+
+        @torch.no_grad()
+        def predict(batch: dict):
+            out = torch.softmax(self.model(batch[input_col].data.to(device)), axis=-1)
+            return {
+                "pred": out.cpu().numpy().argmax(axis=-1),
+                "probs": out.cpu().numpy(),
+                **{
+                    f"activation_{name}": extractor.activation.cpu().numpy()
+                    for name, extractor in layer_to_extractor.items()
+                },
+            }
+
+        return dp.update(
+            function=predict,
+            is_batched_fn=True,
+            input_columns=[input_col],
+            pbar=True,
+            num_workers=8,
+            *args,
+            **kwargs,
+        )
+
+    def forward(self, act: torch.Tensor):
+        """[summary]
+
+        Args:
+            act (torch.Tensor): tensor of shape (batch_size, channels, height, width)
+
+        Returns:
+            [type]: [description]
+        """
         # compute prediction and activation
-        pred = self.model(x)
-        act = self.extractor.activation
         act = act.permute((0, 2, 3, 1))
 
         # concatenate and repeat activations across layers into one tensor
@@ -95,19 +119,23 @@ class SourceSeparator(nn.Module):
 
         # compute components
         components = self.unmixer(act)
-        return pred, act, components
+        return components
 
     def fit(
         self,
-        dataloader: torch.utils.data.DataLoader,
+        dp: DataPanel,
         num_epochs: int = 10,
-        cache_batch_size: int = 128,
         log_dir: str = None,
         device: Union[str, int] = 0,
-        memmap: bool = False,
-        cache_path: str = None,
+        num_workers: int = 4,
         pbars: bool = True,
+        target_col: str = "y",
+        activation_col: str = "activation",
     ):
+        required_cols = [activation_col, target_col, "probs"]
+        if not set(required_cols).issubset(dp.columns):
+            raise ValueError(f"DataPanel `dp` must have columns {required_cols}")
+
         # define parameters
         component_dropout = nn.Dropout(p=self.config["dropout_prob"])
         loss_fn = SoftCrossEntropyLoss(reduction="mean")
@@ -123,57 +151,25 @@ class SourceSeparator(nn.Module):
         avg_loss = 0
         writer = SummaryWriter(log_dir=log_dir) if log_dir is not None else None
 
-        acts = []
-        outs = []
-        targets = []
-        for idx, (inp, target, _) in enumerate(tqdm(dataloader, desc="cache_acts")):
-            inp = inp.to(device)
-            out, act, _ = self.forward(inp)
-
-            if out.shape[-1] != self.config["num_classes"]:
-                raise ValueError(
-                    "The model outputs predictions for more classes than specified in "
-                    "the SourceSeparator config."
-                )
-            if memmap:
-                if idx == 0:
-                    acts = np.memmap(
-                        filename=os.path.join("/home/sabri/", "acts.dat"),
-                        dtype=np.double,
-                        mode="w+",
-                        shape=(len(dataloader.dataset), *act.shape[1:]),
-                    )
-                start = idx * dataloader.batch_size
-                acts[start : start + act.shape[0]] = act.detach().cpu()
-            else:
-                acts.append(act.detach().cpu())
-            outs.append(out.detach().cpu())
-            targets.append(target)
-        if memmap:
-            acts = torch.from_numpy(acts)
-        else:
-            acts = torch.cat(acts)
-        outs = torch.cat(outs)
-        targets = torch.cat(targets)
-
-        # https://pytorch.org/docs/stable/data.html#disable-automatic-batching
-        cache_dataloader = DataLoader(
-            ActivationDataset(acts, outs, targets, cache_batch_size),
-            batch_size=None,
-            batch_sampler=None,
-        )
-        with tqdm(
+        with dp.format(columns=required_cols), tqdm(
             total=num_epochs,
             disable=not pbars,
-            desc=f"fit_source_separator",
+            desc="fit_source_separator",
         ) as batch_t:
             for epoch_idx in range(num_epochs):
-                for batch_idx, (act, out, target) in enumerate(cache_dataloader):
-                    act, out, target = (
-                        act.to(device).to(torch.float),
-                        out.to(device),
-                        target.to(device),
+                for batch_idx, batch in enumerate(
+                    dp.batch(
+                        batch_size=self.config["batch_size"], num_workers=num_workers
                     )
+                ):
+                    act, out, target = (
+                        batch[activation_col].to_tensor().to(device).to(torch.float),
+                        batch["probs"].to_tensor().to(device),
+                        batch[target_col].to_tensor().to(device),
+                    )
+                    # put channels last
+                    act = act.permute((0, 2, 3, 1))
+
                     components = self.unmixer(act)
                     components = components.view(
                         components.shape[0], -1, components.shape[-1]
@@ -218,6 +214,8 @@ class SourceSeparator(nn.Module):
                         self.config["pred_loss_weight"] * pred_loss
                         + self.config["cov_loss_weight"] * cov_loss
                     )
+                    print("cov_loss:", cov_loss.cpu().detach().numpy())
+                    print("pred_loss: ", pred_loss.cpu().detach().numpy())
 
                     # backward pass
                     opt.zero_grad()
@@ -225,9 +223,9 @@ class SourceSeparator(nn.Module):
                     opt.step()
 
                     # compute which example idx we're on
-                    iter_idx = (
-                        epoch_idx * len(cache_dataloader) + batch_idx
-                    ) * cache_batch_size
+                    iter_idx = (epoch_idx * len(dp)) + (
+                        batch_idx * self.config["batch_size"]
+                    )
 
                     # compute average loss and update progress bar
                     loss = loss.cpu().detach().numpy()
@@ -249,46 +247,115 @@ class SourceSeparator(nn.Module):
 
     def compute(
         self,
-        dataloader: torch.utils.data.DataLoader,
+        dp: DataPanel,
         device: Union[str, int] = 0,
-        pbars: bool = True,
+        num_workers: int = 4,
+        batch_size: int = 1024,
+        activation_col: str = "activation",
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         self.to(device)
         self.eval()
 
-        components_list, out_list, act_list, target_list = [], [], [], []
-        with tqdm(total=len(dataloader), disable=not pbars, desc="components") as t:
-            for inp, target, _ in dataloader:
-                inp = inp.to(device)
-                out, acts, components = self.forward(inp)
-                act_list.append([act.detach().cpu() for act in acts])
+        required_cols = [activation_col]
+        if not set(required_cols).issubset(dp.columns):
+            raise ValueError(f"DataPanel `dp` must have columns {required_cols}")
 
-                components = components.view(
-                    components.shape[0], -1, components.shape[-1]
-                )
+        @torch.no_grad()
+        def compute_components(batch: dict):
+            components = self.forward(batch[activation_col].to_tensor().to(0))
+            # components = components.permute((3, 0, 1, 2))
+            return {"components": components.cpu().numpy()}
 
-                if self.config["num_classes"] > 2:
-                    # if multi-class problem, convert into binary prediction between
-                    # "class_idx" and the other classes
-                    out = out[:, self.config["class_idx"]]
-                    out = torch.stack((1 - out, out), dim=-1)
-                    target = (target == self.config["class_idx"]).to(torch.long)
+        return dp.update(
+            function=compute_components,
+            batch_size=batch_size,
+            batched=True,
+            num_workers=num_workers,
+            overwrite=True,
+            input_columns=[activation_col],
+            *args,
+            **kwargs,
+        )
 
-                # center components
-                components -= components.mean(dim=1, keepdim=True)
-                out_list.append(out.detach().cpu())
-                target_list.append(target)
-                components_list.append(components.detach().cpu())
-                t.update()
+    def solicit_feedback(
+        self,
+        dp: DataPanel,
+        comp_idx: int = 0,
+        size=(224, 224),
+        overwrite: bool = False,
+    ):
+        import gradio as gr
 
-        outs = torch.cat(out_list)
-        components = torch.cat(components_list)
-        targets = torch.cat(target_list)
-        return components, outs, targets
+        # TODO: find a better solution for this
+        os.makedirs("flagged", exist_ok=True)
+        dir_path = "flagged"
+        component = dp["components"].max(axis=(1, 2))._data[:, comp_idx]
+
+        if overwrite or "feedback_label" not in dp.column_names:
+            dp.add_column(
+                "feedback_label",
+                NumpyArrayColumn(["unlabeled"] * len(dp)),
+                overwrite=overwrite,
+            )
+
+        if overwrite or "feedback_mask" not in dp.column_names:
+            dp.add_column(
+                "feedback_mask",
+                NumpyArrayColumn(np.zeros((len(dp), *size))),
+                overwrite=overwrite,
+            )
+
+        # prepare examples
+        examples = []
+        for rank, example_idx in enumerate((-component).argsort()[0:30]):
+            example_idx = int(example_idx)
+            image = dp["raw_input"][example_idx]
+            label = dp["category"][example_idx]
+            image_path = os.path.join(dir_path, f"image_{example_idx}.jpg")
+            image.save(image_path)
+            examples.append(
+                [
+                    rank,
+                    example_idx,
+                    label,
+                    image_path,
+                    dp["feedback_label"][example_idx],
+                ]
+            )
+
+        # define feedback function
+        feedback = []
+
+        def submit_feedback(rank, example_idx, label, img, feedback_label):
+            mask = (img == np.array([0, 169, 255])).all(axis=-1)
+            feedback.append({"mask": mask, "example_idx": example_idx, "label": label})
+            dp["feedback_label"][example_idx] = feedback_label
+            dp["feedback_mask"][example_idx] = mask
+            return []
+
+        iface = gr.Interface(
+            submit_feedback,
+            [
+                gr.inputs.Number(),
+                gr.inputs.Number(),
+                gr.inputs.Textbox(),
+                gr.inputs.Image(shape=size),
+                gr.inputs.Radio(choices=["positive", "negative", "abstain"]),
+            ],
+            outputs=[],
+            examples=examples,
+            layout="vertical",
+        )
+        return iface.launch(inbrowser=True, inline=False)
 
     @staticmethod
     def _cat_acts_across_layers(acts: List[torch.Tensor]):
-        """repeat activations in lower layers so they match the height and width of the first layer"""
+        """
+        repeat activations in lower layers so they
+        match the height and width of the first layer
+        """
         if len(acts) == 1:
             return acts[0]
 
@@ -323,3 +390,50 @@ class SourceSeparator(nn.Module):
     __terra_read__ = read
 
     __terra_write__ = write
+
+
+class SoftCrossEntropyLoss(nn.Module):
+    """
+    Sourced from HazyResearch/metal: https://github.com/HazyResearch/metal/blob/master/metal/end_model/loss.py
+    Computes the CrossEntropyLoss while accepting probabilistic (float) targets
+    Args:
+        weight: a tensor of relative weights to assign to each class.
+            the kwarg name 'weight' is used to match CrossEntropyLoss
+        reduction: how to combine the elementwise losses
+            'none': return an unreduced list of elementwise losses
+            'mean': return the mean loss per elements
+            'sum': return the sum of the elementwise losses
+    Accepts:
+        input: An [n, k] float tensor of prediction logits (not probabilities)
+        target: An [n, k] float tensor of target probabilities
+    """
+
+    def __init__(self, weight=None, reduction="mean"):
+        super().__init__()
+        # Register as buffer is standard way to make sure gets moved /
+        # converted with the Module, without making it a Parameter
+        if weight is None:
+            self.weight = None
+        else:
+            # Note: Sets the attribute self.weight as well
+            self.register_buffer("weight", torch.FloatTensor(weight))
+        self.reduction = reduction
+
+    def forward(self, input, target):
+        n, k = input.shape
+        # Note that t.new_zeros, t.new_full put tensor on same device as t
+        cum_losses = input.new_zeros(n)
+        for y in range(k):
+            cls_idx = input.new_full((n,), y, dtype=torch.long)
+            y_loss = F.cross_entropy(input, cls_idx, reduction="none")
+            if self.weight is not None:
+                y_loss = y_loss * self.weight[y]
+            cum_losses += target[:, y].float() * y_loss
+        if self.reduction == "none":
+            return cum_losses
+        elif self.reduction == "mean":
+            return cum_losses.mean()
+        elif self.reduction == "sum":
+            return cum_losses.sum()
+        else:
+            raise ValueError(f"Unrecognized reduction: {self.reduction}")

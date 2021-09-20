@@ -8,7 +8,7 @@ import domino.clip
 os.environ["TERRA_CONFIG_PATH"] = "/home/sabri/code/domino-21/terra_config.json"
 
 
-@Task.make_task
+@Task
 def evaluate_clip_on_ground_truth_slices(
     text_embs,
     idx_to_word,

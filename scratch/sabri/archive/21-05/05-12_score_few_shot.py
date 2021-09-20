@@ -20,7 +20,7 @@ from domino.feedback import ScribbleModel, merge_in_feedback
 from domino.vision import Classifier
 
 
-@Task.make_task
+@Task
 def score_few_shot(
     model_df: pd.DataFrame,
     scribble_run_ids: List[int],
@@ -65,7 +65,7 @@ def score_few_shot(
     return pd.DataFrame(results)
 
 
-@Task.make_task
+@Task
 def plot_score_few_shot(df: pd.DataFrame, run_dir=None):
     plt.figure(figsize=(25, 3))
     pivot_df = df.pivot(columns="model_target", index="lr_target", values="auroc")
@@ -74,7 +74,7 @@ def plot_score_few_shot(df: pd.DataFrame, run_dir=None):
     return pivot_df
 
 
-@Task.make_task
+@Task
 def plot_score_diff(
     example_df: pd.DataFrame,
     scribble_df: pd.DataFrame,

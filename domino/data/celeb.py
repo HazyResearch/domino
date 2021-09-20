@@ -74,7 +74,7 @@ def celeb_mask_loader(filepath: str):
         return Image.new("RGB", (512, 512))
 
 
-#@Task.make_task
+# @Task.make_task
 def build_celeb_dp(df: pd.DataFrame, run_dir: str = None):
     """Build the dataframe by joining on the attribute, split and identity CelebA CSVs."""
 
@@ -96,7 +96,7 @@ def build_celeb_dp(df: pd.DataFrame, run_dir: str = None):
     return dp
 
 
-@Task.make_task
+# @Task.make_task
 def build_celeb_df(
     dataset_dir: str = "/home/common/datasets/celeba",
     run_dir: str = None,
@@ -104,7 +104,7 @@ def build_celeb_df(
     return build_celeba_df(dataset_dir=dataset_dir, save_csv=False)
 
 
-@Task.make_task
+# @Task.make_task
 def build_celeb_mask_df(
     dataset_dir: str = "/home/common/datasets/celeba",
     run_dir: str = None,

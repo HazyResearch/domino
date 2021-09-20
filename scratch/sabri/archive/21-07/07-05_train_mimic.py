@@ -5,7 +5,7 @@ from domino.data.mimic import build_dp
 from domino.vision import train
 
 
-@terra.Task.make_task
+@terra.Task
 def train_mimic(
     dp: mk.DataPanel, target_column: str, input_column: str, run_dir: str = None
 ):

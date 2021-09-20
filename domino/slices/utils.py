@@ -1,11 +1,8 @@
-from typing import List, Union
+from typing import Iterable, Tuple, Union
 
 import meerkat as mk
 import numpy as np
 import pandas as pd
-import terra
-from pandas.core.frame import DataFrame
-from tqdm import tqdm
 
 
 class CorrelationImpossibleError(ValueError):
@@ -27,7 +24,7 @@ class CorrelationImpossibleError(ValueError):
 
 
 def induce_correlation(
-    df: Union[pd.DataFrame, mk.DataPanel],
+    dp: Union[pd.DataFrame, mk.DataPanel],
     corr: float,
     n: int,
     attr_a: str,
@@ -44,10 +41,10 @@ def induce_correlation(
     Details: https://www.notion.so/Slice-Discovery-Evaluation-Framework-63b625318ef4411698c5e369d914db88#8bd2da454826451c80b524149e1c87cc
     """
     if mu_a is None:
-        mu_a = df[attr_a].mean()
+        mu_a = dp[attr_a].mean()
 
     if mu_b is None:
-        mu_b = df[attr_b].mean()
+        mu_b = dp[attr_b].mean()
 
     if match_mu:
         mu = min(mu_a, mu_b)
@@ -64,22 +61,22 @@ def induce_correlation(
     n_a1_b0 = n_a1 - n_1
     n_a0_b1 = n_b1 - n_1
 
-    both_1 = (df[attr_a] == 1) & (df[attr_b] == 1)
-    both_0 = (df[attr_a] == 0) & (df[attr_b] == 0)
+    both_1 = (dp[attr_a] == 1) & (dp[attr_b] == 1)
+    both_0 = (dp[attr_a] == 0) & (dp[attr_b] == 0)
 
     # check if requested correlation is possible
     msg = None
-    if int(n_a1) > df[attr_a].sum():
+    if int(n_a1) > dp[attr_a].sum():
         msg = "Not enough samples where a=1. Try a lower mu_a."
-    elif int(n_b1) > df[attr_b].sum():
+    elif int(n_b1) > dp[attr_b].sum():
         msg = "Not enough samples where b=1. Try a lower mu_b."
     elif int(n_1) > both_1.sum():
         msg = "Not enough samples where a=1 and b=1. Try a lower corr or smaller n."
     elif int(n_0) > both_0.sum():
         msg = "Not enough samples where a=0 and b=0. Try a lower corr or smaller n."
-    elif int(n_a1_b0) > (df[attr_a] & (1 - both_1)).sum():
+    elif int(n_a1_b0) > (dp[attr_a] & (1 - both_1)).sum():
         msg = "Not enough samples where a=1 and b=0. Try a higher corr or smaller n."
-    elif int(n_a0_b1) > (df[attr_b] & (1 - both_1)).sum():
+    elif int(n_a0_b1) > (dp[attr_b] & (1 - both_1)).sum():
         msg = "Not enough samples where a=0 and b=1. Try a higher corr or smaller n."
     elif n_1 < 0:
         msg = "Insufficient variance for desired corr. Try mu_a or mu_b closer to 0.5 "
@@ -96,12 +93,12 @@ def induce_correlation(
     )
     indices.extend(
         np.random.choice(
-            np.where(df[attr_a] & (1 - both_1))[0], size=int(n_a1_b0), replace=replace
+            np.where(dp[attr_a] & (1 - both_1))[0], size=int(n_a1_b0), replace=replace
         )
     )
     indices.extend(
         np.random.choice(
-            np.where(df[attr_b] & (1 - both_1))[0], size=int(n_a0_b1), replace=replace
+            np.where(dp[attr_b] & (1 - both_1))[0], size=int(n_a0_b1), replace=replace
         )
     )
     indices.extend(
@@ -115,55 +112,50 @@ def induce_correlation(
     return indices
 
 
-@terra.Task.make_task
-def check_corr_induction(
-    dp: Union[DataFrame, mk.DataPanel],
-    attributes: List[str],
-    corr_start: float,
-    corr_end: float,
-    run_dir: str = None,
-    **kwargs,
+def synthesize_preds(
+    dp: mk.DataPanel,
+    sensitivity: float = 0.8,
+    specificity: float = 0.8,
+    slice_sensitivities: Union[float, Iterable[float]] = None,
+    slice_specificities: Union[float, Iterable[float]] = None,
 ):
-    """Test whether it is possible to induce correlations in the range
-    [`corr_start`, `corr_end`] in datasets of size `n` between all pairs in
-    `attributes`.
+    n_slices = dp["slices"].shape[-1]
 
-    Args:
-        dp (Union[DataFrame, mk.DataPanel]): [description]
-        attributes (List[str]): [description]
-        corr_start (float): [description]
-        corr_end (float): [description]
-        kwargs: passed to `induce_correlation`
-    Returns:
-        [type]: [description]
-    """
+    if slice_sensitivities is None:
+        slice_sensitivities = [0.5] * n_slices
+    elif isinstance(slice_sensitivities, float):
+        slice_sensitivities = [slice_sensitivities] * n_slices
 
-    if corr_start * corr_end < 0:
-        raise ValueError("Cannot test correlation range that crosses 0.")
+    if slice_specificities is None:
+        slice_specificities = [0.5] * n_slices
+    elif isinstance(slice_specificities, float):
+        slice_specificities = [slice_specificities] * n_slices
 
-    corrs = [corr_start, corr_end]
-    results = []
-    for idx_a, attr_a in tqdm(enumerate(attributes), total=len(attributes)):
-        for idx_b, attr_b in enumerate(attributes):
-            if idx_a >= idx_b:
-                continue
-            for corr in corrs:
-                try:
-                    induce_correlation(
-                        dp, corr=corr, attr_a=attr_a, attr_b=attr_b, **kwargs
-                    )
-                    success = True
-                except CorrelationImpossibleError as e:
-                    success = False
-                results.append(
-                    {
-                        "attr_a": attr_a,
-                        "attr_b": attr_b,
-                        "corr": corr,
-                        "success": success,
-                    }
-                )
+    if len(slice_sensitivities) != n_slices or len(slice_specificities) != n_slices:
+        raise ValueError(
+            "Both `slice_sensitivies` and `slice_specifities` should be "
+            "iterables with length equal to the number of slices."
+        )
 
-    return (
-        pd.DataFrame(results).groupby(["attr_a", "attr_b"]).success.mean() == 1
-    ).reset_index()
+    preds = np.zeros(len(dp))
+    preds[dp["target"] == 1] = np.random.beta(
+        sensitivity, 1 - sensitivity, dp["target"].sum()
+    )
+    preds[dp["target"] == 0] = np.random.beta(
+        1 - specificity, specificity, (1 - dp["target"]).sum()
+    )
+    for slice_idx in range(n_slices):
+        mask = (dp["target"] == 1) & (dp["slices"][:, slice_idx] == 1)
+        preds[mask] = np.random.beta(
+            slice_sensitivities[slice_idx],
+            1 - slice_sensitivities[slice_idx],
+            mask.sum(),
+        )
+        mask = (dp["target"] == 0) & (dp["slices"][:, slice_idx] == 1)
+        preds[mask] = np.random.beta(
+            1 - slice_specificities[slice_idx],
+            slice_specificities[slice_idx],
+            mask.sum(),
+        )
+
+    return preds

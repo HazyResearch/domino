@@ -20,7 +20,7 @@ from domino.data.celeb import celeb_transform
 from domino.data.cxr import rle2mask
 
 
-@Task.make_task
+@Task
 def visualize_components(
     data_df: pd.DataFrame,
     separator: SourceSeparator = None,
@@ -435,7 +435,7 @@ def visualize_gaze_dp(
         plt.savefig(os.path.join(run_dir, "out.pdf"))
 
 
-@Task.make_task
+@Task
 def visualize_component(
     data_df: pd.DataFrame,
     img_column: str,
@@ -599,7 +599,7 @@ def visualize_component(
     return data_df.iloc[example_idxs]
 
 
-@Task.make_task
+@Task
 def compute_comp_corr(
     df: pd.DataFrame,
     components: torch.Tensor,
@@ -656,7 +656,7 @@ def compute_comp_corr(
     return corr.reset_index()
 
 
-@Task.make_task
+@Task
 def component_scatterplot(
     df: pd.DataFrame,
     components: torch.Tensor,

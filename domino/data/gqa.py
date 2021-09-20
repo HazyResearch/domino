@@ -9,7 +9,7 @@ from domino.utils import split_dp
 DATASET_DIR = "/home/common/datasets/gqa"
 
 
-@terra.Task.make_task
+@terra.Task
 def split_gqa(
     dataset_dir: str = DATASET_DIR,
     train_frac: float = 0.7,

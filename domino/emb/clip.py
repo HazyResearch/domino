@@ -1,3 +1,6 @@
+import os
+from typing import Iterable
+
 import clip
 import meerkat as mk
 import meerkat.nn as mknn
@@ -8,10 +11,10 @@ import torchvision.transforms as transforms
 from terra import Task
 from tqdm.auto import tqdm
 
-from domino.utils import batched_pearsonr
+from domino.utils import batched_pearsonr, merge_in_split
 
 
-@Task.make_task
+@Task
 def embed_words(
     words_dp: mk.DataPanel,
     batch_size: int = 128,
@@ -23,7 +26,7 @@ def embed_words(
         words_dp["word"], fn=lambda x: clip.tokenize(f"a photo of {x}").squeeze()
     )
     words_dp["emb"] = words_dp["tokens"].map(
-        lambda x: model.encode_text(x.data.to(0)).cpu().detach(),
+        lambda x: model.encode_text(x.data.to(0)).cpu().detach().numpy(),
         pbar=True,
         is_batched_fn=True,
         batch_size=batch_size,
@@ -31,31 +34,62 @@ def embed_words(
     return words_dp
 
 
+@Task
 def embed_images(
     dp: mk.DataPanel,
     img_column: str,
     batch_size: int = 128,
     num_workers: int = 4,
     model: str = "ViT-B/32",
+    mmap: bool = False,
+    split_dp: mk.DataPanel = None,
+    splits: Iterable[str] = None,
     run_dir: str = None,
     **kwargs,
-):
+) -> mk.DataPanel:
+    if splits is not None:
+        dp = merge_in_split(dp, split_dp)
+        dp = dp.lz[dp["split"].isin(splits)]
+
     model, preprocess = clip.load(model, device=torch.device(0))
 
     dp["__embed_images_input__"] = dp[img_column].to_lambda(preprocess)
     with torch.no_grad():
         dp["emb"] = dp["__embed_images_input__"].map(
-            lambda x: model.encode_image(x.data.to(0)).cpu().detach(),
+            lambda x: model.encode_image(x.data.to(0)).cpu().detach().numpy(),
             pbar=True,
             is_batched_fn=True,
             batch_size=batch_size,
             num_workers=num_workers,
-            output_type=mknn.EmbeddingColumn,
+            mmap=mmap,
+            mmap_path=os.path.join(run_dir, "emb_mmap.npy"),
+            flush_size=128,
         )
     return dp
 
 
-@Task.make_task
+@Task
+def pca_embeddings(
+    images_dp: mk.DataPanel,
+    words_dp: mk.DataPanel,
+    n_components: int = 128,
+    top_k: int = 10_000,
+):
+    from sklearn.decomposition import PCA
+
+    pca = PCA(n_components=n_components)
+    pca.fit(words_dp["emb"].lz[:top_k])
+    images_dp[f"emb_{n_components}"] = images_dp["emb"].map(
+        lambda x: pca.transform(x),
+        is_batched_fn=True,
+        batch_size=1024,
+        mmap=True,
+        pbar=True,
+    )
+    return images_dp
+
+
+@Task
 def get_wiki_words(top_k: int = 1e5, eng_only: bool = False, run_dir: str = None):
     df = pd.read_csv(
         "https://github.com/IlyaSemenov/wikipedia-word-frequency/raw/master/results/enwiki-20190320-words-frequency.txt",
