@@ -52,6 +52,8 @@ def train_settings(
     **kwargs,
 ):
     def _train_model(setting_config):
+        import terra
+
         build_setting_run_id, dp = build_setting(
             data_dp=data_dp, split_dp=split_dp, return_run_id=True, **setting_config
         )
@@ -59,7 +61,7 @@ def train_settings(
             dp=dp,
             setting_config=setting_config,
             model_config=model_config,
-            pbar=False,
+            pbar=True,
             **kwargs,
             return_run_id=True,
         )
@@ -70,7 +72,10 @@ def train_settings(
             "build_setting_run_id": build_setting_run_id,
         }
 
-    ray.init(num_gpus=1, num_cpus=6)
+    print("Connecting to ray cluster.")
+    ray.init(num_gpus=1, num_cpus=8)
+    print("Connected to ray cluster.")
+
     analysis = tune.run(
         _train_model,
         config=tune.grid_search(list(setting_dp)),
@@ -149,7 +154,7 @@ def score_settings(
             dp=train_model.inp(run_id)["dp"],
             split=split,
             layers=layers,
-            pbar=False,
+            pbar=True,
             reduction_fns=reduction_fns,
             return_run_id=True,
             **kwargs,
@@ -167,7 +172,7 @@ def score_settings(
     ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     analysis = tune.run(
         _score_model,
-        config=tune.grid_search(model_dp[list(model_dp)].to_dict("records")),
+        config=tune.grid_search(list(model_dp)),
         resources_per_trial={"gpu": 1},
     )
     return mk.merge(

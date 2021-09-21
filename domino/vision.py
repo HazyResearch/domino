@@ -128,7 +128,10 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
+            if metric_name == "auroc":
+                print("len auroc", len(metric.preds))
             self.log(f"valid_{metric_name}", metric.compute())
+            metric.reset()
 
     def test_epoch_end(self, outputs) -> None:
         return self.validation_epoch_end(outputs)
@@ -182,6 +185,7 @@ class BinaryMTClassifier(Classifier):
         for idx, target in enumerate(self.targets):
             for metric in self.metrics[target].values():
                 metric(torch.sigmoid(outs[:, idx]), targets[:, idx])
+            metric.reset()
 
         self.valid_preds.update(torch.sigmoid(outs), targets, sample_id)
 
