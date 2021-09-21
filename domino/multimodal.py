@@ -139,16 +139,33 @@ class Classifier(pl.LightningModule, TerraModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
+        inputs, texts, targets, sample_id = (
+            batch["input"],
+            batch["text"],
+            batch["target"],
+            batch["id"],
+        )
 
         outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
-        self.log("valid_loss", loss)
+        ce_loss = nn.functional.cross_entropy(outs, targets)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
 
         self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+
+        embs = self.model(inputs)
+        text_embs = self.text_model(texts)
+
+        cosine_loss = nn.functional.cosine_embedding_loss(
+            embs, text_embs, torch.ones_like(text_embs)[:, 0]
+        )
+
+        loss = ce_loss + self.config["cosine_weight"] * cosine_loss
+
+        self.log("valid_loss", loss)
+        self.log("CE valid_loss", ce_loss)
+        self.log("COS valid_loss", cosine_loss)
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
@@ -218,7 +235,7 @@ class BinaryMTClassifier(Classifier):
 def train(
     dp: mk.DataPanel,
     input_column: str,
-    text_column: str,
+    text_columns: List[str],
     target_column: Union[Sequence[str], str],
     id_column: str,
     model: Classifier = None,
@@ -230,6 +247,7 @@ def train(
     num_workers: int = 6,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
+    ckpt_mode: str = "max",
     train_split: str = "train",
     valid_split: str = "valid",
     wandb_config: dict = None,
@@ -270,7 +288,7 @@ def train(
                 dirpath=run_dir,
                 monitor=ckpt_monitor,
                 save_top_k=1,
-                mode="max",
+                mode=ckpt_mode,
             )
         ]
     else:
@@ -297,10 +315,15 @@ def train(
     )
 
     if isinstance(target_column, str):
+        text_col = dp[text_columns[0]]
+        if len(text_columns) > 1:
+            for text_column in text_columns[1:]:
+                text_col = text_col + dp[text_column]
+
         dp = mk.DataPanel.from_batch(
             {
                 "input": dp[input_column],
-                "text": dp[text_column],
+                "text": text_col,
                 "target": dp[target_column].astype(int),
                 "id": dp[id_column],
                 "split": dp["split"],
