@@ -40,7 +40,7 @@ def train_eeg(
         num_workers=6,
         valid_split="valid",
         use_terra=True,
-        max_epochs=100,
+        max_epochs=10,
         drop_last=True,
     )
 
