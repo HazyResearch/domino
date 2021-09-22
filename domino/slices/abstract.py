@@ -19,6 +19,10 @@ def _get_slice_builder(dataset: str):
         from .eeg import EegSliceBuilder
 
         sb = EegSliceBuilder()
+    elif dataset == "celeba":
+        from .celeba import CelebASliceBuilder
+
+        sb = CelebASliceBuilder()
     else:
         raise ValueError(f"Dataset {dataset} not supported.")
     return sb
@@ -64,7 +68,7 @@ class AbstractSliceBuilder:
 
         if synthetic_preds:
             synthetic_kwargs = {} if synthetic_kwargs is None else synthetic_kwargs
-            dp["pred"] = synthesize_preds(dp, **synthetic_kwargs)
+            dp["probs"] = synthesize_preds(dp, **synthetic_kwargs)
 
         dp = merge_in_split(dp, split_dp)
         return dp

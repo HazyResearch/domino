@@ -52,7 +52,9 @@ class MixtureModelSDM(SliceDiscoveryMethod):
             init_params=self.config.init_params,
         )
 
-    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    @requires_columns(
+        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
+    )
     def fit(
         self,
         data_dp: mk.DataPanel,
@@ -62,14 +64,16 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         if self.pca is not None:
             self.pca.fit(X=emb[:1000])
             emb = self.pca.transform(X=emb)
-        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["pred"])
+        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["probs"])
 
         self.slice_cluster_indices = (
             -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
         ).argsort()[: self.config.n_slices]
         return self
 
-    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    @requires_columns(
+        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
+    )
     def transform(
         self,
         data_dp: mk.DataPanel,
@@ -79,7 +83,7 @@ class MixtureModelSDM(SliceDiscoveryMethod):
             emb = self.pca.transform(X=emb)
         dp = data_dp.view()
         clusters = self.gmm.predict_proba(
-            emb, y=data_dp["target"], y_hat=data_dp["pred"]
+            emb, y=data_dp["target"], y_hat=data_dp["probs"]
         )
 
         dp["pred_slices"] = clusters[:, self.slice_cluster_indices]

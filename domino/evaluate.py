@@ -27,6 +27,7 @@ def run_sdm(
     word_dp: mk.DataPanel = None,
     **kwargs,
 ):
+    print(len(data_dp))
     print("Creating slice discovery method...")
     sdm: SliceDiscoveryMethod = sdm_class(sdm_config)
 
@@ -66,7 +67,7 @@ def run_sdms(
             dp = build_setting.out(score_run_id)
             model = None
         else:
-            dp = score_model.out(score_run_id)
+            dp, _ = score_model.out(score_run_id)
             model = score_model.inp(score_run_id)["model"]
 
         if isinstance(emb_dp, Mapping):
@@ -96,7 +97,8 @@ def run_sdms(
         return {
             "run_sdm_run_id": run_id,
             "score_model_run_id": score_run_id,
-            **config["sdm"],
+            "sdm_class": config["sdm"]["sdm_class"],
+            "sdm_config": config["sdm"]["sdm_config"],
         }
 
     if isinstance(sdm_config, List):
@@ -133,21 +135,21 @@ def run_sdms(
 
 
 @terra.Task
-def score_sdms(evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
-    cols = ["target_synset", "run_sdm_run_id"]
+def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
+    cols = ["target", "run_sdm_run_id"]
     if spec_columns is not None:
         cols += spec_columns
     dfs = []
-    for row in tqdm(evaluate_dp):
+    for row in tqdm(setting_dp):
         dp, _ = run_sdm.out(run_id=row["run_sdm_run_id"])
         metrics_df = compute_sdm_metrics(dp.load())
 
         for col in cols:
             metrics_df[col] = row[col]
 
-        metrics_df["slice"] = metrics_df["slice_idx"].apply(
-            lambda x: row["slice_synsets"][x]
-        )
+        # metrics_df["slice"] = metrics_df["slice_idx"].apply(
+        #    lambda x: row["slice_synsets"][x]
+        # )
         dfs.append(metrics_df)
 
     return pd.concat(dfs, axis=0)
@@ -155,13 +157,13 @@ def score_sdms(evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
 
 @terra.Task
 def score_sdm_explanations(
-    evaluate_dp: mk.DataPanel, spec_columns: Sequence[str] = None
+    setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None
 ):
-    cols = ["target_synset", "run_sdm_run_id"]
+    cols = ["target", "run_sdm_run_id"]
     if spec_columns is not None:
         cols += spec_columns
     dfs = []
-    for row in tqdm(evaluate_dp):
+    for row in tqdm(setting_dp):
         _, words_dp = run_sdm.out(run_id=row["run_sdm_run_id"])
         metrics_df = compute_expl_metrics(
             words_dp.load(), slice_synsets=row["slice_synsets"]
@@ -170,9 +172,9 @@ def score_sdm_explanations(
         for col in cols:
             metrics_df[col] = row[col]
 
-        metrics_df["slice"] = metrics_df["slice_idx"].apply(
-            lambda x: row["slice_synsets"][x]
-        )
+        # metrics_df["slice"] = metrics_df["slice_idx"].apply(
+        #    lambda x: row["slice_synsets"][x]
+        # )
         dfs.append(metrics_df)
 
     return pd.concat(dfs, axis=0)

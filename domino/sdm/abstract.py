@@ -51,6 +51,6 @@ class SliceDiscoveryMethod(ABC):
         ref_proto = data_dp.lz[data_dp["target"] == 1]["emb"].data.mean(axis=0)
 
         words_dp["pred_slices"] = np.dot(
-            words_dp["emb"].data.numpy(), (slice_proto - ref_proto).T
+            words_dp["emb"].data, (slice_proto - ref_proto).T
         )
         return words_dp[["word", "pred_slices", "frequency"]]
