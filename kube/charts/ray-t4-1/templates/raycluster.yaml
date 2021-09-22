@@ -49,7 +49,7 @@ spec:
             # Do not change this command - it keeps the pod alive until it is
             # explicitly killed.
             command: ["/bin/bash", "-c", "--"]
-            args: ['trap : TERM INT; ln -s /pd/* /home; sleep infinity & wait;']
+            args: ['trap : TERM INT; source /pd/sabri/code/domino/kube/scripts/worker-startup.sh; sleep infinity & wait;']
             ports:
             - containerPort: 6379  # Redis port
             - containerPort: 10001  # Used by Ray Client

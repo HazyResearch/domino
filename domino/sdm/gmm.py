@@ -89,7 +89,7 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         dp["pred_slices"] = clusters[:, self.slice_cluster_indices]
         return dp
 
-    @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
+    # @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
     def explain(
         self, words_dp: mk.DataPanel, data_dp: mk.DataPanel = None
     ) -> mk.DataPanel:

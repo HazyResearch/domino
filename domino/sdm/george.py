@@ -3,7 +3,8 @@ from dataclasses import dataclass
 import meerkat as mk
 import numpy as np
 import torch.nn as nn
-from stratification.cluster.models.cluster import AutoKMixtureModel
+
+# from stratification.cluster.models.cluster import AutoKMixtureModel
 from umap import UMAP
 
 from domino.utils import VariableColumn, requires_columns

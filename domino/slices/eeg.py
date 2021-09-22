@@ -41,8 +41,8 @@ class EegSliceBuilder(AbstractSliceBuilder):
         dp = data_dp.lz[indices]
 
         # define the "slices" column
-        # for a spurious correlation, in-slice is where the correlate == target
-        slice_0 = dp[correlate] == dp["target"]
+        # for a spurious correlation, in-slice is where the correlate != target
+        slice_0 = dp[correlate] != dp["target"]
         dp["slices"] = slice_0.reshape(-1, 1)
 
         return dp
