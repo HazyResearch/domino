@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Dict, Mapping
+from uuid import uuid4
 
 import meerkat as mk
 import numpy as np
@@ -29,9 +30,26 @@ def _get_slice_builder(dataset: str):
 
 
 @terra.Task
-def build_setting(dataset: str, slice_category: str, data_dp: mk.DataPanel, **kwargs):
+def build_setting(
+    dataset: str,
+    slice_category: str,
+    data_dp: mk.DataPanel,
+    split_dp: mk.DataPanel,
+    build_setting_kwargs: Dict,
+    synthetic_preds: bool = False,
+    synthetic_kwargs: Mapping[str, object] = None,
+):
     sb = _get_slice_builder(dataset=dataset)
-    return sb.build_setting(data_dp=data_dp, slice_category=slice_category, **kwargs)
+    dp = sb.build_setting(
+        slice_category=slice_category,
+        data_dp=data_dp,
+        split_dp=split_dp,
+        **build_setting_kwargs,
+    )
+    if synthetic_preds:
+        synthetic_kwargs = {} if synthetic_kwargs is None else synthetic_kwargs
+        dp["probs"] = synthesize_preds(dp, **synthetic_kwargs)
+    return dp
 
 
 @terra.Task
@@ -42,7 +60,7 @@ def collect_settings(
     settings_dp = sb.collect_settings(
         data_dp=data_dp, slice_category=slice_category, **kwargs
     )
-    settings_dp["setting_id"] = np.arange(len(settings_dp))
+    settings_dp["setting_id"] = [str(uuid4()) for _ in range(len(settings_dp))]
     return settings_dp
 
 
@@ -55,8 +73,6 @@ class AbstractSliceBuilder:
         data_dp: mk.DataPanel,
         slice_category: str,
         split_dp: mk.DataPanel,
-        synthetic_preds: bool = False,
-        synthetic_kwargs: Mapping[str, object] = None,
         **kwargs,
     ) -> mk.DataPanel:
         if slice_category == "correlation":
@@ -65,10 +81,6 @@ class AbstractSliceBuilder:
             dp = self.build_rare_setting(data_dp=data_dp, **kwargs)
         else:
             raise ValueError(f"Slice category '{slice_category}' not recognized.")
-
-        if synthetic_preds:
-            synthetic_kwargs = {} if synthetic_kwargs is None else synthetic_kwargs
-            dp["probs"] = synthesize_preds(dp, **synthetic_kwargs)
 
         dp = merge_in_split(dp, split_dp)
         return dp

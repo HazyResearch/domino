@@ -184,11 +184,16 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                         {
                             "dataset": "imagenet",
                             "slice_category": "rare",
-                            "target_frac": target_frac,
-                            "slice_frac": slice_frac,
-                            "n": n,
-                            "slice_synsets": slice_synsets,
-                            "target_synset": target_synset,
+                            "alpha": slice_frac,
+                            "target_name": target_synset,
+                            "slice_names": slice_synsets,
+                            "build_setting_kwargs": {
+                                "target_frac": target_frac,
+                                "slice_frac": slice_frac,
+                                "n": n,
+                                "slice_synsets": slice_synsets,
+                                "target_synset": target_synset,
+                            },
                         }
                         for slice_frac in np.geomspace(
                             min_slice_frac, max_slice_frac, num_frac

@@ -54,7 +54,7 @@ setting_dp = p.run(
 )
 
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
+setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
 
 if False:
     setting_dp = p.run(

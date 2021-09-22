@@ -21,7 +21,7 @@ from domino.vision import Classifier, score, train
 @terra.Task
 def train_model(
     dp: mk.DataPanel,
-    setting_config: dict,
+    setting_spec: dict,
     model_config: dict,
     run_dir: str = None,
     **kwargs,
@@ -34,7 +34,7 @@ def train_model(
         run_dir=run_dir,
         wandb_config={
             "train_model_run_id": int(os.path.basename(run_dir)),
-            **setting_config,
+            **setting_spec,
         },
         config=model_config,
         **kwargs,
@@ -53,22 +53,27 @@ def train_settings(
     run_dir: str = None,
     **kwargs,
 ):
-    def _train_model(setting_config):
+    def _train_model(setting_spec):
         import terra
 
         build_setting_run_id, dp = build_setting(
-            data_dp=data_dp, split_dp=split_dp, return_run_id=True, **setting_config
+            data_dp=data_dp,
+            split_dp=split_dp,
+            dataset=setting_spec["dataset"],
+            slice_category=setting_spec["slice_category"],
+            build_setting_kwargs=setting_spec["build_setting_kwargs"],
+            return_run_id=True,
         )
         run_id, _ = train_model(
             dp=dp,
-            setting_config=setting_config,
+            setting_spec=setting_spec,
             model_config=model_config,
             pbar=True,
             **kwargs,
             return_run_id=True,
         )
         return {
-            "setting_id": setting_config["setting_id"],
+            "setting_id": setting_spec["setting_id"],
             "train_settings_run_id": int(os.path.basename(run_dir)),
             "train_model_run_id": run_id,
             "build_setting_run_id": build_setting_run_id,
@@ -208,14 +213,16 @@ def synthetic_score_settings(
     **kwargs,
 ):
     rows = []
-    for config in tqdm(setting_dp):
+    for setting_spec in tqdm(setting_dp):
         run_id, _ = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,
             return_run_id=True,
             synthetic_preds=True,
             synthetic_kwargs=synthetic_kwargs,
-            **config,
+            dataset=setting_spec["dataset"],
+            slice_category=setting_spec["slice_category"],
+            build_setting_kwargs=setting_spec["build_setting_kwargs"],
             **kwargs,
         )
         rows.append(
@@ -223,8 +230,8 @@ def synthetic_score_settings(
                 "synthetic_preds": True,
                 "build_setting_run_id": run_id,
                 "score_model_run_id": run_id,
-                "parent_run_id": int(os.path.basename(run_dir)),
-                **config,
+                "score_settings_run_id": int(os.path.basename(run_dir)),
+                "setting_id": setting_spec["setting_id"],
             }
         )
-    return mk.DataPanel(rows)
+    return mk.merge(mk.DataPanel(rows), setting_dp, on="setting_id")

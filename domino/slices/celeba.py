@@ -116,11 +116,18 @@ class CelebASliceBuilder(AbstractSliceBuilder):
                             {
                                 "dataset": "celeba",
                                 "slice_category": "correlation",
-                                "n": n,
-                                "correlate": correlate,
-                                "target": target,
-                                "corr": corr,
-                                "n": n,
+                                "alpha": corr,
+                                "target_name": target,
+                                "slice_names": [
+                                    f"{target}=0_{correlate}=1",
+                                    f"{target}=1_{correlate}=0",
+                                ],
+                                "build_setting_kwargs": {
+                                    "n": n,
+                                    "correlate": correlate,
+                                    "target": target,
+                                    "corr": corr,
+                                },
                             }
                             for corr in np.linspace(min_corr, max_corr, num_corr)
                         ]
