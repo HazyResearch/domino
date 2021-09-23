@@ -80,7 +80,7 @@ def train_settings(
         }
 
     print("Connecting to ray cluster.")
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
+    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
     print("Connected to ray cluster.")
 
     analysis = tune.run(
@@ -181,7 +181,7 @@ def score_settings(
             "synthetic_preds": False,
         }
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
+    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
     analysis = tune.run(
         _score_model,
         config=tune.grid_search(list(model_dp)),
