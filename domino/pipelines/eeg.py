@@ -41,7 +41,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["score_sdms"])
+p = Pipeline(to_rerun=["collect_settings"])
 
 data_dp = p.run(parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=618)
 

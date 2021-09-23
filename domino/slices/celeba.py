@@ -1,4 +1,4 @@
-from typing import Iterable, Union
+from typing import Iterable, List, Union
 
 import meerkat as mk
 import numpy as np
@@ -66,14 +66,59 @@ class CelebASliceBuilder(AbstractSliceBuilder):
     def build_rare_setting(
         self,
         data_dp: mk.DataPanel,
-        target_synset: str,
-        slice_synsets: Union[str, Iterable[str]],
+        target_attrs: List[str],
+        slice_attrs: List[str],
         slice_frac: float,
         target_frac: float,
         n: int,
         **kwargs,
     ):
-        raise NotImplementedError
+        targets = np.any(
+            np.array([data_dp[attr].data for attr in target_attrs]), axis=0
+        ).T
+
+        data_dp["slices"] = np.array([data_dp[attr].data for attr in slice_attrs]).T
+
+        data_dp["target"] = targets
+        data_dp["input"] = data_dp["image"]
+        data_dp["id"] = data_dp["image_id"]
+
+        n_slices = len(slice_attrs)
+        n_pos = int(n * target_frac)
+        dp = data_dp.lz[
+            np.random.permutation(
+                np.concatenate(
+                    (
+                        *(
+                            np.random.choice(
+                                np.where(
+                                    (data_dp["slices"][:, slice_idx] == 1)
+                                    & (data_dp["slices"].sum(axis=1) == 1)
+                                    # ensure no other slices are 1
+                                )[0],
+                                int(slice_frac * n_pos),
+                                replace=False,
+                            )
+                            for slice_idx in range(n_slices)
+                        ),
+                        np.random.choice(
+                            np.where(
+                                (data_dp["target"] == 1)
+                                & (data_dp["slices"].sum(axis=1) == 0)
+                            )[0],
+                            int((1 - n_slices * slice_frac) * n_pos),
+                            replace=False,
+                        ),
+                        np.random.choice(
+                            np.where(data_dp["target"] == 0)[0],
+                            n - n_pos,
+                            replace=False,
+                        ),
+                    )
+                )
+            )
+        ]
+        return dp
 
     def build_noisy_label_setting(self):
         raise NotImplementedError
@@ -148,59 +193,5 @@ class CelebASliceBuilder(AbstractSliceBuilder):
         n: int = 100_000,
     ):
         data_dp = data_dp.view()
-        hypernyms = _get_hypernyms(data_dp=data_dp)
-        words = set(words_dp["word"])
-        if target_synsets is None:
-            target_synsets = DEFAULT_TARGET_SYNSETS
 
-        settings = []
-        for target_synset in tqdm(target_synsets):
-            target_synsets = list(
-                hypernyms[hypernyms["hypernym"] == target_synset]["synset"].unique()
-            )
-            targets = data_dp["synset"].isin(target_synsets)
-
-            # only use synsets that are in our set of explanation words for slice, so that
-            # we can compute mrr on natural languge explanations
-            candidate_slice_synsets = _filter_synsets(target_synsets, words)
-            # double list length so we can wrap around
-            candidate_slice_synsets = candidate_slice_synsets * 2
-            for start_idx in range(0, len(candidate_slice_synsets), num_slices):
-                # TODO: ensure no overlapping
-                slice_synsets = candidate_slice_synsets[
-                    start_idx : start_idx + num_slices
-                ]
-
-                in_slice = data_dp["synset"].isin(
-                    slice_synsets
-                    + list(
-                        hypernyms["synset"][hypernyms["hypernym"].isin(slice_synsets)]
-                    )
-                    # include all hyponyms of the slice_synsets when filtering datapanel
-                )
-                out_slice = (in_slice == 0) & (targets == 1)
-
-                # get the maximum class balance (up to 0.5) for which the n is possible
-                target_frac = min(
-                    0.5,
-                    in_slice.sum() / int(max_slice_frac * n),
-                    out_slice.sum() / int((1 - min_slice_frac) * n),
-                    targets.sum() / n,
-                )
-                settings.extend(
-                    [
-                        {
-                            "dataset": "imagenet",
-                            "slice_category": "rare",
-                            "target_frac": target_frac,
-                            "slice_frac": slice_frac,
-                            "n": n,
-                            "slice_synsets": slice_synsets,
-                            "target_synset": target_synset,
-                        }
-                        for slice_frac in np.geomspace(
-                            min_slice_frac, max_slice_frac, num_frac
-                        )
-                    ]
-                )
         return mk.DataPanel(settings)

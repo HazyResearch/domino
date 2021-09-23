@@ -30,7 +30,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["collect_settings"])
+p = Pipeline(to_rerun=["train_settings"])
 
 data_dp = p.run(
     parent_tasks=[],
@@ -54,9 +54,9 @@ setting_dp = p.run(
 )
 
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
+setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 30)]
 
-if True:
+if False:
     setting_dp = p.run(
         parent_tasks=["collect_settings"],
         task=synthetic_score_settings,
@@ -71,7 +71,7 @@ if True:
         },
     )
 else:
-    setting_dp = p.run(
+    setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
         task=train_settings,
         setting_dp=setting_dp,
@@ -138,7 +138,7 @@ setting_dp = p.run(
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": 10,  # tune.grid_search([1, 5, 10, 20]),
+                "weight_y_log_likelihood": tune.grid_search([1, 5, 10, 20]),
                 **common_config,
             },
         },

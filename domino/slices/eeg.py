@@ -45,7 +45,10 @@ class EegSliceBuilder(AbstractSliceBuilder):
         # slice_0 = dp[correlate] != dp["target"]
         # dp["slices"] = slice_0.reshape(-1, 1)
         dp["slices"] = np.array(
-            [((dp[correlate] == 0) * dp["target"]), (dp[correlate] * dp["target"])]
+            [
+                (dp["target"] == 0) & (dp[correlate] == 1),
+                (dp["target"] == 1) & (dp[correlate] == 0),
+            ]
         ).T
 
         return dp
@@ -82,12 +85,12 @@ class EegSliceBuilder(AbstractSliceBuilder):
                         data_dp[f"binarized_{correlate}"] = (
                             data_dp[correlate].data > correlate_threshold
                         ).astype(int)
-                        correlate = f"binarized_{correlate}"
+                        correlate_ = f"binarized_{correlate}"
                     _ = induce_correlation(
                         dp=data_dp,
                         corr=corr,
                         attr_a="target",
-                        attr_b=correlate,
+                        attr_b=correlate_,
                         match_mu=True,
                         n=n,
                     )
@@ -97,6 +100,12 @@ class EegSliceBuilder(AbstractSliceBuilder):
                         {
                             "dataset": "eeg",
                             "slice_category": "correlation",
+                            "alpha": corr,
+                            "target_name": "sz",
+                            "slice_names": [
+                                f"sz=0_{correlate}=1",
+                                f"sz=1_{correlate}=0",
+                            ],
                             "build_setting_kwargs": {
                                 "correlate": correlate,
                                 "corr": corr,

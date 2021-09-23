@@ -140,23 +140,21 @@ def run_sdms(
 
 @terra.Task
 def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
-    import pdb
-
-    pdb.set_trace()
-    cols = ["target", "run_sdm_run_id"]
+    cols = ["target_name", "run_sdm_run_id"]
     if spec_columns is not None:
         cols += spec_columns
     dfs = []
     for row in tqdm(setting_dp):
+        print(row)
         dp, _ = run_sdm.out(run_id=row["run_sdm_run_id"])
         metrics_df = compute_sdm_metrics(dp.load())
 
         for col in cols:
             metrics_df[col] = row[col]
 
-        # metrics_df["slice"] = metrics_df["slice_idx"].apply(
-        #    lambda x: row["slice_synsets"][x]
-        # )
+        metrics_df["slice_name"] = metrics_df["slice_idx"].apply(
+            lambda x: row["slice_names"][x]
+        )
         dfs.append(metrics_df)
 
     return pd.concat(dfs, axis=0)
