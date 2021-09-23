@@ -1,5 +1,5 @@
 import os
-from typing import Iterable
+from typing import Iterable, List
 
 import clip
 import meerkat as mk
@@ -157,3 +157,36 @@ def find_explanatory_words(
             )
         )
     return pd.concat(dfs)
+
+
+def generate_phrases(word_dp: mk.DataPanel, templates: List[str], device: int = 0):
+    from transformers import BertForMaskedLM, BertModel, BertTokenizer
+
+    tokenizer = BertTokenizer.from_pretrained("bert-large-uncased")
+    model = BertForMaskedLM.from_pretrained("bert-large-uncased").to(device)
+
+    def _forward(words):
+        input_phrases = [
+            template.format(word) for word in words for template in templates
+        ]
+        inputs = tokenizer(input_phrases, return_tensors="pt", padding=True).to(device)
+        input_ids = inputs["input_ids"]
+        outputs = model(**inputs)
+        sorted_preds, sorted_ids = outputs.logits.sort(dim=-1, descending=True)
+
+        probs = []
+        output_phrases = []
+        for rank in range(10):
+            curr_ids = sorted_ids[:, :, rank]
+            curr_ids[input_ids != 103] = input_ids[input_ids != 103]
+
+            probs.extend(sorted_preds[:, :, rank].mean(axis=1).cpu().detach().numpy())
+            for sent_idx in range(sorted_ids.shape[0]):
+                output_phrases.append(
+                    tokenizer.decode(
+                        sorted_ids[sent_idx, :, rank], skip_special_tokens=True
+                    )
+                )
+        return {"prob": probs, "output_phrase": output_phrases}
+
+    return word_dp["word"].map(_forward, is_batched_fn=True, batch_size=128, pbar=True)
