@@ -2,7 +2,7 @@ import os
 import re
 from collections import Counter
 from functools import partial
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping
 
 import meerkat as mk
 import spacy
@@ -14,7 +14,7 @@ from torch._C import Value
 from torchvision import models, transforms
 
 from domino.multimodal import Classifier
-from domino.utils import nested_getattr
+from domino.utils import merge_in_split, nested_getattr
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -23,12 +23,13 @@ from tqdm import tqdm
 
 
 @terra.Task
-def embed_eeg_text(
+def embed_eeg(
     dp: mk.DataPanel,
-    model: Classifier,
+    model_run_id: int,
     layers: Mapping[str, nn.Module],
-    reduction_name: Sequence[str] = "mean",
     col_name: str = "input",
+    split_dp: mk.DataPanel = None,
+    splits: Iterable[str] = None,
     batch_size: int = 128,
     num_workers: int = 4,
     mmap: bool = False,
@@ -37,8 +38,13 @@ def embed_eeg_text(
     **kwargs,
 ) -> mk.DataPanel:
 
+    if splits is not None:
+        dp = merge_in_split(dp, split_dp)
+        dp = dp.lz[dp["split"].isin(splits)]
+
     col = dp[col_name]
 
+    model = terra.get(model_run_id, "best_chkpt")["model"].load()
     layers = {name: nested_getattr(model, layer) for name, layer in layers.items()}
 
     class ActivationExtractor:
@@ -88,13 +94,15 @@ def embed_eeg_text(
 @terra.Task
 def embed_words(
     words_dp: mk.DataPanel,
-    model: Classifier,
+    model_run_id: int,
     batch_size: int = 128,
     device: int = 0,
     run_dir: str = None,
 ) -> mk.DataPanel:
     def encode_word(word):
         return model.text_model(word).squeeze()
+
+    model = terra.get(model_run_id, "best_chkpt")["model"].load()
 
     model = model.to(device)
     words_dp["emb"] = words_dp["word"].map(
@@ -118,6 +126,7 @@ def split_sentence(sentence):
     # return sent_tokenize(sentence)
 
 
+@terra.Task
 def generate_words_dp(all_reports, min_threshold):
     """
     Return {token: index} for all train tokens (words) that occur min_threshold times or more,

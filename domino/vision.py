@@ -51,6 +51,7 @@ class Classifier(pl.LightningModule, TerraModule):
         "lr": 1e-4,
         "model_name": "resnet",
         "arch": "resnet18",
+        "data_shape": (12000, 19),  # a bit hacky since for EEG but fine for now?
         "pretrained": True,
         "num_classes": 2,
         "transform": default_transform,
@@ -99,7 +100,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
         elif self.config["model_name"] == "dense_inception":
-            self.model = DenseInception()
+            self.model = DenseInception(data_shape=self.config["data_shape"])
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 

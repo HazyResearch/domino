@@ -20,6 +20,7 @@ def train_eeg(
     train(
         config={
             "model_name": "dense_inception",
+            "data_shape": (2400, 19),
             "train_transform": None,
             "transform": None,
             "chexbert_pth": "/media/nvme_data/pretrained_models/chexbert.pth",
@@ -34,20 +35,22 @@ def train_eeg(
         target_column=target_column,
         ckpt_monitor="COS valid_loss",
         ckpt_mode="min",
-        batch_size=8,
+        batch_size=32,
         run_dir=run_dir,
         val_check_interval=10,
         num_workers=6,
         valid_split="valid",
         use_terra=True,
-        max_epochs=10,
+        max_epochs=75,
         drop_last=True,
     )
 
 
 if __name__ == "__main__":
 
-    dp = build_stanford_eeg_dp.out(run_id=696, load=True)
+    dp = build_stanford_eeg_dp.out(
+        run_id=812, load=True
+    )  # for multimodal with 12 sec: 812 # for multimodal dp with 60 sec: 696
     split_dp_ = split_dp.out(697, load=True)  # (dp, split_on="patient_id").load()
 
     dp = merge_in_split(dp, split_dp_)
