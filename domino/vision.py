@@ -14,7 +14,7 @@ from meerkat.columns.lambda_column import PIL
 from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
-from terra.torch import TerraModule
+from terra.pytorch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
@@ -401,4 +401,5 @@ def score(
         input_columns=[input_column],
         **kwargs,
     )
+    dp["probs"] = dp["output"].probabilities()
     return dp

@@ -3,6 +3,7 @@ import ray
 from ray import tune
 
 from domino import evaluate
+from domino.data.celeba import get_celeba_dp
 from domino.data.imagenet import get_imagenet_dp
 from domino.emb.clip import embed_images, embed_words, pca_embeddings
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
@@ -18,7 +19,7 @@ words_dp = embed_words.out(5143).load()
 
 if True:
 
-    if False:
+    if True:
 
         setting_dp = collect_settings(
             dataset="imagenet",
@@ -28,35 +29,17 @@ if True:
             num_slices=1,
             min_slice_frac=0.03,
             max_slice_frac=0.03,
-            n=20_000,
-        ).load()
-    else:
-        setting_dp = collect_settings.out().load()
-
-    if True:
-        setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 30)]
-        setting_dp = train_settings(
-            setting_dp=setting_dp,
-            data_dp=data_dp,
-            split_dp=split,
-            model_config={"pretrained": False},
-            batch_size=256,
-            val_check_interval=50,
-            max_epochs=5,
-            ckpt_monitor="valid_auroc",
         )
     else:
-        model_dp = train_settings.out()
+        setting_dp = collect_settings.out(6654)
 
-    if False:
-        score_settings(
-            model_dp=model_dp,
-            layers={"layer4": "model.layer4"},
-            batch_size=512,
-            reduction_fns=["mean"],
-        )
-    else:
-        pass
+    # setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
+    setting_dp = synthetic_score_settings(
+        setting_dp=setting_dp,
+        data_dp=data_dp,
+        split_dp=split,
+        synthetic_kwargs={"sensitivity": 0.8, "slice_sensitivities": 0.4},
+    )
 else:
     setting_dp = synthetic_score_settings.out()
 
@@ -74,7 +57,7 @@ else:
     emb_dp = embed_images.out(6662)
 
 
-if False:
+if True:
     common_config = {
         "n_slices": 5,
         "emb": tune.grid_search([("clip", "emb")]),
@@ -90,13 +73,13 @@ if False:
         },
         word_dp=words_dp,
         sdm_config=[
-            # {
-            #     "sdm_class": SpotlightSDM,
-            #     "sdm_config": {
-            #         "learning_rate": tune.grid_search([1e-2, 1e-3]),
-            #         **common_config,
-            #     },
-            # },
+            {
+                "sdm_class": SpotlightSDM,
+                "sdm_config": {
+                    "learning_rate": tune.grid_search([1e-2, 1e-3]),
+                    **common_config,
+                },
+            },
             {
                 "sdm_class": MixtureModelSDM,
                 "sdm_config": {
@@ -109,6 +92,5 @@ if False:
 else:
     setting_dp = run_sdms.out(6678)
 
-if False:
-    slices_df = score_sdms(setting_dp)
-    slices_df = score_sdm_explanations(setting_dp)
+slices_df = score_sdms(setting_dp)
+slices_df = score_sdm_explanations(setting_dp)

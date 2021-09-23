@@ -35,49 +35,19 @@ MASK_ATTRIBUTES = [
 ]
 
 
-def celeb_transform(img: Image.Image):
-    transform = transforms.Compose(
-        [
-            transforms.Resize((256, 256)),
-            transforms.Lambda(lambda x: torch.from_numpy(np.array(x))),
-            transforms.Lambda(lambda x: x.permute(2, 0, 1)),
-            transforms.Lambda(lambda x: x.to(torch.float)),
-        ]
-    )
-    return transform(img)
-
-
-def celeb_mask_transform(img: Image.Image):
-    transform = transforms.Compose(
-        [
-            transforms.Resize((256, 256)),
-            transforms.Lambda(lambda x: torch.from_numpy(np.array(x))),
-            transforms.Lambda(lambda x: x.max(dim=-1)[0] > 0),
-        ]
-    )
-    return transform(img)
-
-
-celeb_task_config = {
-    "img_column": "img_path",
-    "id_column": "file",
-    "img_transform": celeb_transform,
-    "num_classes": 2,
-}
-
-
-def celeb_mask_loader(filepath: str):
-    if os.path.exists(filepath):
-        return folder.default_loader(filepath)
-    else:
-        # some masks are missing
-        return Image.new("RGB", (512, 512))
-
-
-# @Task.make_task
-def build_celeb_dp(df: pd.DataFrame, run_dir: str = None):
+@Task
+def get_celeba_dp(dataset_dir: str = "/home/common/datasets/celeba"):
     """Build the dataframe by joining on the attribute, split and identity CelebA CSVs."""
+    df = build_celeba_df(dataset_dir=dataset_dir, save_csv=False)
+    dp = DataPanel.from_pandas(df)
+    dp["image"] = ImageColumn.from_filepaths(filepaths=dp["img_path"])
+    return dp
 
+
+@Task
+def get_celeba_mask_dp(dataset_dir: str = "/home/common/datasets/celeba"):
+    """Build the dataframe by joining on the attribute, split and identity CelebA CSVs."""
+    df = build_celeba_mask_df(dataset_dir=dataset_dir)
     dp = DataPanel.from_pandas(df)
     dp["img"] = ImageColumn.from_filepaths(filepaths=dp["img_path"])
     dp["input"] = ImageColumn.from_filepaths(
@@ -96,16 +66,26 @@ def build_celeb_dp(df: pd.DataFrame, run_dir: str = None):
     return dp
 
 
-# @Task.make_task
-def build_celeb_df(
-    dataset_dir: str = "/home/common/datasets/celeba",
-    run_dir: str = None,
-):
-    return build_celeba_df(dataset_dir=dataset_dir, save_csv=False)
+def celeb_mask_loader(filepath: str):
+    if os.path.exists(filepath):
+        return folder.default_loader(filepath)
+    else:
+        # some masks are missing
+        return Image.new("RGB", (512, 512))
 
 
-# @Task.make_task
-def build_celeb_mask_df(
+def celeb_mask_transform(img: Image.Image):
+    transform = transforms.Compose(
+        [
+            transforms.Resize((256, 256)),
+            transforms.Lambda(lambda x: torch.from_numpy(np.array(x))),
+            transforms.Lambda(lambda x: x.max(dim=-1)[0] > 0),
+        ]
+    )
+    return transform(img)
+
+
+def build_celeba_mask_df(
     dataset_dir: str = "/home/common/datasets/celeba",
     run_dir: str = None,
 ):
