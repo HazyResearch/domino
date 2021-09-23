@@ -5,6 +5,7 @@ from uuid import uuid4
 import meerkat as mk
 import numpy as np
 import terra
+import torch
 
 from domino.utils import merge_in_split
 
@@ -48,7 +49,8 @@ def build_setting(
     )
     if synthetic_preds:
         synthetic_kwargs = {} if synthetic_kwargs is None else synthetic_kwargs
-        dp["probs"] = synthesize_preds(dp, **synthetic_kwargs)
+        preds = synthesize_preds(dp, **synthetic_kwargs)
+        dp["probs"] = torch.tensor([1 - preds, preds]).T
     return dp
 
 

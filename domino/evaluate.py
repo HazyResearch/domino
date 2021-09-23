@@ -64,6 +64,9 @@ def run_sdms(
     def _evaluate(config):
         score_run_id = config["slice"]["score_model_run_id"]
         if config["slice"]["synthetic_preds"]:
+            # in the synthetic setting, there is actually no score_model, just the
+            # the build_setting which also includes the generation of synthetic
+            # predictions
             dp = build_setting.out(score_run_id)
             model = None
         else:

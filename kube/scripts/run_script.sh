@@ -7,4 +7,4 @@ ln -s /pd/* /home
 
 
 source /home/common/envs/conda/bin/activate /home/common/envs/conda/envs/domino
-python /pd/sabri/code/domino/scratch/sabri/09-21_celeba_pipeline.py
+python /pd/sabri/code/domino/domino/pipelines/celeba.py

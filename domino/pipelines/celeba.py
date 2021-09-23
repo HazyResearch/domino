@@ -13,8 +13,8 @@ from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
-NUM_GPUS = 1
-NUM_CPUS = 8
+NUM_GPUS = 4
+NUM_CPUS = 32
 
 
 class Pipeline:
@@ -56,7 +56,7 @@ setting_dp = p.run(
 setting_dp = setting_dp.load()
 setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
 
-if False:
+if True:
     setting_dp = p.run(
         parent_tasks=["collect_settings"],
         task=synthetic_score_settings,
