@@ -36,6 +36,29 @@ def embed_words(
 
 
 @Task
+def embed_phrases(
+    words_dp: mk.DataPanel,
+    batch_size: int = 128,
+    model: str = "ViT-B/32",
+    top_k: int = None,
+) -> mk.DataPanel:
+    if top_k is not None:
+        words_dp = words_dp.lz[words_dp["loss"].argsort()[:top_k]]
+    model, _ = clip.load(model, device=torch.device(0))
+    words_dp["tokens"] = mk.LambdaColumn(
+        words_dp["output_phrase"], fn=lambda x: clip.tokenize(x).squeeze()
+    )
+    words_dp["emb"] = words_dp["tokens"].map(
+        lambda x: model.encode_text(x.data.to(0)).cpu().detach().numpy(),
+        pbar=True,
+        is_batched_fn=True,
+        batch_size=batch_size,
+    )
+    words_dp["word"] = words_dp["output_phrase"]
+    return words_dp
+
+
+@Task
 def embed_images(
     dp: mk.DataPanel,
     img_column: str,
@@ -240,13 +263,16 @@ def generate_phrases(
 
 
 CELEBA_PHRASE_TEMPLATES = [
-    "a photo of a person {}.",
     "a photo of a person {} [MASK].",
-    "a photo of a person {} [MASK] [MASK].",
     "a photo of a person [MASK] {}.",
     "a photo of a person [MASK] {} [MASK].",
-    "a photo of a person [MASK] {} [MASK][MASK].",
     "a photo of a person [MASK] [MASK] {}.",
-    "a photo of a person [MASK] [MASK] {} [MASK].",
-    "a photo of a person [MASK] [MASK] {} [MASK] [MASK].",
+    "a photo of [MASK] {} person",
+    "[MASK] {} photo of a person",
+]
+
+CELEBA_GENDER_PHRASE_TEMPLATES = [
+    template.replace("person", person_sub)
+    for template in CELEBA_PHRASE_TEMPLATES
+    for person_sub in ["man", "woman", "guy", "boy", "girl"]
 ]
