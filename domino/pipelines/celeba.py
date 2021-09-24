@@ -7,8 +7,10 @@ from ray import tune
 
 from domino.data.celeba import get_celeba_dp
 from domino.emb.clip import (
+    CELEBA_GENDER_PHRASE_TEMPLATES,
     CELEBA_PHRASE_TEMPLATES,
     embed_images,
+    embed_phrases,
     embed_words,
     generate_phrases,
     get_wiki_words,
@@ -23,35 +25,24 @@ NUM_GPUS = 1
 NUM_CPUS = 8
 
 
-class Pipeline:
-    def __init__(self, to_rerun: List[str]):
-        self.reran_tasks = set(to_rerun)
+data_dp = get_celeba_dp()
 
-    def run(self, parent_tasks: List[str], task: terra.Task, **kwargs):
-        name = task.__name__
-        if set(parent_tasks + [name]) & self.reran_tasks:
-            self.reran_tasks.add(name)
-            return task(**kwargs)
-        print(f"Using cached result from  task: {name}, run_id:{task.last_run_id}")
-        return task.out()
+split = split_dp(dp=data_dp, split_on="identity")
 
 
-p = Pipeline(to_rerun=["get_wiki_words"])
-
-data_dp = p.run(
-    parent_tasks=[],
-    task=get_celeba_dp,
+words_dp = get_wiki_words(top_k=20_000, eng_only=True)
+phrase_dp = generate_phrases(
+    words_dp=words_dp,
+    templates=CELEBA_GENDER_PHRASE_TEMPLATES,
+    k=3,
+    num_candidates=100_000,
 )
+words_dp = embed_phrases(words_dp=phrase_dp, top_k=50_000)
 
-split = p.run(
-    parent_tasks=["get_celeba_dp"], task=split_dp, dp=data_dp, split_on="identity"
-)
 
 # words_dp = embed_words.out(5143).load()
 
-setting_dp = p.run(
-    parent_tasks=["get_celeba_dp"],
-    task=collect_settings,
+setting_dp = collect_settings(
     dataset="celeba",
     slice_category="correlation",
     data_dp=data_dp,
@@ -60,12 +51,10 @@ setting_dp = p.run(
 )
 
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 30)]
+setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
 
-if False:
-    setting_dp = p.run(
-        parent_tasks=["collect_settings"],
-        task=synthetic_score_settings,
+if True:
+    setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
@@ -77,9 +66,7 @@ if False:
         },
     )
 else:
-    setting_dp, _ = p.run(
-        parent_tasks=["collect_settings"],
-        task=train_settings,
+    setting_dp, _ = train_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
@@ -92,9 +79,7 @@ else:
         num_gpus=NUM_GPUS,
     )
 
-    setting_dp, _ = p.run(
-        parent_tasks=["train_settings"],
-        task=score_settings,
+    setting_dp, _ = score_settings(
         model_dp=setting_dp,
         layers={"layer4": "model.layer4"},
         batch_size=512,
@@ -104,9 +89,7 @@ else:
         split=["test", "valid"],
     )
 
-emb_dp = p.run(
-    parent_tasks=["get_celeba_dp", "split_dp"],
-    task=embed_images,
+emb_dp = embed_images(
     dp=data_dp,
     split_dp=split,
     splits=["valid", "test"],
@@ -115,24 +98,11 @@ emb_dp = p.run(
     mmap=True,
 )
 
-words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=20_000, eng_only=True)
-phrase_dp = p.run(
-    parent_tasks=["get_wiki_words"],
-    task=generate_phrases,
-    words_dp=words_dp,
-    templates=CELEBA_PHRASE_TEMPLATES,
-    num_candidates=50_000,
-)
-words_dp = p.run(parent_tasks=["generate_phrases"], task=embed_words, words_dp=words_dp)
-
-
 common_config = {
     "n_slices": 5,
     "emb": tune.grid_search([("clip", "emb")]),
 }
-setting_dp = p.run(
-    parent_tasks=["embed_images", "synthetic_score_settings", "score_settings"],
-    task=run_sdms,
+setting_dp = run_sdms(
     setting_dp=setting_dp,
     emb_dp={
         "clip": emb_dp,  # terra.out(5145),
@@ -159,7 +129,5 @@ setting_dp = p.run(
 )
 
 
-slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdms, setting_dp=setting_dp)
-slices_df = p.run(
-    parent_tasks=["run_sdms"], task=score_sdm_explanations, setting_dp=setting_dp
-)
+slices_df = score_sdms(setting_dp=setting_dp)
+slices_df = score_sdm_explanations(setting_dp=setting_dp)
