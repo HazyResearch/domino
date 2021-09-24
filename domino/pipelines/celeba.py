@@ -6,15 +6,21 @@ import terra
 from ray import tune
 
 from domino.data.celeba import get_celeba_dp
-from domino.emb.clip import embed_images, embed_words, get_wiki_words
+from domino.emb.clip import (
+    CELEBA_PHRASE_TEMPLATES,
+    embed_images,
+    embed_words,
+    generate_phrases,
+    get_wiki_words,
+)
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
-NUM_GPUS = 4
-NUM_CPUS = 32
+NUM_GPUS = 1
+NUM_CPUS = 8
 
 
 class Pipeline:
@@ -30,7 +36,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["train_settings"])
+p = Pipeline(to_rerun=["get_wiki_words"])
 
 data_dp = p.run(
     parent_tasks=[],
@@ -109,8 +115,15 @@ emb_dp = p.run(
     mmap=True,
 )
 
-words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=10_000, eng_only=True)
-words_dp = p.run(parent_tasks=["get_wiki_words"], task=embed_words, words_dp=words_dp)
+words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=20_000, eng_only=True)
+phrase_dp = p.run(
+    parent_tasks=["get_wiki_words"],
+    task=generate_phrases,
+    words_dp=words_dp,
+    templates=CELEBA_PHRASE_TEMPLATES,
+    num_candidates=50_000,
+)
+words_dp = p.run(parent_tasks=["generate_phrases"], task=embed_words, words_dp=words_dp)
 
 
 common_config = {
