@@ -60,7 +60,6 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         data_dp: mk.DataPanel,
         model: nn.Module = None,
     ):
-        print("in fit")
         emb = data_dp[self.config.emb].data
         if self.pca is not None:
             self.pca.fit(X=emb[:1000])
@@ -244,7 +243,7 @@ class ErrorMixtureModel(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in tqdm(range(1, self.max_iter + 1)):
+            for n_iter in range(1, self.max_iter + 1):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)

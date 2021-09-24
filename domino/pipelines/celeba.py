@@ -6,12 +6,11 @@ import terra
 from ray import tune
 
 from domino.data.celeba import get_celeba_dp
+from domino.emb import embed_images
 from domino.emb.clip import (
     CELEBA_GENDER_PHRASE_TEMPLATES,
     CELEBA_PHRASE_TEMPLATES,
-    embed_images,
     embed_phrases,
-    embed_words,
     generate_phrases,
     get_wiki_words,
 )
@@ -39,6 +38,36 @@ phrase_dp = generate_phrases(
 )
 words_dp = embed_phrases(words_dp=phrase_dp, top_k=50_000)
 
+embs = {
+    "bit": embed_images(
+        emb_type="bit",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+    ),
+    "imagenet": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+    ),
+    "clip": embed_images(
+        emb_type="clip",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+    ),
+}
 
 # words_dp = embed_words.out(5143).load()
 
@@ -50,8 +79,8 @@ setting_dp = collect_settings(
     n=30_000,
 )
 
-setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
+# setting_dp = setting_dp.load()
+# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
 
 if True:
     setting_dp = synthetic_score_settings(
@@ -65,6 +94,8 @@ if True:
             "slice_specificities": 0.4,
         },
     )
+elif False:
+    setting_dp = synthetic_score_settings.out()
 else:
     setting_dp, _ = train_settings(
         setting_dp=setting_dp,
@@ -89,26 +120,22 @@ else:
         split=["test", "valid"],
     )
 
-emb_dp = embed_images(
-    dp=data_dp,
-    split_dp=split,
-    splits=["valid", "test"],
-    img_column="image",
-    num_workers=7,
-    mmap=True,
-)
 
 common_config = {
     "n_slices": 5,
-    "emb": tune.grid_search([("clip", "emb")]),
+    "emb": tune.grid_search(
+        [
+            ("imagenet", "emb"),
+            ("bit", "body"),
+            ("clip", "emb"),
+        ]
+    ),
+    "xmodal_emb": "emb",
 }
 setting_dp = run_sdms(
     setting_dp=setting_dp,
-    emb_dp={
-        "clip": emb_dp,  # terra.out(5145),
-        # "imagenet": emb_dp,
-        # "bit": terra.out(5796),
-    },
+    emb_dp=embs,
+    xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
         # {
@@ -121,13 +148,16 @@ setting_dp = run_sdms(
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": tune.grid_search([1, 5, 10, 20]),
+                "weight_y_log_likelihood": tune.grid_search([10]),
                 **common_config,
             },
         },
     ],
+    num_cpus=NUM_CPUS,
+    num_gpus=NUM_GPUS,
+    skip_terra_cache=False,
 )
 
 
-slices_df = score_sdms(setting_dp=setting_dp)
-slices_df = score_sdm_explanations(setting_dp=setting_dp)
+slices_df = score_sdms(setting_dp=setting_dp, spec_columns=["emb_group", "alpha"])
+# slices_df = score_sdm_explanations(setting_dp=setting_dp)
