@@ -41,13 +41,15 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["collect_settings"])
-
-data_dp = p.run(parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=618)
+p = Pipeline(to_rerun=["embed_eeg"])
 
 data_dp = p.run(
-    parent_tasks=["build_stanford_eeg_dp"], task=balance_dp, task_run_id=623
-)
+    parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
+)  # for 60 sec: 618
+
+data_dp = p.run(
+    parent_tasks=["build_stanford_eeg_dp"], task=balance_dp, task_run_id=928
+)  # for 60 sec: 623
 
 split = p.run(parent_tasks=["balance_dp"], task=split_dp, task_run_id=625)
 
@@ -112,9 +114,9 @@ else:
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
     task=embed_eeg,
-    task_run_id=810,
+    task_run_id=929,
     dp=data_dp,
-    model_run_id=709,
+    model_run_id=837,  # original 10 epoch run id = 709
     layers={"emb": "model.fc1"},
     split_dp=split,
     splits=["valid", "test"],
@@ -126,9 +128,9 @@ eeg_emb_dp = p.run(
 multimodal_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
     task=embed_eeg,
-    task_run_id=811,
+    task_run_id=930,
     dp=data_dp,
-    model_run_id=704,
+    model_run_id=843,  # first multimodal run id = 704
     layers={"emb": "model.fc1"},
     split_dp=split,
     splits=["valid", "test"],
