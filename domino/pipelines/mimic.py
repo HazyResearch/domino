@@ -15,9 +15,9 @@ from domino.train import score_settings, synthetic_score_settings, train_setting
 import meerkat as mk
 import meerkat.contrib.mimic.gcs
 
-NUM_GPUS = 4
-NUM_CPUS = 32
-
+NUM_GPUS = 1
+NUM_CPUS = 8
+ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
 class Pipeline:
     def __init__(self, to_rerun: List[str]):
@@ -34,9 +34,9 @@ class Pipeline:
 
 p = Pipeline(to_rerun=["get_mimic_dp", "split_dp_preloaded", "collect_settings", "synthetic_score_settings", "embed_images", "run_sdms", "score_sdms"])
 
-data_dp = p.run(parent_tasks=[], task=get_mimic_dp, skip_terra_cache=True)
+data_dp = p.run(parent_tasks=[], task=get_mimic_dp)#, skip_terra_cache=True)
 
-split = p.run(parent_tasks=["get_mimic_dp"], task=split_dp_preloaded, dp=data_dp, skip_terra_cache=True)
+split = p.run(parent_tasks=["get_mimic_dp"], task=split_dp_preloaded, dp=data_dp)#, skip_terra_cache=True)
 
 setting_dp = p.run(
     parent_tasks=["get_mimic_dp"],
@@ -46,7 +46,7 @@ setting_dp = p.run(
     data_dp=data_dp,
     num_corr=5,
     n=30_000,
-    skip_terra_cache=True
+    #skip_terra_cache=True
 )
 
 setting_dp = setting_dp.load()
@@ -65,7 +65,7 @@ if True:
             "specificity": 0.8,
             "slice_specificities": 0.4,
         },
-        skip_terra_cache=True
+        #skip_terra_cache=True
     )
 else:
     pass
@@ -107,12 +107,12 @@ emb_dp = p.run(
     img_column="cxr_jpg_1024",
     num_workers=7,
     mmap=True,
-    skip_terra_cache=True
+    #skip_terra_cache=True
 )
 
-#words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=10_000, eng_only=True)
-#words_dp = p.run(parent_tasks=["get_wiki_words"], task=embed_words, words_dp=words_dp)
-words_dp = embed_words.out(6537).load()
+words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=10_000, eng_only=True, skip_terra_cache=True)
+words_dp = p.run(parent_tasks=["get_wiki_words"], task=embed_words, words_dp=words_dp, skip_terra_cache=True)
+#words_dp = embed_words.out(6537).load()
 #words_dp = words_dp.lz[:int(1e4)]
 
 common_config = {
@@ -123,6 +123,7 @@ setting_dp = p.run(
     parent_tasks=["embed_images", "synthetic_score_settings", "score_settings"],
     task=run_sdms,
     setting_dp=setting_dp,
+    id_column='dicom_id',
     emb_dp={
         "clip": emb_dp,  # terra.out(5145),
         # "imagenet": emb_dp,
@@ -149,7 +150,5 @@ setting_dp = p.run(
 )
 
 
-slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdms, setting_dp=setting_dp)
-slices_df = p.run(
-    parent_tasks=["run_sdms"], task=score_sdm_explanations, setting_dp=setting_dp
-)
+slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdms, setting_dp=setting_dp, skip_terra_cache=True)
+slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdm_explanations, setting_dp=setting_dp, skip_terra_cache=True)

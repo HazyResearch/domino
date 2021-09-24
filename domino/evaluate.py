@@ -62,6 +62,7 @@ def run_sdms(
     run_dir: str = None,
 ):
     def _evaluate(config):
+        import meerkat.contrib.mimic.gcs
         score_run_id = config["slice"]["score_model_run_id"]
         if config["slice"]["synthetic_preds"]:
             # in the synthetic setting, there is actually no score_model, just the
