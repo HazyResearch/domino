@@ -34,18 +34,6 @@ MASK_ATTRIBUTES = [
     "cloth",
 ]
 
-PHRASE_TEMPLATES = [
-    "a photo of a person {}",
-    "a photo of a person {} [MASK]",
-    "a photo of a person {} [MASK] [MASK]",
-    "a photo of a person [MASK] {}",
-    "a photo of a person [MASK] {} [MASK]",
-    "a photo of a person [MASK] {} [MASK][MASK]",
-    "a photo of a person [MASK] [MASK] {}",
-    "a photo of a person [MASK] [MASK] {} [MASK]",
-    "a photo of a person [MASK] [MASK] {} [MASK] [MASK]",
-]
-
 
 @Task
 def get_celeba_dp(dataset_dir: str = "/home/common/datasets/celeba"):

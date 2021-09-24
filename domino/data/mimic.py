@@ -12,10 +12,28 @@ import torch
 from meerkat.contrib.mimic import GCSImageColumn, build_mimic_dp
 from torchvision.transforms import Compose, Lambda, Normalize, Resize, ToTensor
 from torchxrayvision.datasets import XRayCenterCrop, XRayResizer, normalize
+from terra import Task
 
-CXR_MEAN = 0.48865
-CXR_STD = 0.24621
+#CXR_MEAN = 0.48865
+#CXR_STD = 0.24621
 
+
+@Task
+def get_mimic_dp(dataset_dir: str = "/pd/maya/mimic_dp_adjusted_diagnoses.mk"):
+    """Build the dataframe by joining on the attribute, split and identity CelebA CSVs."""
+    dp = mk.DataPanel.read(dataset_dir)
+    return dp
+
+
+@terra.Task
+def split_dp_preloaded(
+    dp: mk.DataPanel,
+):
+    num_subjects = len(list(dp['subject_id']))
+    split = mk.DataPanel({'split': dp['slice_assigned_split'], 'subject_id': dp['subject_id'], 'index': list(range(num_subjects))})
+    return split
+
+'''
 
 def _mimic_transform(img: PIL.Image.Image, resolution: int = 224):
     transform = Compose(
@@ -91,7 +109,6 @@ def hash_for_split(example_id: str, salt=""):
     hashed = int(hashed.hexdigest().encode(), 16) % GRANULARITY + 1
     return hashed / float(GRANULARITY)
 
-
 @terra.Task
 def split_dp(
     dp: mk.DataPanel,
@@ -124,6 +141,7 @@ def split_dp(
     return dp
 
 
+
 CHEXPERT_COLUMNS = [
     "atelectasis",
     "cardiomegaly",
@@ -140,3 +158,4 @@ CHEXPERT_COLUMNS = [
     "pneumothorax",
     "support_devices",
 ]
+'''

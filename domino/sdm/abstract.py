@@ -55,4 +55,4 @@ class SliceDiscoveryMethod(ABC):
         words_dp["pred_slices"] = np.dot(
             words_dp["emb"].data, (slice_proto - ref_proto).T
         )
-        return words_dp[["word", "pred_slices", "frequency"]]
+        return words_dp[["word", "pred_slices"]]
