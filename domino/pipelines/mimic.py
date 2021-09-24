@@ -1,5 +1,7 @@
 from typing import List
 
+import meerkat as mk
+import meerkat.contrib.mimic.gcs
 import numpy as np
 import ray
 import terra
@@ -12,50 +14,28 @@ from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 
-import meerkat as mk
-import meerkat.contrib.mimic.gcs
-
 NUM_GPUS = 1
 NUM_CPUS = 8
-ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
+# ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
-class Pipeline:
-    def __init__(self, to_rerun: List[str]):
-        self.reran_tasks = set(to_rerun)
+data_dp = get_mimic_dp(skip_terra_cache=False)
 
-    def run(self, parent_tasks: List[str], task: terra.Task, **kwargs):
-        name = task.__name__
-        if set(parent_tasks + [name]) & self.reran_tasks:
-            self.reran_tasks.add(name)
-            return task(**kwargs)
-        print(f"Using cached result from  task: {name}, run_id:{task.last_run_id}")
-        return task.out()
+split = split_dp_preloaded(dp=data_dp, skip_terra_cache=False)
 
-
-p = Pipeline(to_rerun=["get_mimic_dp", "split_dp_preloaded", "collect_settings", "synthetic_score_settings", "embed_images", "run_sdms", "score_sdms"])
-
-data_dp = p.run(parent_tasks=[], task=get_mimic_dp)#, skip_terra_cache=True)
-
-split = p.run(parent_tasks=["get_mimic_dp"], task=split_dp_preloaded, dp=data_dp)#, skip_terra_cache=True)
-
-setting_dp = p.run(
-    parent_tasks=["get_mimic_dp"],
-    task=collect_settings,
+setting_dp = collect_settings(
     dataset="mimic",
     slice_category="correlation",
     data_dp=data_dp,
     num_corr=5,
     n=30_000,
-    #skip_terra_cache=True
+    skip_terra_cache=False,
 )
 
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 30)]
+setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
 
 if True:
-    setting_dp = p.run(
-        parent_tasks=["collect_settings"],
-        task=synthetic_score_settings,
+    setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
@@ -65,11 +45,11 @@ if True:
             "specificity": 0.8,
             "slice_specificities": 0.4,
         },
-        #skip_terra_cache=True
+        skip_terra_cache=False,
     )
 else:
     pass
-    '''
+    """
     setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
         task=train_settings,
@@ -96,34 +76,30 @@ else:
         num_gpus=NUM_GPUS,
         split=["test", "valid"],
     )
-    '''    
+    """
 
-emb_dp = p.run(
-    parent_tasks=["get_mimic_dp", "split_dp_preloaded"],
-    task=embed_images,
+emb_dp = embed_images(
     dp=data_dp,
     split_dp=split,
     splits=["valid", "test"],
     img_column="cxr_jpg_1024",
     num_workers=7,
     mmap=True,
-    #skip_terra_cache=True
+    skip_terra_cache=False,
 )
 
-words_dp = p.run(parent_tasks=[], task=get_wiki_words, top_k=10_000, eng_only=True, skip_terra_cache=True)
-words_dp = p.run(parent_tasks=["get_wiki_words"], task=embed_words, words_dp=words_dp, skip_terra_cache=True)
-#words_dp = embed_words.out(6537).load()
-#words_dp = words_dp.lz[:int(1e4)]
+words_dp = get_wiki_words(top_k=10_000, eng_only=True, skip_terra_cache=False)
+words_dp = embed_words(words_dp=words_dp, skip_terra_cache=False)
+# words_dp = embed_words.out(6537).load()
+# words_dp = words_dp.lz[:int(1e4)]
 
 common_config = {
     "n_slices": 5,
     "emb": tune.grid_search([("clip", "emb")]),
 }
-setting_dp = p.run(
-    parent_tasks=["embed_images", "synthetic_score_settings", "score_settings"],
-    task=run_sdms,
+setting_dp = run_sdms(
     setting_dp=setting_dp,
-    id_column='dicom_id',
+    id_column="dicom_id",
     emb_dp={
         "clip": emb_dp,  # terra.out(5145),
         # "imagenet": emb_dp,
@@ -146,9 +122,9 @@ setting_dp = p.run(
             },
         },
     ],
-    skip_terra_cache=True
+    skip_terra_cache=False,
 )
 
 
-slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdms, setting_dp=setting_dp, skip_terra_cache=True)
-slices_df = p.run(parent_tasks=["run_sdms"], task=score_sdm_explanations, setting_dp=setting_dp, skip_terra_cache=True)
+slices_df = score_sdms(setting_dp=setting_dp, skip_terra_cache=False)
+slices_df = score_sdm_explanations(setting_dp=setting_dp, skip_terra_cache=False)

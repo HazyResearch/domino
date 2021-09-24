@@ -60,6 +60,7 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         data_dp: mk.DataPanel,
         model: nn.Module = None,
     ):
+        print("in fit")
         emb = data_dp[self.config.emb].data
         if self.pca is not None:
             self.pca.fit(X=emb[:1000])

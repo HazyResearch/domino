@@ -49,6 +49,16 @@ def merge_in_split(dp: mk.DataPanel, split_dp: mk.DataPanel):
     split_on = [col for col in split_dp.columns if (col != "split") and col != "index"]
     assert len(split_on) == 1
     split_on = split_on[0]
+
+    if split_dp[split_on].duplicated().any():
+        # convert the datapanel to one row per split_on id
+        df = split_dp[[split_on, "split"]].to_pandas()
+        gb = df.groupby(split_on)
+
+        # cannot have multiple splits per `split_on` id
+        assert (gb["split"].nunique() == 1).all()
+        split_dp = mk.DataPanel.from_pandas(gb["split"].first().reset_index())
+
     return dp.merge(split_dp, on=split_on)
 
 
