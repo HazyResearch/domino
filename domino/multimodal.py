@@ -14,7 +14,7 @@ from meerkat.columns.lambda_column import PIL
 from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
-from terra.torch import TerraModule
+from terra.pytorch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
@@ -51,6 +51,7 @@ class Classifier(pl.LightningModule, TerraModule):
     DEFAULT_CONFIG = {
         "lr": 1e-4,
         "model_name": "resnet",
+        "data_shape": (12000, 19),
         "arch": "resnet18",
         "pretrained": True,
         "num_classes": 2,
@@ -106,7 +107,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
         elif self.config["model_name"] == "dense_inception":
-            self.model = DenseInception()
+            self.model = DenseInception(data_shape=self.config["data_shape"])
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 

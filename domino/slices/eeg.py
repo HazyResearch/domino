@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from domino.slices.abstract import AbstractSliceBuilder
 
-from .utils import induce_correlation
+from .utils import CorrelationImpossibleError, induce_correlation
 
 
 class EegSliceBuilder(AbstractSliceBuilder):
@@ -42,8 +42,14 @@ class EegSliceBuilder(AbstractSliceBuilder):
 
         # define the "slices" column
         # for a spurious correlation, in-slice is where the correlate != target
-        slice_0 = dp[correlate] != dp["target"]
-        dp["slices"] = slice_0.reshape(-1, 1)
+        # slice_0 = dp[correlate] != dp["target"]
+        # dp["slices"] = slice_0.reshape(-1, 1)
+        dp["slices"] = np.array(
+            [
+                (dp["target"] == 0) & (dp[correlate] == 1),
+                (dp["target"] == 1) & (dp[correlate] == 0),
+            ]
+        ).T
 
         return dp
 
@@ -58,24 +64,60 @@ class EegSliceBuilder(AbstractSliceBuilder):
 
     def collect_correlation_settings(
         self,
-        correlate_list: List[str],
-        corr_list: List[float],
-        correlate_thresholds: List[float] = None,
-        n: int = 2500,
+        data_dp: mk.DataPanel,
+        min_corr: float = 0.0,
+        max_corr: float = 0.9,
+        num_corr: int = 5,
+        correlate_threshold: float = 1,
+        correlate_list: List[str] = ["age"],
+        n: int = 8000,
     ) -> mk.DataPanel:
 
         settings = []
-        for ndx, correlate in enumerate(correlate_list):
-            for corr in corr_list:
-                settings.append(
-                    {
-                        "dataset": "eeg",
-                        "slice_category": "correlation",
-                        "correlate": correlate,
-                        "corr": corr,
-                        "correlate_threshold": correlate_thresholds[ndx],
-                        "n": n,
-                    }
+        for correlate in correlate_list:
+
+            try:
+                for corr in [
+                    min_corr,
+                    max_corr,
+                ]:
+                    if correlate_threshold:
+                        data_dp[f"binarized_{correlate}"] = (
+                            data_dp[correlate].data > correlate_threshold
+                        ).astype(int)
+                        correlate_ = f"binarized_{correlate}"
+                    _ = induce_correlation(
+                        dp=data_dp,
+                        corr=corr,
+                        attr_a="target",
+                        attr_b=correlate_,
+                        match_mu=True,
+                        n=n,
+                    )
+
+                settings.extend(
+                    [
+                        {
+                            "dataset": "eeg",
+                            "slice_category": "correlation",
+                            "alpha": corr,
+                            "target_name": "sz",
+                            "slice_names": [
+                                f"sz=0_{correlate}=1",
+                                f"sz=1_{correlate}=0",
+                            ],
+                            "build_setting_kwargs": {
+                                "correlate": correlate,
+                                "corr": corr,
+                                "correlate_threshold": correlate_threshold,
+                                "n": n,
+                            },
+                        }
+                        for corr in np.linspace(min_corr, max_corr, num_corr)
+                    ]
                 )
+
+            except CorrelationImpossibleError:
+                pass
 
         return mk.DataPanel(settings)

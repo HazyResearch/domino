@@ -125,6 +125,7 @@ def run_sdms(
         raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
         local_dir=run_dir,
     )
+
     result_dp = mk.merge(
         setting_dp,
         mk.DataPanel.from_pandas(analysis.dataframe()),
