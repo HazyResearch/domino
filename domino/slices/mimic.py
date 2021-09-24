@@ -7,84 +7,113 @@ import terra
 from torchvision import transforms
 from tqdm import tqdm
 
-from .utils import CorrelationImpossibleError, induce_correlation, synthesize_preds
+from .abstract import AbstractSliceBuilder
+from .utils import CorrelationImpossibleError, induce_correlation
 
+ATTRIBUTES = [
+    "atelectasis",
+    "cardiomegaly",
+    "consolidation",
+    "edema",
+    "enlarged_cardiomediastinum",
+    "fracture",
+    "lung_lesion",
+    "lung_opacity",
+    "no_finding",
+    "pleural_effusion",
+    "pleural_other",
+    "pneumonia",
+    "pneumothorax",
+    "support_devices",
+    "finding_group",
+    "lung_group",
+    "pleural_group",
+    "cardio_group",
+]
 
-def build_correlation_slice(
-    target: str, correlate: str, corr: float, n: int, dataset_dir: str, **kwargs
-) -> mk.DataPanel:
-
-    dp = mk.DataPanel.read(dataset_dir)
-
-    indices = induce_correlation(
-        dp=dp,
-        corr=corr,
-        attr_a=target,
-        attr_b=correlate,
-        match_mu=True,
-        n=n,
-    )
-
-    dp = dp.lz[indices]
-
-    return dp
-
-
-"""
-def build_rare_slice(target_objects: Sequence[str], objects: Sequence[str], attributes: Sequence[str], slice_frac: float, target_frac: float, n: int, \
-                     dataset_dir: str = DATASET_DIR, gqa_dps: Mapping[str, mk.DataPanel] = None, **kwargs):
-    dps = read_gqa_dps(dataset_dir=dataset_dir) if gqa_dps is None else gqa_dps
-    attr_dp, object_dp = dps["attributes"], dps["objects"].view()
-
-    object_dp["target"] = object_dp["name"].isin(target_objects).astype(int)
-
-    object_ids = mk.concat(
-        (
-            object_dp.lz[object_dp["name"].isin(objects)]["object_id"],
-            attr_dp[attr_dp["attribute"].isin(attributes)]["object_id"],
+class MimicSliceBuilder(AbstractSliceBuilder):
+    def build_correlation_setting(
+        self,
+        data_dp: mk.DataPanel,
+        target: str,
+        correlate: str,
+        corr: float,
+        n: int,
+        **kwargs,
+    ):
+        
+        indices = induce_correlation(
+            dp=data_dp,
+            corr=corr,
+            attr_a=target,
+            attr_b=correlate,
+            match_mu=True,
+            n=n,
         )
-    )
-    object_dp["slice"] = (
-        np.isin(object_dp["object_id"], object_ids).astype(int) & object_dp["target"]
-        == 1
-    ).astype(int)
 
-    # Issue: other objects in the same image as an in-slice object may overlap with the
-    # in-slice object (e.g. slice=surfer, other object is wave). This leads to a large
-    # number of objects that exclude any other objects from the images containing
-    # in-slice objects.
-    slice_image_ids = object_dp["image_id"][object_dp["slice"] == 1]
-    object_dp = object_dp.lz[
-        (object_dp["slice"] == 1) | (~np.isin(object_dp["image_id"], slice_image_ids))
-    ]
 
-    object_dp["input"] = object_dp["object_image"]
-    object_dp["id"] = object_dp["object_id"]
-    n_pos = int(n * target_frac)
+        dp = data_dp.lz[indices]
+        dp["slices"] = np.array(
+            [
+                (dp[target] == 0) & (dp[correlate] == 1),
+                (dp[target] == 1) & (dp[correlate] == 0),
+            ]
+        ).T
+        dp["target"] = dp[target].values
+        dp["correlate"] = dp[correlate].values
+        dp["input"] = dp["cxr_jpg_1024"]
+        dp["id"] = dp["dicom_id"]
+        return dp
+    
+    def collect_correlation_settings(
+        self,
+        data_dp: mk.DataPanel,
+        min_corr: float = 0.0,
+        max_corr: float = 0.8,
+        num_corr: int = 5,
+        n: int = 20_000,
+    ):
 
-    dp = object_dp.lz[
-        np.random.permutation(
-            np.concatenate(
-                (
-                    np.random.choice(
-                        np.where(object_dp["slice"] == 1)[0],
-                        int(slice_frac * n_pos),
-                        replace=False,
-                    ),
-                    np.random.choice(
-                        np.where(
-                            (object_dp["target"] == 1) & (object_dp["slice"] == 0),
-                        )[0],
-                        int((1 - slice_frac) * n_pos),
-                        replace=False,
-                    ),
-                    np.random.choice(
-                        np.where(object_dp["target"] == 0)[0], n - n_pos, replace=False
-                    ),
-                )
-            )
-        )
-    ]
-    return dp
+        # attribute -> correlate, object -> target
+        settings = []
+        for target in tqdm(ATTRIBUTES):
+            for correlate in ATTRIBUTES:
+                if target == correlate:
+                    continue
 
-"""
+                try:
+                    for corr in [min_corr,max_corr]:
+                        _ = induce_correlation(
+                            dp=data_dp,
+                            corr=corr,
+                            attr_a=target,
+                            attr_b=correlate,
+                            match_mu=False,
+                            n=n,
+                        )
+
+                    settings.extend(
+                        [
+                            {
+                                "dataset": "mimic",
+                                "slice_category": "correlation",
+                                "alpha": corr,
+                                "target_name": target,
+                                "slice_names": [
+                                    f"{target}=0_{correlate}=1",
+                                    f"{target}=1_{correlate}=0",
+                                ],
+                                "build_setting_kwargs": {
+                                    "n": n,
+                                    "correlate": correlate,
+                                    "target": target,
+                                    "corr": corr,
+                                },
+                            }
+                            for corr in np.linspace(min_corr, max_corr, num_corr)
+                        ]
+                    )
+                except CorrelationImpossibleError:
+                    pass
+        print('Number of Valid Settings:', len(settings))
+        return mk.DataPanel(settings)
