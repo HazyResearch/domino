@@ -1,3 +1,4 @@
+import pdb
 from typing import List
 
 import numpy as np
@@ -41,7 +42,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["embed_eeg"])
+p = Pipeline(to_rerun=["run_sdms"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -83,16 +84,24 @@ if True:
         },
     )
 else:
-    setting_dp = p.run(
+    model_config = {
+        "model_name": "dense_inception",
+        "data_shape": (2400, 19),
+        "train_transform": None,
+        "transform": None,
+        "lr": 1e-6,
+    }
+    setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
         task=train_settings,
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
-        model_config={},  # {"pretrained": False},
-        batch_size=256,
-        val_check_interval=50,
+        model_config=model_config,
+        batch_size=16,
+        val_check_interval=20,
         max_epochs=15,
+        drop_last=True,
         ckpt_monitor="valid_auroc",
         num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
@@ -102,9 +111,7 @@ else:
         parent_tasks=["train_settings"],
         task=score_settings,
         model_dp=setting_dp,
-        layers={"layer4": "model.layer4"},
-        batch_size=512,
-        reduction_fns=["mean"],
+        batch_size=16,
         num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
         split=["test", "valid"],
