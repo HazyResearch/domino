@@ -1,4 +1,5 @@
 import meerkat as mk
+import nltk
 import terra
 from meerkat.contrib.imagenet import build_imagenet_dps
 from nltk.corpus import wordnet as wn
@@ -12,6 +13,7 @@ DATASET_DIR = "/home/common/datasets/imagenet"
 def get_imagenet_dp(dataset_dir: str = DATASET_DIR):
 
     dp = build_imagenet_dps(dataset_dir=dataset_dir, download=False)
+    nltk.download("wordnet")
 
     pos_offset_to_synset = {
         pos_offset: wn.synset_from_pos_and_offset(
