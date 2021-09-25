@@ -2,12 +2,12 @@ from typing import Dict, List, Mapping, Sequence, Tuple, Union
 
 import meerkat as mk
 import pandas as pd
+import ray
 import terra
 import torch.nn as nn
 from meerkat.datapanel import DataPanel
 from ray import tune
 from ray.tune.suggest.variant_generator import _generate_variants
-from ray.tune.utils.placement_groups import PlacementGroupFactory
 from tqdm import tqdm
 
 from domino.metrics import compute_expl_metrics, compute_sdm_metrics
@@ -20,31 +20,37 @@ from domino.train import score_model
 def run_sdm(
     model: nn.Module,
     data_dp: mk.DataPanel,
-    emb_dp: Union[mk.DataPanel, Mapping[str, mk.DataPanel]],
+    emb_dp: mk.DataPanel,
     sdm_class: type,
     sdm_config: SliceDiscoveryMethod.Config,
     id_column: str,
+    xmodal_emb_dp: mk.DataPanel = None,
     word_dp: mk.DataPanel = None,
     **kwargs,
 ):
-    print(len(data_dp))
     print("Creating slice discovery method...")
     sdm: SliceDiscoveryMethod = sdm_class(sdm_config)
 
     print("Loading embeddings...")
-    data_dp = data_dp.lz[data_dp["split"].isin(["valid", "test"])].merge(
+    data_emb_dp = data_dp.lz[data_dp["split"].isin(["valid", "test"])].merge(
         emb_dp[[id_column, sdm.config.emb]], on=id_column
     )
 
     print("Fitting slice discovery method...")
     sdm.fit(
-        data_dp=data_dp.lz[data_dp["split"] == "valid"],
+        data_dp=data_emb_dp.lz[data_emb_dp["split"] == "valid"],
         model=model,
     )
     print("Transforming slice discovery method...")
-    slice_dp = sdm.transform(data_dp=data_dp.lz[data_dp["split"] == "test"])
+    slice_dp = sdm.transform(data_dp=data_emb_dp.lz[data_emb_dp["split"] == "test"])
+    slice_dp.remove_column(sdm.config.emb)
 
     if word_dp is not None:
+        if xmodal_emb_dp is not None:
+            slice_dp = slice_dp.merge(
+                xmodal_emb_dp[[id_column, sdm.config.xmodal_emb]], on=id_column
+            )
+
         print("Explaining slices...")
         expl_dp = sdm.explain(word_dp, data_dp=slice_dp)
         return slice_dp, expl_dp
@@ -52,16 +58,21 @@ def run_sdm(
     return slice_dp, None
 
 
-@terra.Task.make(no_load_args={"emb_dp", "word_dp"})
+@terra.Task.make(no_load_args={"emb_dp", "xmodal_emb_dp", "word_dp"})
 def run_sdms(
     sdm_config: dict,
     setting_dp: mk.DataPanel,
-    emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]] = None,
+    emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]],
+    xmodal_emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]],
     word_dp: mk.DataPanel = None,
     id_column: str = "image_id",
+    num_cpus: int = 8,
+    num_gpus: int = 1,
     run_dir: str = None,
 ):
     def _evaluate(config):
+        import meerkat.contrib.mimic.gcs
+
         score_run_id = config["slice"]["score_model_run_id"]
         if config["slice"]["synthetic_preds"]:
             # in the synthetic setting, there is actually no score_model, just the
@@ -85,9 +96,22 @@ def run_sdms(
         else:
             _emb_dp = emb_dp
 
+        if isinstance(xmodal_emb_dp, Mapping):
+            emb_tuple = config["sdm"]["sdm_config"]["xmodal_emb"]
+            if not isinstance(emb_tuple, Tuple):
+                raise ValueError(
+                    "'xmodal_emb' in the sdm config must be a tuple when "
+                    "providing multiple `xmodal_emb_dp`."
+                )
+            _xmodal_emb_dp = xmodal_emb_dp[emb_tuple[0]]
+            config["sdm"]["sdm_config"]["xmodal_emb"] = emb_tuple[1]
+        else:
+            _xmodal_emb_dp = xmodal_emb_dp
+
         run_id, _ = run_sdm(
             data_dp=dp,
             emb_dp=_emb_dp,
+            xmodal_emb_dp=_xmodal_emb_dp,
             model=model,
             id_column=id_column,
             word_dp=word_dp,
@@ -102,6 +126,7 @@ def run_sdms(
             "score_model_run_id": score_run_id,
             "sdm_class": config["sdm"]["sdm_class"],
             "sdm_config": config["sdm"]["sdm_config"],
+            "emb_group": emb_tuple[0],
         }
 
     if isinstance(sdm_config, List):
@@ -113,6 +138,7 @@ def run_sdms(
             expanded_config.extend(list(zip(*_generate_variants(config)))[1])
         sdm_config = tune.grid_search(expanded_config)
 
+    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
     analysis = tune.run(
         _evaluate,
         config={
@@ -145,7 +171,6 @@ def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
         cols += spec_columns
     dfs = []
     for row in tqdm(setting_dp):
-        print(row)
         dp, _ = run_sdm.out(run_id=row["run_sdm_run_id"])
         metrics_df = compute_sdm_metrics(dp.load())
 
