@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+import psutil
 import ray
 import terra
 from ray import tune
@@ -21,9 +22,8 @@ from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
-NUM_GPUS = 1
-NUM_CPUS = 8
-
+NUM_GPUS = 4
+NUM_CPUS = 64
 
 data_dp = get_imagenet_dp()
 
@@ -104,8 +104,8 @@ else:
         val_check_interval=50,
         max_epochs=15,
         ckpt_monitor="valid_auroc",
-        num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
+        num_cpus=NUM_CPUS,
     )
 
     setting_dp, _ = score_settings(
@@ -113,14 +113,14 @@ else:
         layers={"layer4": "model.layer4"},
         batch_size=512,
         reduction_fns=["mean"],
-        num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
+        num_cpus=NUM_CPUS,
         split=["test", "valid"],
     )
 
 
 common_config = {
-    "n_slices": 5,
+    "n_slices": 1,
     "emb": tune.grid_search(
         [
             ("imagenet", "emb"),
@@ -136,24 +136,24 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        # {
-        #     "sdm_class": SpotlightSDM,
-        #     "sdm_config": {
-        #         "learning_rate": tune.grid_search([1e-2, 1e-3]),
-        #         **common_config,
-        #     },
-        # },
         {
-            "sdm_class": MixtureModelSDM,
+            "sdm_class": SpotlightSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": tune.grid_search([10]),
+                "learning_rate": 1e-3,
                 **common_config,
             },
         },
+        # {
+        #     "sdm_class": MixtureModelSDM,
+        #     "sdm_config": {
+        #         "weight_y_log_likelihood": tune.grid_search([10]),
+        #         **common_config,
+        #     },
+        # },
     ],
-    num_cpus=NUM_CPUS,
     num_gpus=NUM_GPUS,
-    skip_terra_cache=False,
+    num_cpus=NUM_CPUS,
+    skip_terra_cache=True,
 )
 
 

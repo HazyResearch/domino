@@ -37,7 +37,7 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         explain_w_model: bool = False
         init_params: str = "error"
 
-    RESOURCES_REQUIRED = {"cpu": 1}
+    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 0}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
