@@ -8,7 +8,8 @@ import terra
 from ray import tune
 
 from domino.data.mimic import get_mimic_dp, split_dp_preloaded
-from domino.emb.clip import embed_images, embed_words, get_wiki_words
+from domino.emb.clip import embed_words, get_wiki_words
+from domino.emb.mimic_multimodal import embed_images
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
@@ -16,7 +17,7 @@ from domino.train import score_settings, synthetic_score_settings, train_setting
 
 NUM_GPUS = 1
 NUM_CPUS = 8
-# ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
+ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
 data_dp = get_mimic_dp(skip_terra_cache=False)
 
@@ -32,7 +33,7 @@ setting_dp = collect_settings(
 )
 
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
+#setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
 
 if True:
     setting_dp = synthetic_score_settings(
@@ -95,17 +96,20 @@ words_dp = embed_words(words_dp=words_dp, skip_terra_cache=False)
 
 common_config = {
     "n_slices": 5,
-    "emb": tune.grid_search([("clip", "emb")]),
+    "emb": tune.grid_search([("mimic_multimodal", "emb")]),
+    #"emb": tune.grid_search([("clip", "emb")]),
 }
+print(setting_dp.load().columns)
 setting_dp = run_sdms(
     setting_dp=setting_dp,
     id_column="dicom_id",
     emb_dp={
-        "clip": emb_dp,  # terra.out(5145),
+        #"clip": emb_dp,  # terra.out(5145),
         # "imagenet": emb_dp,
         # "bit": terra.out(5796),
+        "mimic_multimodal": emb_dp
     },
-    word_dp=words_dp,
+    word_dp=None,
     sdm_config=[
         # {
         #     "sdm_class": SpotlightSDM,
@@ -122,9 +126,9 @@ setting_dp = run_sdms(
             },
         },
     ],
-    skip_terra_cache=False,
+    skip_terra_cache=True,
 )
 
 
-slices_df = score_sdms(setting_dp=setting_dp, skip_terra_cache=False)
-slices_df = score_sdm_explanations(setting_dp=setting_dp, skip_terra_cache=False)
+slices_df = score_sdms(setting_dp=setting_dp, skip_terra_cache=True)
+#slices_df = score_sdm_explanations(setting_dp=setting_dp, skip_terra_cache=True)
