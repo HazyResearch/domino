@@ -21,7 +21,6 @@ from .abstract import SliceDiscoveryMethod
 class MultiaccuracySDM(SliceDiscoveryMethod):
     @dataclass
     class Config(SliceDiscoveryMethod.Config):
-        learning_rate: float = 1e-3  # default from the implementation
         eta: float = 0.1  # step size for the logits update, see final line algorithm 1
         dev_valid_frac: float = 0.3  # the fraction of data held out for computing corr
 

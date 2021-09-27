@@ -32,19 +32,20 @@ class MixtureModelSDM(SliceDiscoveryMethod):
     class Config(SliceDiscoveryMethod.Config):
         weight_y_log_likelihood: float = 1
         covariance_type: str = "diag"
-        pca_components: int = 128
+        n_components: int = 128
         n_clusters: int = 25
-        explain_w_model: bool = False
         init_params: str = "error"
+
+        explain_w_model: bool = False
 
     RESOURCES_REQUIRED = {"cpu": 1, "gpu": 0}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
-        if self.config.pca_components is None:
+        if self.config.n_components is None:
             self.pca = None
         else:
-            self.pca = PCA(n_components=self.config.pca_components)
+            self.pca = PCA(n_components=self.config.n_components)
         self.gmm = ErrorMixtureModel(
             n_components=self.config.n_clusters,
             weight_y_log_likelihood=self.config.weight_y_log_likelihood,

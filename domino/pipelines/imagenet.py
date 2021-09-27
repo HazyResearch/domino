@@ -18,6 +18,7 @@ from domino.emb.clip import (
 )
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, MultiaccuracySDM, SpotlightSDM
+from domino.sdm.george import GeorgeSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
@@ -78,7 +79,7 @@ setting_dp = collect_settings(
 )
 
 # setting_dp = setting_dp.load()
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
+# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
 
 if True:
     setting_dp = synthetic_score_settings(
@@ -123,8 +124,8 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            # ("imagenet", "emb"),
-            # ("bit", "body"),
+            ("imagenet", "emb"),
+            ("bit", "body"),
             ("clip", "emb"),
         ]
     ),
@@ -150,9 +151,15 @@ setting_dp = run_sdms(
             },
         },
         {
+            "sdm_class": GeorgeSDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
+        {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": tune.grid_search([10]),
+                "weight_y_log_likelihood": 10,
                 **common_config,
             },
         },
