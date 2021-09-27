@@ -35,7 +35,7 @@ def embed_images(
     ckpt_dir = '/pd/maya/rx-multimodal/classifier/checkpoints/0919_clip_vit_findingsimpressions_full/'
     with open(os.path.join(ckpt_dir, 'all_img_vectors.pkl'), 'rb') as f:
         keyToImgVector = pickle.load(f)
-    print(len(keyToImgVector))
+    print(f'Loaded {len(keyToImgVector)} multimodal embeddings')
 
     dp['emb'] = [keyToImgVector[i] for i in list(dp['dicom_id'])]
     return dp
