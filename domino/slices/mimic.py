@@ -31,6 +31,7 @@ ATTRIBUTES = [
     "cardio_group",
 ]
 
+
 class MimicSliceBuilder(AbstractSliceBuilder):
     def build_correlation_setting(
         self,
@@ -41,7 +42,7 @@ class MimicSliceBuilder(AbstractSliceBuilder):
         n: int,
         **kwargs,
     ):
-        
+
         indices = induce_correlation(
             dp=data_dp,
             corr=corr,
@@ -50,7 +51,6 @@ class MimicSliceBuilder(AbstractSliceBuilder):
             match_mu=True,
             n=n,
         )
-
 
         dp = data_dp.lz[indices]
         dp["slices"] = np.array(
@@ -64,7 +64,7 @@ class MimicSliceBuilder(AbstractSliceBuilder):
         dp["input"] = dp["cxr_jpg_1024"]
         dp["id"] = dp["dicom_id"]
         return dp
-    
+
     def collect_correlation_settings(
         self,
         data_dp: mk.DataPanel,
@@ -82,7 +82,7 @@ class MimicSliceBuilder(AbstractSliceBuilder):
                     continue
 
                 try:
-                    for corr in [min_corr,max_corr]:
+                    for corr in [min_corr, max_corr]:
                         _ = induce_correlation(
                             dp=data_dp,
                             corr=corr,
@@ -115,5 +115,5 @@ class MimicSliceBuilder(AbstractSliceBuilder):
                     )
                 except CorrelationImpossibleError:
                     pass
-        print('Number of Valid Settings:', len(settings))
+        print("Number of Valid Settings:", len(settings))
         return mk.DataPanel(settings)

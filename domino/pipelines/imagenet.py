@@ -17,13 +17,13 @@ from domino.emb.clip import (
     get_wiki_words,
 )
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
-from domino.sdm import MixtureModelSDM, SpotlightSDM
+from domino.sdm import MixtureModelSDM, MultiaccuracySDM, SpotlightSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
-NUM_GPUS = 4
-NUM_CPUS = 64
+NUM_GPUS = 0
+NUM_CPUS = 30
 
 data_dp = get_imagenet_dp()
 
@@ -78,7 +78,7 @@ setting_dp = collect_settings(
 )
 
 # setting_dp = setting_dp.load()
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
+# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 10)]
 
 if True:
     setting_dp = synthetic_score_settings(
@@ -120,11 +120,11 @@ else:
 
 
 common_config = {
-    "n_slices": 1,
+    "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("imagenet", "emb"),
-            ("bit", "body"),
+            # ("imagenet", "emb"),
+            # ("bit", "body"),
             ("clip", "emb"),
         ]
     ),
@@ -136,26 +136,34 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        {
-            "sdm_class": SpotlightSDM,
-            "sdm_config": {
-                "learning_rate": 1e-3,
-                **common_config,
-            },
-        },
         # {
-        #     "sdm_class": MixtureModelSDM,
+        #     "sdm_class": SpotlightSDM,
         #     "sdm_config": {
-        #         "weight_y_log_likelihood": tune.grid_search([10]),
+        #         "learning_rate": 1e-3,
         #         **common_config,
         #     },
         # },
+        {
+            "sdm_class": MultiaccuracySDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": MixtureModelSDM,
+            "sdm_config": {
+                "weight_y_log_likelihood": tune.grid_search([10]),
+                **common_config,
+            },
+        },
     ],
     num_gpus=NUM_GPUS,
     num_cpus=NUM_CPUS,
-    skip_terra_cache=True,
+    skip_terra_cache=False,
 )
 
 
-slices_df = score_sdms(setting_dp=setting_dp, spec_columns=["emb_group", "alpha"])
+slices_df = score_sdms(
+    setting_dp=setting_dp, spec_columns=["emb_group", "alpha", "sdm_class"]
+)
 # slices_df = score_sdm_explanations(setting_dp=setting_dp)

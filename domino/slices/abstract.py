@@ -15,15 +15,19 @@ from .utils import synthesize_preds
 def _get_slice_builder(dataset: str):
     if dataset == "imagenet":
         from .imagenet import ImageNetSliceBuilder
+
         sb = ImageNetSliceBuilder()
     elif dataset == "eeg":
         from .eeg import EegSliceBuilder
+
         sb = EegSliceBuilder()
     elif dataset == "celeba":
         from .celeba import CelebASliceBuilder
+
         sb = CelebASliceBuilder()
     elif dataset == "mimic":
         from .mimic import MimicSliceBuilder
+
         sb = MimicSliceBuilder()
     else:
         raise ValueError(f"Dataset {dataset} not supported.")
