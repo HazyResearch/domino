@@ -25,7 +25,8 @@ def train_eeg(
             "transform": None,
             "chexbert_pth": "/media/nvme_data/pretrained_models/chexbert.pth",
             "projection_dim": 128,
-            "cosine_weight": 0.9,
+            "multimodal_weight": 0.9,
+            "clip_loss": True,
             "lr": 1e-6,
         },
         dp=dp,
@@ -33,7 +34,7 @@ def train_eeg(
         text_columns=text_columns,
         id_column="id",
         target_column=target_column,
-        ckpt_monitor="COS valid_loss",
+        ckpt_monitor="multimodal valid_loss",
         ckpt_mode="min",
         batch_size=32,
         run_dir=run_dir,
@@ -41,7 +42,7 @@ def train_eeg(
         num_workers=6,
         valid_split="valid",
         use_terra=True,
-        max_epochs=75,
+        max_epochs=200,
         drop_last=True,
     )
 
