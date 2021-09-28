@@ -1,9 +1,9 @@
 from typing import List
 
+import nltk
 import numpy as np
 import psutil
-import ray
-import terra
+import torch
 from ray import tune
 
 from domino.data.imagenet import get_imagenet_dp
@@ -17,14 +17,27 @@ from domino.emb.clip import (
     get_wiki_words,
 )
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
-from domino.sdm import MixtureModelSDM, MultiaccuracySDM, SpotlightSDM
-from domino.sdm.george import GeorgeSDM
+from domino.sdm import (
+    ConfusionSDM,
+    GeorgeSDM,
+    MixtureModelSDM,
+    MultiaccuracySDM,
+    SpotlightSDM,
+)
 from domino.slices import collect_settings
+from domino.slices.abstract import concat_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import split_dp
 
-NUM_GPUS = 0
-NUM_CPUS = 30
+NUM_GPUS = torch.cuda.device_count()
+NUM_CPUS = psutil.cpu_count()
+print(f"Found {NUM_GPUS=}, {NUM_CPUS=}")
+
+# simpler to install earlier on to avoid race condition with train
+try:
+    nltk.data.find("corpora/wordnet")
+except LookupError:
+    nltk.download("wordnet")
 
 data_dp = get_imagenet_dp()
 
@@ -54,6 +67,17 @@ embs = {
         num_workers=7,
         mmap=True,
     ),
+    "random": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+        model="resnet50_random",
+    ),
     "clip": embed_images(
         emb_type="clip",
         dp=data_dp,
@@ -67,21 +91,37 @@ embs = {
 
 # words_dp = embed_words.out(5143).load()
 
-setting_dp = collect_settings(
-    dataset="imagenet",
-    slice_category="rare",
-    data_dp=data_dp,
-    num_slices=1,
-    words_dp=words_dp,
-    min_slice_frac=0.03,
-    max_slice_frac=0.03,
-    n=30_000,
+setting_dp = concat_settings(
+    [
+        collect_settings(
+            dataset="imagenet",
+            slice_category="rare",
+            data_dp=data_dp,
+            num_slices=1,
+            words_dp=words_dp,
+            min_slice_frac=0.03,
+            max_slice_frac=0.03,
+            n=30_000,
+        ),
+        collect_settings(
+            dataset="imagenet",
+            slice_category="noisy_label",
+            data_dp=data_dp,
+            num_slices=1,
+            words_dp=words_dp,
+            min_error_rate=0.1,
+            max_error_rate=0.5,
+            n=30_000,
+            skip_terra_cache=True,
+        ),
+    ]
 )
 
-# setting_dp = setting_dp.load()
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
 
-if True:
+setting_dp = setting_dp.load()
+setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 16)]
+
+if False:
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -93,17 +133,17 @@ if True:
             "slice_specificities": 0.4,
         },
     )
-elif False:
-    setting_dp = synthetic_score_settings.out()
 else:
     setting_dp, _ = train_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
-        model_config={},  # {"pretrained": False},
+        # we do not use imagenet pretrained models, since the classification task is
+        # a subset of imagenet
+        model_config={"pretrained": False},
         batch_size=256,
         val_check_interval=50,
-        max_epochs=15,
+        max_epochs=1,
         ckpt_monitor="valid_auroc",
         num_gpus=NUM_GPUS,
         num_cpus=NUM_CPUS,
@@ -124,8 +164,8 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("imagenet", "emb"),
-            ("bit", "body"),
+            # ("imagenet", "emb"),
+            # ("bit", "body"),
             ("clip", "emb"),
         ]
     ),
@@ -144,22 +184,28 @@ setting_dp = run_sdms(
         #         **common_config,
         #     },
         # },
+        # {
+        #     "sdm_class": MultiaccuracySDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": GeorgeSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": MixtureModelSDM,
+        #     "sdm_config": {
+        #         "weight_y_log_likelihood": 10,
+        #         **common_config,
+        #     },
+        # },
         {
-            "sdm_class": MultiaccuracySDM,
+            "sdm_class": ConfusionSDM,
             "sdm_config": {
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": GeorgeSDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": MixtureModelSDM,
-            "sdm_config": {
-                "weight_y_log_likelihood": 10,
                 **common_config,
             },
         },
@@ -171,6 +217,8 @@ setting_dp = run_sdms(
 
 
 slices_df = score_sdms(
-    setting_dp=setting_dp, spec_columns=["emb_group", "alpha", "sdm_class"]
+    setting_dp=setting_dp,
+    spec_columns=["emb_group", "alpha", "sdm_class"],
+    skip_terra_cache=True,
 )
 # slices_df = score_sdm_explanations(setting_dp=setting_dp)

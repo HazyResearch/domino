@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Mapping
+from typing import Dict, List, Mapping
 from uuid import uuid4
 
 import meerkat as mk
@@ -70,6 +70,11 @@ def collect_settings(
     return settings_dp
 
 
+@terra.Task
+def concat_settings(setting_dps: List[mk.DataPanel]):
+    return mk.concat(setting_dps, axis="rows")
+
+
 class AbstractSliceBuilder:
     def __init__(self, config: dict = None, **kwargs):
         pass
@@ -85,6 +90,10 @@ class AbstractSliceBuilder:
             dp = self.build_correlation_setting(data_dp=data_dp, **kwargs)
         elif slice_category == "rare":
             dp = self.build_rare_setting(data_dp=data_dp, **kwargs)
+        elif slice_category == "noisy_label":
+            dp = self.build_noisy_label_setting(data_dp=data_dp, **kwargs)
+        elif slice_category == "noisy_feature":
+            dp = self.build_noisy_feature_setting(data_dp=data_dp, **kwargs)
         else:
             raise ValueError(f"Slice category '{slice_category}' not recognized.")
 
@@ -113,6 +122,10 @@ class AbstractSliceBuilder:
             dp = self.collect_correlation_settings(data_dp=data_dp, **kwargs)
         elif slice_category == "rare":
             dp = self.collect_rare_settings(data_dp=data_dp, **kwargs)
+        elif slice_category == "noisy_label":
+            dp = self.collect_noisy_label_settings(data_dp=data_dp, **kwargs)
+        elif slice_category == "noisy_feature":
+            dp = self.collect_noisy_feature_settings(data_dp=data_dp, **kwargs)
         else:
             raise ValueError(f"Slice category '{slice_category}' not recognized.")
 

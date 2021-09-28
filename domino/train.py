@@ -9,6 +9,7 @@ import ray
 import terra
 import torch
 from ray import tune
+from ray.tune.progress_reporter import CLIReporter
 from torch import nn
 from tqdm.auto import tqdm
 
@@ -53,6 +54,8 @@ def train_settings(
     run_dir: str = None,
     **kwargs,
 ):
+    train_settings_run_id = int(os.path.basename(run_dir))
+
     def _train_model(setting_spec):
         import terra
 
@@ -64,18 +67,21 @@ def train_settings(
             build_setting_kwargs=setting_spec["build_setting_kwargs"],
             return_run_id=True,
         )
-        run_id, _ = train_model(
+        train_model_run_id, _ = train_model(
             dp=dp,
-            setting_spec=setting_spec,
+            setting_spec={
+                **setting_spec,
+                "train_settings_run_id": train_settings_run_id,
+            },
             model_config=model_config,
-            pbar=True,
+            pbar=False,
             **kwargs,
             return_run_id=True,
         )
         return {
             "setting_id": setting_spec["setting_id"],
-            "train_settings_run_id": int(os.path.basename(run_dir)),
-            "train_model_run_id": run_id,
+            "train_settings_run_id": train_settings_run_id,
+            "train_model_run_id": train_model_run_id,
             "build_setting_run_id": build_setting_run_id,
         }
 
@@ -88,6 +94,7 @@ def train_settings(
         config=tune.grid_search(list(setting_dp)),
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
+        verbose=1,
     )
     cols = [
         "setting_id",

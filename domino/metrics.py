@@ -26,6 +26,8 @@ RECALL_K = [50, 100, 200]
 @requires_columns(dp_arg="dp", columns=["pred_slices", "slices"])
 def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
     pred_slice = dp["pred_slices"].argmax(axis=-1)
+    no_nan_preds = not np.isnan(dp["pred_slices"]).any()
+
     return pd.DataFrame(
         [
             {
@@ -34,7 +36,7 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                 "auroc": roc_auc_score(
                     dp["slices"][:, slice_idx], dp["pred_slices"][:, pred_slice_idx]
                 )
-                if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                 else np.nan,
                 **{
                     f"precision_at_{k}": precision_at_k(
@@ -42,7 +44,7 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                         dp["pred_slices"][:, pred_slice_idx],
                         k=k,
                     )
-                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                     else np.nan
                     for k in PRECISION_K
                 },
@@ -52,18 +54,22 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                         dp["pred_slices"][:, pred_slice_idx],
                         k=k,
                     )
-                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                     else np.nan
                     for k in RECALL_K
                 },
                 "recall": recall_score(
                     dp["slices"][:, slice_idx],
                     (pred_slice == pred_slice_idx).astype(int),
-                ),
+                )
+                if no_nan_preds
+                else np.nan,
                 "precision": precision_score(
                     dp["slices"][:, slice_idx],
                     (pred_slice == pred_slice_idx).astype(int),
-                ),
+                )
+                if no_nan_preds
+                else np.nan,
             }
             for slice_idx in range(dp["slices"].shape[1])
             for pred_slice_idx in range(dp["pred_slices"].shape[1])
