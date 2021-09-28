@@ -189,6 +189,24 @@ def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
 def score_sdm_explanations(
     setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None
 ):
+    cols = ["target_name", "run_sdm_run_id"]
+    if spec_columns is not None:
+        cols += spec_columns
+    dfs = []
+    for row in tqdm(setting_dp):
+        dp, _ = run_sdm.out(run_id=row["run_sdm_run_id"])
+        metrics_df = compute_sdm_metrics(dp.load())
+
+        for col in cols:
+            metrics_df[col] = row[col]
+
+        metrics_df["slice_name"] = metrics_df["slice_idx"].apply(
+            lambda x: row["slice_names"][x]
+        )
+        dfs.append(metrics_df)
+
+    return pd.concat(dfs, axis=0)
+
     cols = ["target", "run_sdm_run_id"]
     if spec_columns is not None:
         cols += spec_columns

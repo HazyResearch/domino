@@ -10,12 +10,12 @@ import PIL
 import terra
 import torch
 from meerkat.contrib.mimic import GCSImageColumn, build_mimic_dp
+from terra import Task
 from torchvision.transforms import Compose, Lambda, Normalize, Resize, ToTensor
 from torchxrayvision.datasets import XRayCenterCrop, XRayResizer, normalize
-from terra import Task
 
-#CXR_MEAN = 0.48865
-#CXR_STD = 0.24621
+# CXR_MEAN = 0.48865
+# CXR_STD = 0.24621
 
 
 @Task
@@ -29,11 +29,18 @@ def get_mimic_dp(dataset_dir: str = "/pd/maya/mimic_dp_adjusted_diagnoses.mk"):
 def split_dp_preloaded(
     dp: mk.DataPanel,
 ):
-    num_subjects = len(list(dp['subject_id']))
-    split = mk.DataPanel({'split': dp['slice_assigned_split'], 'subject_id': dp['subject_id'], 'index': list(range(num_subjects))})
+    num_subjects = len(list(dp["subject_id"]))
+    split = mk.DataPanel(
+        {
+            "split": dp["slice_assigned_split"],
+            "subject_id": dp["subject_id"],
+            "index": list(range(num_subjects)),
+        }
+    )
     return split
 
-'''
+
+"""
 
 def _mimic_transform(img: PIL.Image.Image, resolution: int = 224):
     transform = Compose(
@@ -158,4 +165,4 @@ CHEXPERT_COLUMNS = [
     "pneumothorax",
     "support_devices",
 ]
-'''
+"""

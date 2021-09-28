@@ -129,8 +129,6 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
-            if metric_name == "auroc":
-                print("len auroc", len(metric.preds))
             self.log(f"valid_{metric_name}", metric.compute())
             metric.reset()
 
@@ -273,6 +271,7 @@ def train(
         accelerator=None,
         auto_select_gpus=True,
         progress_bar_refresh_rate=None if pbar else 0,
+        profiler="simple",  # remove this!
         **kwargs,
     )
 

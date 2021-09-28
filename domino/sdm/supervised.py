@@ -23,7 +23,7 @@ class SupervisedSDM(SliceDiscoveryMethod):
         self.model = LogisticRegression()
 
     @requires_columns(
-        dp_arg="data_dp", columns=["correlate", VariableColumn("self.config.layer")]
+        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.layer")]
     )
     def fit(
         self,
@@ -37,7 +37,7 @@ class SupervisedSDM(SliceDiscoveryMethod):
         return self
 
     @requires_columns(
-        dp_arg="data_dp", columns=["correlate", VariableColumn("self.config.layer")]
+        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.layer")]
     )
     def transform(
         self,

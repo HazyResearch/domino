@@ -7,7 +7,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.nn.functional import binary_cross_entropy
+from meerkat.columns.tensor_column import TensorColumn
+from scipy.sparse import data
+from torch.nn.functional import cross_entropy
 from tqdm import tqdm
 
 from domino.utils import VariableColumn, requires_columns
@@ -19,9 +21,9 @@ class SpotlightSDM(SliceDiscoveryMethod):
     @dataclass
     class Config(SliceDiscoveryMethod.Config):
         emb: str = "emb"
-        min_weight: int = 100
+        spotlight_size: int = 0.02  # recommended from spotlight paper
         num_steps: int = 1000
-        learning_rate: float = 1e-2
+        learning_rate: float = 1e-3  # default from the implementation
         device: Union[str, int] = 0
 
     RESOURCES_REQUIRED = {"cpu": 1, "gpu": 1}
@@ -31,8 +33,20 @@ class SpotlightSDM(SliceDiscoveryMethod):
         self.means = []
         self.precisions = []
 
+    def _compute_losses(self, data_dp: mk.DataPanel):
+        probs = (
+            data_dp["probs"].data
+            if isinstance(data_dp["probs"], mk.TensorColumn)
+            else torch.tensor(data_dp["probs"].data)
+        )
+        return cross_entropy(
+            probs.to(torch.float32),
+            torch.tensor(data_dp["target"]).to(torch.long),
+            reduction="none",
+        )
+
     @requires_columns(
-        dp_arg="data_dp", columns=[VariableColumn("self.config.emb"), "pred", "target"]
+        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
     )
     def fit(
         self,
@@ -41,11 +55,9 @@ class SpotlightSDM(SliceDiscoveryMethod):
     ):
         all_weights = []
         weights_unnorm = None
-        losses = binary_cross_entropy(
-            torch.tensor(data_dp["pred"].data).to(torch.float32),
-            torch.tensor(data_dp["target"]).to(torch.float32),
-            reduction="none",
-        )
+        losses = self._compute_losses(data_dp=data_dp)
+
+        min_weight = len(data_dp) * self.config.spotlight_size
         for slice_idx in range(self.config.n_slices):
             if slice_idx != 0:
                 weights_unnorm /= max(weights_unnorm)
@@ -54,10 +66,11 @@ class SpotlightSDM(SliceDiscoveryMethod):
             (weights, weights_unnorm, mean, log_precision) = run_spotlight(
                 embeddings=torch.tensor(data_dp[self.config.emb].data),
                 losses=losses,
-                min_weight=self.config.min_weight,
-                barrier_x_schedule=np.geomspace(
-                    len(data_dp) - self.config.min_weight,
-                    0.05 * self.config.min_weight,
+                min_weight=min_weight,
+                #
+                barrier_x_schedule=np.geomspace(  #
+                    len(data_dp) - min_weight,
+                    0.05 * min_weight,
                     self.config.num_steps,
                 ),
                 learning_rate=self.config.learning_rate,
@@ -73,11 +86,8 @@ class SpotlightSDM(SliceDiscoveryMethod):
         self,
         data_dp: mk.DataPanel,
     ):
-        losses = binary_cross_entropy(
-            torch.tensor(data_dp["pred"]).to(torch.float),
-            torch.tensor(data_dp["target"]).to(torch.float),
-            reduction="none",
-        ).to(torch.float)
+        losses = self._compute_losses(data_dp=data_dp)
+
         dp = data_dp.view()
         all_weights = []
 
@@ -86,7 +96,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
                 mean=self.means[slice_idx],
                 precision=torch.eye(self.means[slice_idx].shape[0])
                 * torch.exp(self.precisions[slice_idx]),
-                x=torch.tensor(data_dp[self.config.emb].data),
+                x=torch.tensor(data_dp[self.config.emb].data).to(torch.float),
                 losses=losses,
             )
             all_weights.append(weights.numpy())
@@ -94,7 +104,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
         return dp
 
 
-## Source below from spotlight implementation https://github.com/gregdeon/spotlight/blob/main/torch_spotlight/spotlight.py
+## Implementation below from spotlight implementation https://github.com/gregdeon/spotlight/blob/main/torch_spotlight/spotlight.py
 
 
 def gaussian_probs(mean, precision, x):
@@ -203,10 +213,10 @@ def run_spotlight(
     prediction_coeff=0.0,
 ):
     x = embeddings.clone().to(torch.float).to(device=device)
-    y = losses.clone().to(device=device)
+    y = losses.clone().to(torch.float).to(device=device)
     dimensions = x.shape[1]
 
-    mean = torch.zeros((dimensions,), requires_grad=True, device=device)
+    mean = torch.zeros((dimensions,), requires_grad=True, device=device).to(torch.float)
 
     log_precision = torch.tensor(np.log(0.0001), requires_grad=True, device=device)
     optimizer = optim.Adam([mean, log_precision], lr=learning_rate)
@@ -221,9 +231,7 @@ def run_spotlight(
     total_weight_history = []
     lr_history = []
 
-    start_time = datetime.datetime.now()
-
-    for t in tqdm(range(num_steps)):
+    for t in range(num_steps):  # removed tqdm here
         optimizer.zero_grad()
         precision = torch.exp(log_precision)
         precision_matrix = torch.eye(x.shape[1], device=device) * precision

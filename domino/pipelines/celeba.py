@@ -80,7 +80,7 @@ setting_dp = collect_settings(
 )
 
 # setting_dp = setting_dp.load()
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 4)]
+# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 128)]
 
 if True:
     setting_dp = synthetic_score_settings(
