@@ -8,7 +8,8 @@ import terra
 from ray import tune
 
 from domino.data.mimic import get_mimic_dp, split_dp_preloaded
-from domino.emb.clip import embed_images, embed_words, get_wiki_words
+from domino.emb import embed_images
+#from domino.emb.mimic_multimodal import embed_images
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
 from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
@@ -16,7 +17,7 @@ from domino.train import score_settings, synthetic_score_settings, train_setting
 
 NUM_GPUS = 1
 NUM_CPUS = 8
-# ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
+ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
 data_dp = get_mimic_dp(skip_terra_cache=False)
 
@@ -77,35 +78,75 @@ else:
         split=["test", "valid"],
     )
     """
+embs = {
+    "bit": embed_images(
+        emb_type="bit",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=False,
+    ),
+    "imagenet": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=False,
+    ),
+    "clip": embed_images(
+        emb_type="clip",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=False,
+    ),
+    "mimic_multimodal": embed_images(
+        emb_type="mimic_multimodal",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=True,
+    )
+}
 
-emb_dp = embed_images(
-    dp=data_dp,
-    split_dp=split,
-    splits=["valid", "test"],
-    img_column="cxr_jpg_1024",
-    num_workers=7,
-    mmap=True,
-    skip_terra_cache=False,
-)
 
-words_dp = get_wiki_words(top_k=10_000, eng_only=True, skip_terra_cache=False)
-words_dp = embed_words(words_dp=words_dp, skip_terra_cache=False)
-# words_dp = embed_words.out(6537).load()
-# words_dp = words_dp.lz[:int(1e4)]
+#words_dp = get_wiki_words(top_k=10_000, eng_only=True, skip_terra_cache=False)
+#words_dp = embed_words(words_dp=words_dp, skip_terra_cache=False)
+#words_dp = embed_words.out(6537).load()
+#words_dp = words_dp.lz[:int(1e4)]
 
 common_config = {
     "n_slices": 5,
-    "emb": tune.grid_search([("clip", "emb")]),
+    "emb": tune.grid_search(
+        [
+            ("imagenet", "emb"),
+            ("bit", "body"),
+            ("clip", "emb"),
+            ("mimic_multimodal", "emb")
+        ]
+    ),
+    "xmodal_emb": "emb",
 }
+print(setting_dp.load().columns)
 setting_dp = run_sdms(
     setting_dp=setting_dp,
     id_column="dicom_id",
-    emb_dp={
-        "clip": emb_dp,  # terra.out(5145),
-        # "imagenet": emb_dp,
-        # "bit": terra.out(5796),
-    },
-    word_dp=words_dp,
+    emb_dp=embs,
+    xmodal_emb_dp=embs['clip'],
+    word_dp=None,
     sdm_config=[
         # {
         #     "sdm_class": SpotlightSDM,
@@ -117,14 +158,16 @@ setting_dp = run_sdms(
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": tune.grid_search([1, 5, 10, 20]),
+                "weight_y_log_likelihood": tune.grid_search([10]),
                 **common_config,
             },
         },
     ],
-    skip_terra_cache=False,
+    num_cpus=NUM_CPUS,
+    num_gpus=NUM_GPUS,
+    skip_terra_cache=True,
 )
 
 
-slices_df = score_sdms(setting_dp=setting_dp, skip_terra_cache=False)
-slices_df = score_sdm_explanations(setting_dp=setting_dp, skip_terra_cache=False)
+slices_df = score_sdms(setting_dp=setting_dp, skip_terra_cache=True)
+#slices_df = score_sdm_explanations(setting_dp=setting_dp, skip_terra_cache=True)
