@@ -129,8 +129,6 @@ class Classifier(pl.LightningModule, TerraModule):
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
-            if metric_name == "auroc":
-                print("len auroc", len(metric.preds))
             self.log(f"valid_{metric_name}", metric.compute())
             metric.reset()
 
@@ -259,6 +257,8 @@ def train(
             save_dir=run_dir,
             name=run_dir,
             config={} if wandb_config is None else wandb_config,
+            # https://docs.wandb.ai/guides/track/launch#how-do-i-launch-multiple-runs-from-one-script
+            settings=wandb.Settings(start_method="fork"),
         )
         checkpoint_callbacks = []
 

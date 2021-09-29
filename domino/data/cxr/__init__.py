@@ -85,7 +85,7 @@ def get_cxr_activations(
         dp=dp,
         layers={
             # "block2": model.cnn_encoder[-3],
-            "block3": cnn_encoder[-2],
+            # "block3": cnn_encoder[-2],
             "block4": cnn_encoder[-1],
         },
         batch_size=64,

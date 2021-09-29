@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import math
 import os
@@ -27,6 +28,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
+from torch._C import Value
 from torchmetrics import Metric
 
 
@@ -410,3 +412,61 @@ def flatten_dict(d, parent_key="", sep="_"):
         else:
             items.append((new_key, v))
     return dict(items)
+
+
+def get_worker_assignment(
+    dp: mk.DataPanel,
+    worker_idx: int = None,
+    num_workers: int = None,
+):
+    if (worker_idx is None) != (num_workers is None):
+        raise ValueError("Must pass both `worker_idx` and `num_workers` or neither.")
+
+    if worker_idx is None:
+        return dp
+
+    return dp.lz[(np.arange(len(dp)) % num_workers) == worker_idx]
+
+
+def parse_worker_info():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--worker_idx", type=int, help="The index of this worker.", default=None
+    )
+    parser.add_argument(
+        "--num_workers", type=int, help="The total number of workers.", default=None
+    )
+    args = parser.parse_args()
+    return (
+        args.worker_idx,
+        args.num_workers,
+    )
+
+
+def get_wandb_runs():
+    import pandas as pd
+    import wandb
+
+    api = wandb.Api()
+
+    # Project is specified by <entity/project-name>
+    runs = api.runs("hazy-research/domino")
+
+    summary_list, config_list, name_list = [], [], []
+    for run in runs:
+        # .summary contains the output keys/values for metrics like accuracy.
+        #  We call ._json_dict to omit large files
+        summary_list.append(run.summary._json_dict)
+
+        # .config contains the hyperparameters.
+        #  We remove special values that start with _.
+        config_list.append(
+            {k: v for k, v in run.config.items() if not k.startswith("_")}
+        )
+
+        # .name is the human-readable name of the run.
+        name_list.append(run.name)
+
+    df = pd.DataFrame(config_list)
+    df["name"] = name_list
+    return df

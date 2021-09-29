@@ -231,7 +231,7 @@ def run_spotlight(
     total_weight_history = []
     lr_history = []
 
-    for t in tqdm(range(num_steps)):
+    for t in range(num_steps):  # removed tqdm here
         optimizer.zero_grad()
         precision = torch.exp(log_precision)
         precision_matrix = torch.eye(x.shape[1], device=device) * precision

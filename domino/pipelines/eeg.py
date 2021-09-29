@@ -61,7 +61,7 @@ setting_dp = p.run(
     slice_category="correlation",
     data_dp=data_dp,
     correlate_list=["age"],
-    correlate_threshold=1,
+    correlate_thresholds=[1],
     n=8000,
 )
 
@@ -121,9 +121,9 @@ else:
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
     task=embed_eeg,
-    task_run_id=929,
+    task_run_id=1656,
     dp=data_dp,
-    model_run_id=837,  # original 10 epoch run id = 709
+    model_run_id=1583,  # 75 epochs: 837, original 10 epoch run id = 709
     layers={"emb": "model.fc1"},
     split_dp=split,
     splits=["valid", "test"],
@@ -135,9 +135,9 @@ eeg_emb_dp = p.run(
 multimodal_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
     task=embed_eeg,
-    task_run_id=930,
+    task_run_id=1657,
     dp=data_dp,
-    model_run_id=843,  # first multimodal run id = 704
+    model_run_id=1655,  # clip run for 35 epochs: 1655, multimodal run 75 epochs: 843, first multimodal run id = 704
     layers={"emb": "model.fc1"},
     split_dp=split,
     splits=["valid", "test"],
@@ -170,13 +170,19 @@ common_config = {
     "emb": tune.grid_search([("eeg", "emb"), ("multimodal", "emb")]),
 }
 setting_dp = p.run(
-    parent_tasks=["embed_eeg", "synthetic_score_settings", "score_settings"],
+    parent_tasks=[
+        "collect_settings",
+        "embed_eeg",
+        "synthetic_score_settings",
+        "score_settings",
+    ],
     task=run_sdms,
     setting_dp=setting_dp,
     emb_dp={
         "eeg": eeg_emb_dp,
         "multimodal": multimodal_emb_dp,
     },
+    xmodal_emb_dp=multimodal_emb_dp,
     word_dp=words_dp,
     id_column="id",
     sdm_config=[

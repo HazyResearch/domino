@@ -9,12 +9,13 @@ import ray
 import terra
 import torch
 from ray import tune
+from ray.tune.progress_reporter import CLIReporter
 from torch import nn
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
-from domino.utils import nested_getattr
+from domino.utils import get_worker_assignment, nested_getattr
 from domino.vision import Classifier, score, train
 
 
@@ -50,9 +51,20 @@ def train_settings(
     num_samples: int = 1,
     num_gpus: int = 1,
     num_cpus: int = 8,
+    score_model_split: str = None,
+    score_model_kwargs: dict = None,
     run_dir: str = None,
     **kwargs,
 ):
+    # support for splitting up the job among multiple worker machines
+    setting_dp = get_worker_assignment(
+        dp=setting_dp,
+        worker_idx=kwargs.pop("worker_idx", None),
+        num_workers=kwargs.pop("num_workers", None),
+    )
+
+    train_settings_run_id = int(os.path.basename(run_dir))
+
     def _train_model(setting_spec):
         import terra
 
@@ -64,30 +76,51 @@ def train_settings(
             build_setting_kwargs=setting_spec["build_setting_kwargs"],
             return_run_id=True,
         )
-        run_id, _ = train_model(
+        train_model_run_id, _ = train_model(
             dp=dp,
-            setting_spec=setting_spec,
+            setting_spec={
+                **setting_spec,
+                "train_settings_run_id": train_settings_run_id,
+            },
             model_config=model_config,
-            pbar=True,
+            pbar=False,
             **kwargs,
             return_run_id=True,
         )
-        return {
+
+        result = {
             "setting_id": setting_spec["setting_id"],
-            "train_settings_run_id": int(os.path.basename(run_dir)),
-            "train_model_run_id": run_id,
+            "train_settings_run_id": train_settings_run_id,
+            "train_model_run_id": train_model_run_id,
             "build_setting_run_id": build_setting_run_id,
         }
 
-    print("Connecting to ray cluster.")
+        if score_model_split is not None:
+            score_run_id, _ = score_model(
+                model=train_model.get(train_model_run_id, "best_chkpt")["model"],
+                dp=data_dp,
+                split=score_model_split,
+                pbar=False,
+                return_run_id=True,
+                **score_model_kwargs,
+            )
+            result.update(
+                {
+                    "score_settings_run_id": None,
+                    "score_model_run_id": score_run_id,
+                    "synthetic_preds": False,
+                }
+            )
+        return result
+
     ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
-    print("Connected to ray cluster.")
 
     analysis = tune.run(
         _train_model,
         config=tune.grid_search(list(setting_dp)),
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
+        verbose=1,
     )
     cols = [
         "setting_id",
@@ -95,6 +128,10 @@ def train_settings(
         "train_model_run_id",
         "train_settings_run_id",
     ]
+
+    if score_model_split is None:
+        cols += ["score_settings_run_id", "score_model_run_id", "synthetic_preds"]
+
     return (
         mk.merge(
             setting_dp,
