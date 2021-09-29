@@ -49,11 +49,12 @@ def default_train_transform(img: PIL.Image.Image):
 class Classifier(pl.LightningModule, TerraModule):
 
     DEFAULT_CONFIG = {
-        "lr": 1e-4,
+        "lr": 1e-6,
         "model_name": "resnet",
         "data_shape": (12000, 19),
         "arch": "resnet18",
         "pretrained": True,
+        "clip_loss": False,
         "num_classes": 2,
         "transform": default_transform,
         "train_transform": default_train_transform,
@@ -78,6 +79,8 @@ class Classifier(pl.LightningModule, TerraModule):
             metrics, num_classes=self.config["num_classes"]
         )
         self.valid_preds = PredLogger()
+
+        self.clip_func = nn.CrossEntropyLoss(reduction="none")
 
     def _get_metrics(self, metrics: List[str], num_classes: int = None):
         num_classes = self.config["num_classes"] if num_classes is None else num_classes
@@ -125,18 +128,27 @@ class Classifier(pl.LightningModule, TerraModule):
         embs = self.model(inputs)
         text_embs = self.text_model(texts)
 
-        cosine_loss = nn.functional.cosine_embedding_loss(
-            embs, text_embs, torch.ones_like(text_embs)[:, 0]
-        )
+        labels = torch.ones_like(text_embs)[:, 0].long()
+        if self.config["clip_loss"]:
+            logits = text_embs @ embs.T
+            loss_t = self.clip_func(logits, labels)
+            loss_i = self.clip_func(logits.T, labels)
+            loss = (loss_i + loss_t) / 2
+            multimodal_loss = loss.mean()
+
+        else:
+            multimodal_loss = nn.functional.cosine_embedding_loss(
+                embs, text_embs, labels
+            )
 
         outs = self.forward(inputs)
         ce_loss = nn.functional.cross_entropy(outs, targets)
 
-        loss = ce_loss + self.config["cosine_weight"] * cosine_loss
+        loss = ce_loss + self.config["multimodal_weight"] * multimodal_loss
 
         self.log("train_loss", loss, on_step=True, logger=True)
         self.log("CE train_loss", ce_loss, on_step=True, logger=True)
-        self.log("COS train_loss", cosine_loss, on_step=True, logger=True)
+        self.log("multimodal train_loss", multimodal_loss, on_step=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -158,15 +170,24 @@ class Classifier(pl.LightningModule, TerraModule):
         embs = self.model(inputs)
         text_embs = self.text_model(texts)
 
-        cosine_loss = nn.functional.cosine_embedding_loss(
-            embs, text_embs, torch.ones_like(text_embs)[:, 0]
-        )
+        labels = torch.ones_like(text_embs)[:, 0].long()
+        if self.config["clip_loss"]:
+            logits = text_embs @ embs.T
+            loss_t = self.clip_func(logits, labels)
+            loss_i = self.clip_func(logits.T, labels)
+            loss = (loss_i + loss_t) / 2
+            multimodal_loss = loss.mean()
 
-        loss = ce_loss + self.config["cosine_weight"] * cosine_loss
+        else:
+            multimodal_loss = nn.functional.cosine_embedding_loss(
+                embs, text_embs, labels
+            )
+
+        loss = ce_loss + self.config["multimodal_weight"] * multimodal_loss
 
         self.log("valid_loss", loss)
         self.log("CE valid_loss", ce_loss)
-        self.log("COS valid_loss", cosine_loss)
+        self.log("multimodal valid_loss", multimodal_loss)
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
