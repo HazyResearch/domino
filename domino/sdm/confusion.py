@@ -43,7 +43,7 @@ class ConfusionSDM(SliceDiscoveryMethod):
         )
         if slices.shape[1] > self.config.n_slices:
             raise ValueError(
-                "PredSDM is not configured to return enough slices to "
+                "ConfusionSDM is not configured to return enough slices to "
                 "capture the full confusion matrix."
             )
 

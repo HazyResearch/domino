@@ -7,4 +7,5 @@ ln -s /pd/* /home
 
 
 source /home/common/envs/conda/bin/activate /home/common/envs/conda/envs/domino
-python /pd/sabri/code/domino/domino/pipelines/imagenet.py   
+
+python $1 --worker_idx=$2 --num_workers=$3

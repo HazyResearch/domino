@@ -11,40 +11,61 @@ from .abstract import SliceDiscoveryMethod
 
 
 class SupervisedSDM(SliceDiscoveryMethod):
-    @dataclass
-    class Config(SliceDiscoveryMethod.Config):
-        layer: str = "model.layer4"
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 2}}
 
     def __init__(self, config: dict = None):
-        super(SupervisedSDM, self).__init__(config)
+        super().__init__(config)
 
-        self.model = LogisticRegression()
+        self.models = None
 
     @requires_columns(
-        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.layer")]
+        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.emb")]
     )
     def fit(
         self,
         data_dp: mk.DataPanel,
         model: nn.Module = None,
     ):
-        acts = data_dp[self.config.layer].data
-
-        self.model.fit(X=acts, y=data_dp["correlate"].data)
+        acts = data_dp[self.config.emb].data
+        self.models = []
+        for slice_idx in range(data_dp["slices"].shape[-1]):
+            model = LogisticRegression(max_iter=10000)
+            self.models.append(
+                model.fit(X=acts, y=data_dp["slices"].data[:, slice_idx])
+            )
 
         return self
 
     @requires_columns(
-        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.layer")]
+        dp_arg="data_dp", columns=["slices", VariableColumn("self.config.emb")]
     )
     def transform(
         self,
         data_dp: mk.DataPanel,
     ):
-        acts = data_dp[self.config.layer].data
+        assert self.models is not None
+        acts = data_dp[self.config.emb].data
         dp = data_dp.view()
-        slices = self.model.predict_proba(acts)
-        dp["slices"] = np.stack([slices[:, -1]] * self.config.n_slices, axis=-1)
+        slices = np.stack(
+            [model.predict_proba(acts)[:, -1] for model in self.models], axis=-1
+        )
+
+        if slices.shape[1] > self.config.n_slices:
+            raise ValueError(
+                "SupervisedSDM is not configured to return enough slices to "
+                "capture all the ground truth slices."
+            )
+
+        if slices.shape[1] < self.config.n_slices:
+            # fill in the other predicted slices with zeros
+            slices = np.concatenate(
+                [
+                    slices,
+                    np.zeros((slices.shape[0], self.config.n_slices - slices.shape[1])),
+                ],
+                axis=1,
+            )
+
+        dp["pred_slices"] = slices
         return dp

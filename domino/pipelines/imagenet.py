@@ -27,7 +27,11 @@ from domino.sdm import (
 from domino.slices import collect_settings
 from domino.slices.abstract import concat_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
-from domino.utils import split_dp
+from domino.utils import parse_worker_info, split_dp
+
+# support for splitting up the job among multiple worker machines
+worker_idx, num_workers = parse_worker_info()
+print(f"{worker_idx=}, {num_workers=}")
 
 NUM_GPUS = torch.cuda.device_count()
 NUM_CPUS = psutil.cpu_count()
@@ -59,6 +63,7 @@ embs = {
     ),
     "imagenet": embed_images(
         emb_type="imagenet",
+        model="resnet18",
         dp=data_dp,
         split_dp=split,
         layers={"emb": "layer4"},
@@ -89,8 +94,6 @@ embs = {
     ),
 }
 
-# words_dp = embed_words.out(5143).load()
-
 setting_dp = concat_settings(
     [
         collect_settings(
@@ -103,23 +106,22 @@ setting_dp = concat_settings(
             max_slice_frac=0.03,
             n=30_000,
         ),
-        collect_settings(
-            dataset="imagenet",
-            slice_category="noisy_label",
-            data_dp=data_dp,
-            num_slices=1,
-            words_dp=words_dp,
-            min_error_rate=0.1,
-            max_error_rate=0.5,
-            n=30_000,
-            skip_terra_cache=True,
-        ),
+        # collect_settings(
+        #     dataset="imagenet",
+        #     slice_category="noisy_label",
+        #     data_dp=data_dp,
+        #     num_slices=1,
+        #     words_dp=words_dp,
+        #     min_error_rate=0.1,
+        #     max_error_rate=0.5,
+        #     n=30_000,
+        # ),
     ]
 )
 
 
-setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 16)]
+# setting_dp = setting_dp.load()
+# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 16)]
 
 if False:
     setting_dp = synthetic_score_settings(
@@ -127,10 +129,10 @@ if False:
         data_dp=data_dp,
         split_dp=split,
         synthetic_kwargs={
-            "sensitivity": 0.8,
-            "slice_sensitivities": 0.4,
-            "specificity": 0.8,
-            "slice_specificities": 0.4,
+            "sensitivity": 0.75,
+            "slice_sensitivities": 0.5,
+            "specificity": 0.75,
+            "slice_specificities": 0.5,
         },
     )
 else:
@@ -142,11 +144,14 @@ else:
         # a subset of imagenet
         model_config={"pretrained": False},
         batch_size=256,
-        val_check_interval=50,
-        max_epochs=1,
+        # val_check_interval=250,
+        check_val_every_n_epoch=2,
+        max_epochs=10,
         ckpt_monitor="valid_auroc",
         num_gpus=NUM_GPUS,
         num_cpus=NUM_CPUS,
+        worker_idx=worker_idx,
+        num_workers=num_workers,
     )
 
     setting_dp, _ = score_settings(
@@ -159,13 +164,12 @@ else:
         split=["test", "valid"],
     )
 
-
 common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            # ("imagenet", "emb"),
-            # ("bit", "body"),
+            ("imagenet", "emb"),
+            ("bit", "body"),
             ("clip", "emb"),
         ]
     ),
@@ -196,19 +200,19 @@ setting_dp = run_sdms(
         #         **common_config,
         #     },
         # },
-        # {
-        #     "sdm_class": MixtureModelSDM,
-        #     "sdm_config": {
-        #         "weight_y_log_likelihood": 10,
-        #         **common_config,
-        #     },
-        # },
         {
-            "sdm_class": ConfusionSDM,
+            "sdm_class": MixtureModelSDM,
             "sdm_config": {
+                "weight_y_log_likelihood": 10,
                 **common_config,
             },
         },
+        # {
+        #     "sdm_class": ConfusionSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
     ],
     num_gpus=NUM_GPUS,
     num_cpus=NUM_CPUS,
