@@ -19,21 +19,39 @@ NUM_GPUS = 1
 NUM_CPUS = 8
 ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
-data_dp = get_mimic_dp(skip_terra_cache=False)
+data_dp = get_mimic_dp(skip_terra_cache=True)
 
-split = split_dp_preloaded(dp=data_dp, skip_terra_cache=False)
+split = split_dp_preloaded(dp=data_dp, skip_terra_cache=True)
 
+##CORRELATION##
+'''
 setting_dp = collect_settings(
     dataset="mimic",
     slice_category="correlation",
     data_dp=data_dp,
     num_corr=5,
     n=30_000,
-    skip_terra_cache=False,
+    skip_terra_cache=True,
+)
+'''
+##RARE###
+setting_dp = collect_settings(
+    dataset="mimic",
+    slice_category="rare",
+    data_dp=data_dp,
+    min_slice_frac=0.01,
+    max_slice_frac=0.1,
+    num_frac = 1,
+    n = 30_000,
+    skip_terra_cache=True,
 )
 
+###NOISY FEATURE####
+
+###NOISY LABEL####
+
 setting_dp = setting_dp.load()
-setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
+#setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
 
 if True:
     setting_dp = synthetic_score_settings(
@@ -46,14 +64,10 @@ if True:
             "specificity": 0.8,
             "slice_specificities": 0.4,
         },
-        skip_terra_cache=False,
+        skip_terra_cache=True,
     )
 else:
-    pass
-    """
-    setting_dp, _ = p.run(
-        parent_tasks=["collect_settings"],
-        task=train_settings,
+    setting_dp, _ = train_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
@@ -62,22 +76,21 @@ else:
         val_check_interval=50,
         max_epochs=15,
         ckpt_monitor="valid_auroc",
-        num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
+        num_cpus=NUM_CPUS,
     )
 
-    setting_dp, _ = p.run(
-        parent_tasks=["train_settings"],
-        task=score_settings,
+    setting_dp, _ = score_settings(
         model_dp=setting_dp,
         layers={"layer4": "model.layer4"},
         batch_size=512,
         reduction_fns=["mean"],
-        num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
+        num_cpus=NUM_CPUS,
         split=["test", "valid"],
     )
-    """
+
+
 embs = {
     "bit": embed_images(
         emb_type="bit",
@@ -87,7 +100,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=False,
+        skip_terra_cache=True,
     ),
     "imagenet": embed_images(
         emb_type="imagenet",
@@ -98,7 +111,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=False,
+        skip_terra_cache=True,
     ),
     "clip": embed_images(
         emb_type="clip",
@@ -108,7 +121,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=False,
+        skip_terra_cache=True,
     ),
     "mimic_multimodal": embed_images(
         emb_type="mimic_multimodal",
@@ -119,7 +132,19 @@ embs = {
         num_workers=7,
         mmap=True,
         skip_terra_cache=True,
-    )
+        file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0919_clip_vit_findingsimpressions_full/'
+    ),
+    #"mimic_imageonly": embed_images(
+    #    emb_type="mimic_imageonly",
+    #    dp=data_dp,
+    #    split_dp=split,
+    #    splits=["valid", "test"],
+    #    img_column="cxr_jpg_1024",
+    #    num_workers=7,
+    #    mmap=True,
+    #    skip_terra_cache=True,
+    #    file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0926_domino_vit_imageonly/'
+    #)
 }
 
 
@@ -135,7 +160,8 @@ common_config = {
             ("imagenet", "emb"),
             ("bit", "body"),
             ("clip", "emb"),
-            ("mimic_multimodal", "emb")
+            ("mimic_multimodal", "emb"),
+            #("mimic_imageonly", "emb")
         ]
     ),
     "xmodal_emb": "emb",
@@ -158,7 +184,7 @@ setting_dp = run_sdms(
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": tune.grid_search([10]),
+                "weight_y_log_likelihood": tune.grid_search([1,5,10,20]),
                 **common_config,
             },
         },

@@ -13,6 +13,7 @@ def embed_images(
     img_column: str,
     split_dp: mk.DataPanel = None,
     splits: Iterable[str] = None,
+    file_path: str = None,
     **kwargs,
 ):
     if splits is not None:
@@ -31,9 +32,9 @@ def embed_images(
         from .bit import embed_images as _embed_images
 
         return _embed_images(dp=dp, img_column=img_column, **kwargs)
-    elif emb_type == "mimic_multimodal":
+    elif emb_type == "mimic_multimodal" or emb_type=="mimic_imageonly":
         from .mimic_multimodal import embed_images as _embed_images
 
-        return _embed_images(dp=dp, img_column=img_column, **kwargs)
+        return _embed_images(dp=dp, img_column=img_column, file_path=file_path, **kwargs)
     else:
         raise ValueError(f"Embedding type '{emb_type}' not supported.")
