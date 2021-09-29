@@ -1,6 +1,7 @@
 import pdb
 from typing import List
 
+import meerkat as mk
 import numpy as np
 import ray
 import terra
@@ -42,7 +43,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["run_sdms"])
+p = Pipeline(to_rerun=["collect_settings"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -54,7 +55,7 @@ data_dp = p.run(
 
 split = p.run(parent_tasks=["balance_dp"], task=split_dp, task_run_id=625)
 
-setting_dp = p.run(
+setting_dp1 = p.run(
     parent_tasks=["balance_dp"],
     task=collect_settings,
     dataset="eeg",
@@ -65,7 +66,23 @@ setting_dp = p.run(
     n=8000,
 )
 
-setting_dp = setting_dp.load()
+setting_dp2 = p.run(
+    parent_tasks=["balance_dp"],
+    task=collect_settings,
+    dataset="eeg",
+    slice_category="rare",
+    data_dp=data_dp,
+    attributes=["age"],
+    attribute_thresholds=[1],
+    num_frac=5,
+    n=8000,
+    min_slice_frac=0.001,
+    max_slice_frac=0.5,
+)
+
+setting_dp = mk.concat([setting_dp1.load(), setting_dp2.load()])
+
+# setting_dp = setting_dp.load()
 
 # setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
 
