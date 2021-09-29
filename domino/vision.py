@@ -257,6 +257,8 @@ def train(
             save_dir=run_dir,
             name=run_dir,
             config={} if wandb_config is None else wandb_config,
+            # https://docs.wandb.ai/guides/track/launch#how-do-i-launch-multiple-runs-from-one-script
+            settings=wandb.Settings(start_method="fork"),
         )
         checkpoint_callbacks = []
 
@@ -271,7 +273,6 @@ def train(
         accelerator=None,
         auto_select_gpus=True,
         progress_bar_refresh_rate=None if pbar else 0,
-        profiler="simple",  # remove this!
         **kwargs,
     )
 

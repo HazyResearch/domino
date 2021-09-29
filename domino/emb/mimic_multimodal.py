@@ -15,6 +15,7 @@ import pickle
 
 from domino.utils import batched_pearsonr, merge_in_split
 
+#embed_images must include a file_path parameter with a path to a folder with "all_img_vectors.pkl" (dict mapping dicom_ids to embeddings)
 @Task
 def embed_images(
     dp: mk.DataPanel,
@@ -26,13 +27,19 @@ def embed_images(
     split_dp: mk.DataPanel = None,
     splits: Iterable[str] = None,
     run_dir: str = None,
+    file_path: str = None,
     **kwargs,
 ) -> mk.DataPanel:
     if splits is not None:
         dp = merge_in_split(dp, split_dp)
         dp = dp.lz[dp["split"].isin(splits)]
 
-    ckpt_dir = '/pd/maya/rx-multimodal/classifier/checkpoints/0919_clip_vit_findingsimpressions_full/'
+    if(file_path):
+        print(f'Loading input vectors from file {file_path}')
+    else:
+        raise ValueError(f"File path required.")
+    
+    ckpt_dir = file_path
     with open(os.path.join(ckpt_dir, 'all_img_vectors.pkl'), 'rb') as f:
         keyToImgVector = pickle.load(f)
     print(f'Loaded {len(keyToImgVector)} multimodal embeddings')

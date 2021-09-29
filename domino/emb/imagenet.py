@@ -40,6 +40,8 @@ def embed_images(
         model = models.resnet50(pretrained=True)
     elif model == "resnet50_random":
         model = models.resnet50(pretrained=False)
+    elif model == "resnet18":
+        model = models.resnet18(pretrained=True)
     else:
         raise ValueError(f"Model {model} not supported.")
 
