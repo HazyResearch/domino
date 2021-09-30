@@ -20,7 +20,7 @@ def train_eeg(
             "data_shape": (2400, 19),
             "train_transform": None,
             "transform": None,
-            "lr": 1e-06,
+            "lr": 1e-08,
         },
         dp=dp,
         input_column=input_column,
@@ -41,7 +41,7 @@ def train_eeg(
 if __name__ == "__main__":
 
     dp = build_stanford_eeg_dp.out(
-        812, load=True
+        1863, load=True
     )  # for multimodal with 12 sec: 812 # for multimodal dp with 60 sec: 696 # was balance_dp 623 # build_stanford_eeg_dp.out(run_id=409, load=True)
     split_dp_ = split_dp.out(697, load=True)  # was 625
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
     train_eeg(
         dp=dp,  # train_model.inp(578)["dp"],
-        target_column="target",
+        target_column="male",
         input_column="input",
     )
 

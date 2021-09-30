@@ -10,7 +10,7 @@ from ray import tune
 
 from domino.emb.eeg import embed_eeg, embed_words, generate_words_dp
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
-from domino.sdm import MixtureModelSDM, SpotlightSDM
+from domino.sdm import ConfusionSDM, MixtureModelSDM, MultiaccuracySDM, SpotlightSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import balance_dp, split_dp
@@ -63,6 +63,7 @@ setting_dp1 = p.run(
     data_dp=data_dp,
     correlate_list=["age"],
     correlate_thresholds=[1],
+    num_corr=10,
     n=8000,
 )
 
@@ -74,9 +75,9 @@ setting_dp2 = p.run(
     data_dp=data_dp,
     attributes=["age"],
     attribute_thresholds=[1],
-    num_frac=5,
+    num_frac=10,
     n=8000,
-    min_slice_frac=0.001,
+    min_slice_frac=0.01,
     max_slice_frac=0.5,
 )
 
@@ -182,9 +183,9 @@ words_dp = p.run(
 
 
 common_config = {
-    "n_slices": 10,
-    "n_clusters": 10,
+    "n_slices": 5,
     "emb": tune.grid_search([("eeg", "emb"), ("multimodal", "emb")]),
+    "xmodal_emb": "emb",
 }
 setting_dp = p.run(
     parent_tasks=[
@@ -203,17 +204,30 @@ setting_dp = p.run(
     word_dp=words_dp,
     id_column="id",
     sdm_config=[
-        # {
-        #     "sdm_class": SpotlightSDM,
-        #     "sdm_config": {
-        #         "learning_rate": tune.grid_search([1e-2, 1e-3]),
-        #         **common_config,
-        #     },
-        # },
+        {
+            "sdm_class": SpotlightSDM,
+            "sdm_config": {
+                "learning_rate": 1e-3,
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": MultiaccuracySDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
                 "weight_y_log_likelihood": 10,  # tune.grid_search([1, 5, 10, 20]),
+                "n_clusters": 10,
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": ConfusionSDM,
+            "sdm_config": {
                 **common_config,
             },
         },
