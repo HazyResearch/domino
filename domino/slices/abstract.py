@@ -60,7 +60,10 @@ def build_setting(
 
 @terra.Task
 def collect_settings(
-    dataset: str, slice_category: str, data_dp: mk.DataPanel, **kwargs
+    dataset: str,
+    slice_category: str,
+    data_dp: mk.DataPanel,
+    **kwargs,
 ):
     sb = _get_slice_builder(dataset=dataset)
     settings_dp = sb.collect_settings(
@@ -68,6 +71,11 @@ def collect_settings(
     )
     settings_dp["setting_id"] = [str(uuid4()) for _ in range(len(settings_dp))]
     return settings_dp
+
+
+@terra.Task
+def filter_settings(settings_dp: List[mk.DataPanel], subset_size: int):
+    return settings_dp.lz[np.random.choice(len(settings_dp), subset_size)]
 
 
 @terra.Task

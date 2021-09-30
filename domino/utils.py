@@ -428,21 +428,6 @@ def get_worker_assignment(
     return dp.lz[(np.arange(len(dp)) % num_workers) == worker_idx]
 
 
-def parse_worker_info():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--worker_idx", type=int, help="The index of this worker.", default=None
-    )
-    parser.add_argument(
-        "--num_workers", type=int, help="The total number of workers.", default=None
-    )
-    args = parser.parse_args()
-    return (
-        args.worker_idx,
-        args.num_workers,
-    )
-
-
 def get_wandb_runs():
     import pandas as pd
     import wandb

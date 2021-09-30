@@ -18,6 +18,7 @@ from domino.emb.clip import (
     get_wiki_words,
 )
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
+from domino.pipelines.utils import parse_pipeline_args
 from domino.sdm import (
     ConfusionSDM,
     GeorgeSDM,
@@ -26,12 +27,13 @@ from domino.sdm import (
     SpotlightSDM,
 )
 from domino.slices import collect_settings
-from domino.slices.abstract import concat_settings
+from domino.slices.abstract import concat_settings, filter_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
-from domino.utils import parse_worker_info, split_dp
+from domino.utils import split_dp
 
 # support for splitting up the job among multiple worker machines
-worker_idx, num_workers = parse_worker_info()
+args = parse_pipeline_args()
+worker_idx, num_workers = args.worker_idx, args.num_workers
 print(f"{worker_idx=}, {num_workers=}")
 
 NUM_GPUS = torch.cuda.device_count()
@@ -85,47 +87,49 @@ embs = {
         mmap=True,
         model="resnet50_random",
     ),
-    "clip": embed_images(
-        emb_type="clip",
-        dp=data_dp,
-        split_dp=split,
-        splits=["valid", "test"],
-        img_column="image",
-        num_workers=7,
-        mmap=True,
-    ),
 }
 
 setting_dp = concat_settings(
     [
-        # collect_settings(
-        #     dataset="imagenet",
-        #     slice_category="rare",
-        #     data_dp=data_dp,
-        #     num_slices=1,
-        #     words_dp=words_dp,
-        #     min_slice_frac=0.03,
-        #     max_slice_frac=0.03,
-        #     n=30_000,
-        # ),
         collect_settings(
             dataset="imagenet",
-            slice_category="noisy_label",
+            slice_category="rare",
             data_dp=data_dp,
             num_slices=1,
             words_dp=words_dp,
-            min_error_rate=0.3,
-            max_error_rate=0.3,
+            min_slice_frac=0.03,
+            max_slice_frac=0.03,
             n=30_000,
+            subset_size=16,
         ),
+        # collect_settings(
+        #     dataset="celeba",
+        #     slice_category="correlation",
+        #     data_dp=data_dp,
+        #     min_corr=0.5,
+        #     max_corr=0.5,
+        #     num_corr=1,
+        #     n=30_000,
+        # ),
+        # collect_settings(
+        #     dataset="imagenet",
+        #     slice_category="noisy_label",
+        #     data_dp=data_dp,
+        #     num_slices=1,
+        #     words_dp=words_dp,
+        #     min_error_rate=0.3,
+        #     max_error_rate=0.3,
+        #     n=30_000,
+        # ),
     ]
 )
 
+setting_dp = filter_settings(setting_dp, subset_size=16)
 
 # setting_dp = setting_dp.load()
 # setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 16)]
 
-if False:
+if args.synthetic:
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
