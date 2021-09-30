@@ -56,44 +56,27 @@ class EegSliceBuilder(AbstractSliceBuilder):
     def build_rare_setting(
         self,
         data_dp: mk.DataPanel,
-        slice_attrs: List[str],
+        attribute: str,
+        attribute_thresh: float,
         slice_frac: float,
-        target_frac: float,
         n: int,
         **kwargs,
     ):
 
-        data_dp["slices"] = np.array([data_dp[attr].data for attr in slice_attrs]).T
+        data_dp["slices"] = np.array([data_dp[attribute].data < attribute_thresh]).T
 
-        n_slices = len(slice_attrs)
-        n_pos = int(n * target_frac)
         dp = data_dp.lz[
             np.random.permutation(
                 np.concatenate(
                     (
-                        *(
-                            np.random.choice(
-                                np.where(
-                                    (data_dp["slices"][:, slice_idx] == 1)
-                                    & (data_dp["slices"].sum(axis=1) == 1)
-                                    # ensure no other slices are 1
-                                )[0],
-                                int(slice_frac * n_pos),
-                                replace=False,
-                            )
-                            for slice_idx in range(n_slices)
-                        ),
                         np.random.choice(
-                            np.where(
-                                (data_dp["target"] == 1)
-                                & (data_dp["slices"].sum(axis=1) == 0)
-                            )[0],
-                            int((1 - n_slices * slice_frac) * n_pos),
+                            np.where(data_dp["slices"].sum(axis=1) == 1)[0],
+                            int(slice_frac * n),
                             replace=False,
                         ),
                         np.random.choice(
-                            np.where(data_dp["target"] == 0)[0],
-                            n - n_pos,
+                            np.where(data_dp["slices"].sum(axis=1) == 0)[0],
+                            int((1 - slice_frac) * n),
                             replace=False,
                         ),
                     )
@@ -112,13 +95,35 @@ class EegSliceBuilder(AbstractSliceBuilder):
         self,
         data_dp: mk.DataPanel,
         attributes: List[str] = ["age"],
-        attribute_threshold: float = 1,
+        attribute_thresholds: List[float] = [1],
         min_slice_frac: float = 0.001,
         max_slice_frac: float = 0.001,
         num_frac: int = 1,
         n: int = 8000,
     ):
         settings = []
+        for attribute in attributes:
+            for attribute_threshold in attribute_thresholds:
+                settings.extend(
+                    [
+                        {
+                            "dataset": "eeg",
+                            "slice_category": "rare",
+                            "alpha": slice_frac,
+                            "target_name": "sz",
+                            "slice_names": [f"{attribute}<{attribute_threshold}"],
+                            "build_setting_kwargs": {
+                                "attribute": attribute,
+                                "attribute_thresh": attribute_threshold,
+                                "slice_frac": slice_frac,
+                                "n": n,
+                            },
+                        }
+                        for slice_frac in np.geomspace(
+                            min_slice_frac, max_slice_frac, num_frac
+                        )
+                    ]
+                )
 
         return mk.DataPanel(settings)
 
@@ -163,8 +168,8 @@ class EegSliceBuilder(AbstractSliceBuilder):
                                 "alpha": corr,
                                 "target_name": "sz",
                                 "slice_names": [
-                                    f"sz=0_{correlate}=1",
-                                    f"sz=1_{correlate}=0",
+                                    f"sz=0_{correlate}>{correlate_threshold}",
+                                    f"sz=1_{correlate}<{correlate_threshold}",
                                 ],
                                 "build_setting_kwargs": {
                                     "correlate": correlate,
