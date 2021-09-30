@@ -20,10 +20,10 @@ from domino.train import score_model
 def run_sdm(
     model: nn.Module,
     data_dp: mk.DataPanel,
-    emb_dp: mk.DataPanel,
     sdm_class: type,
     sdm_config: SliceDiscoveryMethod.Config,
     id_column: str,
+    emb_dp: mk.DataPanel = None,
     xmodal_emb_dp: mk.DataPanel = None,
     word_dp: mk.DataPanel = None,
     **kwargs,
@@ -31,10 +31,15 @@ def run_sdm(
     print("Creating slice discovery method...")
     sdm: SliceDiscoveryMethod = sdm_class(sdm_config)
 
-    print("Loading embeddings...")
-    data_emb_dp = data_dp.lz[data_dp["split"].isin(["valid", "test"])].merge(
-        emb_dp[[id_column, sdm.config.emb]], on=id_column
-    )
+    if emb_dp is not None:
+        # the embeddings could already be in the `data_dp`
+        print("Loading embeddings...")
+
+        data_emb_dp = data_dp.lz[data_dp["split"].isin(["valid", "test"])].merge(
+            emb_dp[[id_column, sdm.config.emb]], on=id_column
+        )
+    else:
+        data_emb_dp = data_dp
 
     print("Fitting slice discovery method...")
     sdm.fit(
@@ -88,10 +93,13 @@ def run_sdms(
             emb_tuple = config["sdm"]["sdm_config"]["emb"]
             if not isinstance(emb_tuple, Tuple):
                 raise ValueError(
-                    "Must 'emb' in the sdm config must be a tuple when "
+                    "'emb' in the sdm config must be a tuple when "
                     "providing multiple `emb_dp`."
                 )
-            _emb_dp = emb_dp[emb_tuple[0]]
+            if emb_tuple[0] is None:
+                _emb_dp = None
+            else:
+                _emb_dp = emb_dp[emb_tuple[0]]
             config["sdm"]["sdm_config"]["emb"] = emb_tuple[1]
         else:
             _emb_dp = emb_dp
@@ -138,7 +146,6 @@ def run_sdms(
             expanded_config.extend(list(zip(*_generate_variants(config)))[1])
         sdm_config = tune.grid_search(expanded_config)
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
     analysis = tune.run(
         _evaluate,
         config={
@@ -150,6 +157,7 @@ def run_sdms(
         ),
         raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
         local_dir=run_dir,
+        verbose=1,
     )
 
     result_dp = mk.merge(
@@ -166,7 +174,7 @@ def run_sdms(
 
 @terra.Task
 def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
-    cols = ["target_name", "run_sdm_run_id"]
+    cols = ["target_name", "run_sdm_run_id", "score_model_run_id"]
     if spec_columns is not None:
         cols += spec_columns
     dfs = []

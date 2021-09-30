@@ -3,6 +3,7 @@ from typing import List
 import nltk
 import numpy as np
 import psutil
+import ray
 import torch
 from ray import tune
 
@@ -36,6 +37,7 @@ print(f"{worker_idx=}, {num_workers=}")
 NUM_GPUS = torch.cuda.device_count()
 NUM_CPUS = psutil.cpu_count()
 print(f"Found {NUM_GPUS=}, {NUM_CPUS=}")
+ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS, ignore_reinit_error=True)
 
 # simpler to install earlier on to avoid race condition with train
 try:
@@ -96,26 +98,26 @@ embs = {
 
 setting_dp = concat_settings(
     [
-        collect_settings(
-            dataset="imagenet",
-            slice_category="rare",
-            data_dp=data_dp,
-            num_slices=1,
-            words_dp=words_dp,
-            min_slice_frac=0.03,
-            max_slice_frac=0.03,
-            n=30_000,
-        ),
         # collect_settings(
         #     dataset="imagenet",
-        #     slice_category="noisy_label",
+        #     slice_category="rare",
         #     data_dp=data_dp,
         #     num_slices=1,
         #     words_dp=words_dp,
-        #     min_error_rate=0.1,
-        #     max_error_rate=0.5,
+        #     min_slice_frac=0.03,
+        #     max_slice_frac=0.03,
         #     n=30_000,
         # ),
+        collect_settings(
+            dataset="imagenet",
+            slice_category="noisy_label",
+            data_dp=data_dp,
+            num_slices=1,
+            words_dp=words_dp,
+            min_error_rate=0.3,
+            max_error_rate=0.3,
+            n=30_000,
+        ),
     ]
 )
 
@@ -148,8 +150,6 @@ else:
         check_val_every_n_epoch=2,
         max_epochs=10,
         ckpt_monitor="valid_auroc",
-        num_gpus=NUM_GPUS,
-        num_cpus=NUM_CPUS,
         worker_idx=worker_idx,
         num_workers=num_workers,
     )
@@ -159,8 +159,6 @@ else:
         layers={"layer4": "model.layer4"},
         batch_size=512,
         reduction_fns=["mean"],
-        num_gpus=NUM_GPUS,
-        num_cpus=NUM_CPUS,
         split=["test", "valid"],
     )
 
@@ -171,6 +169,9 @@ common_config = {
             ("imagenet", "emb"),
             ("bit", "body"),
             ("clip", "emb"),
+            # passing None for emb group tells run_sdms that the embedding is in
+            # the score_dp – this for the model embeddings
+            (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",
@@ -214,8 +215,6 @@ setting_dp = run_sdms(
         #     },
         # },
     ],
-    num_gpus=NUM_GPUS,
-    num_cpus=NUM_CPUS,
     skip_terra_cache=False,
 )
 
