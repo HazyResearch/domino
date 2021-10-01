@@ -1,27 +1,25 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: ray-pv-1 # Name we're giving the persistent volume
-  namespace: ray
+  name: pv-1 # Name we're giving the persistent volume
 spec:
   capacity:
-    storage: 1500Gi # Make this the size of your disk
+    storage: 10000Gi # Make this the size of your disk
   accessModes:
     - ReadWriteMany # This lets us read and write to this disk from many places
   nfs:
-    server: 10.96.0.153  # IMPORTANT: MAKE SURE TO CHANGE THIS TO WHAT YOU COPIED
+    server: 10.96.3.127  # IMPORTANT: MAKE SURE TO CHANGE THIS TO WHAT YOU COPIED
     path: "/"
 
 ---
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: ray-pvc-1 # Name we're giving the persistent volume claim
-  namespace: ray
+  name: pvc-1 # Name we're giving the persistent volume claim
 spec:
   accessModes:
     - ReadWriteMany # This lets us read and write to this disk from many places
   storageClassName: ""
   resources:
     requests:
-      storage: 1500Gi # Make this the size of your disk
+      storage: 10000Gi # Make this the size of your disk

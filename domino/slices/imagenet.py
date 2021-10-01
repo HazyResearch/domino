@@ -15,12 +15,12 @@ from tqdm import tqdm
 from domino.data.gqa import ATTRIBUTE_GROUPS, DATASET_DIR, split_gqa
 from domino.slices.abstract import AbstractSliceBuilder
 
+try:
+    nltk.data.find("corpora/wordnet")
+except LookupError:
+    nltk.download("wordnet")
 
 def _get_hypernyms(data_dp: mk.DataPanel):
-    try:
-        nltk.data.find("corpora/wordnet")
-    except LookupError:
-        nltk.download("wordnet")
     synsets = set(data_dp["synset"].unique())
     hypernyms = []
 
@@ -193,7 +193,7 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                         for slice_frac in np.geomspace(
                             min_slice_frac, max_slice_frac, num_frac
                         )
-                    ]
+                    ] 
                 )
         return mk.DataPanel(settings)
 

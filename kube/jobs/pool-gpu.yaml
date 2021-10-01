@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pool-settings 
+spec:
+  template:  # this is just a pod template, it has exactly the same schema as a pod https://kubernetes.io/docs/concepts/workloads/controllers/job/#pod-template
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pod-run-script
+          image: gcr.io/hai-gcp-fine-grained/default # replace this with whatever image you want
+          imagePullPolicy: Always
+          command: ["/bin/bash"]
+          args:
+            - "/pd/sabri/code/domino/kube/scripts/run_script.sh"
+          resources:
+            limits:
+              nvidia.com/gpu: "4" # limit to 1 GPU
+            requests:
+              nvidia.com/gpu: "4" # ask for 1 GPU
+
+             
+          volumeMounts:
+            - name: pv-1 # replace this with the name of the persistent volume you want to mount
+              mountPath: /pd # this will mount the volume pv-1 at /home
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: pv-1 # replace this with the name of the persistent volume you want to mount 
+          persistentVolumeClaim:
+            claimName: pvc-1 # replace this with the name of the persistent volume claim 
+        - name: dshm
+          emptyDir:
+            medium: Memory
+      restartPolicy: Never
+      nodeSelector:
+        # Make sure that your cluster actually has the accelerator you're requesting!
+        cloud.google.com/gke-nodepool: p100-4-32-store # or nvidia-tesla-p100 or nvidia-tesla-p4 or nvidia-tesla-v100 or nvidia-tesla-t4
