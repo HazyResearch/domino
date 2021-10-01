@@ -10,7 +10,13 @@ from ray import tune
 
 from domino.emb.eeg import embed_eeg, embed_words, generate_words_dp
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
-from domino.sdm import ConfusionSDM, MixtureModelSDM, MultiaccuracySDM, SpotlightSDM
+from domino.sdm import (
+    ConfusionSDM,
+    GeorgeSDM,
+    MixtureModelSDM,
+    MultiaccuracySDM,
+    SpotlightSDM,
+)
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 from domino.utils import balance_dp, split_dp
@@ -55,6 +61,7 @@ data_dp = p.run(
 
 split = p.run(parent_tasks=["balance_dp"], task=split_dp, task_run_id=625)
 
+
 setting_dp1 = p.run(
     parent_tasks=["balance_dp"],
     task=collect_settings,
@@ -63,7 +70,7 @@ setting_dp1 = p.run(
     data_dp=data_dp,
     correlate_list=["age"],
     correlate_thresholds=[1],
-    num_corr=10,
+    num_corr=5,
     n=8000,
 )
 
@@ -75,19 +82,33 @@ setting_dp2 = p.run(
     data_dp=data_dp,
     attributes=["age"],
     attribute_thresholds=[1],
-    num_frac=10,
+    num_frac=5,
     n=8000,
     min_slice_frac=0.01,
     max_slice_frac=0.5,
 )
 
-setting_dp = mk.concat([setting_dp1.load(), setting_dp2.load()])
+setting_dp3 = p.run(
+    parent_tasks=["balance_dp"],
+    task=collect_settings,
+    dataset="eeg",
+    slice_category="noisy_label",
+    data_dp=data_dp,
+    attributes=["age"],
+    attribute_thresholds=[1],
+    num_samples=5,
+    n=8000,
+    min_error_rate=0.1,
+    max_error_rate=0.5,
+)
+
+setting_dp = mk.concat([setting_dp1.load(), setting_dp2.load(), setting_dp3.load()])
 
 # setting_dp = setting_dp.load()
 
 # setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
 
-if True:
+if False:
     setting_dp = p.run(
         parent_tasks=["collect_settings"],
         task=synthetic_score_settings,
@@ -183,7 +204,7 @@ words_dp = p.run(
 
 
 common_config = {
-    "n_slices": 5,
+    "n_slices": 10,
     "emb": tune.grid_search([("eeg", "emb"), ("multimodal", "emb")]),
     "xmodal_emb": "emb",
 }
@@ -205,6 +226,14 @@ setting_dp = p.run(
     id_column="id",
     sdm_config=[
         {
+            "sdm_class": MixtureModelSDM,
+            "sdm_config": {
+                "weight_y_log_likelihood": 10,  # tune.grid_search([1, 5, 10, 20]),
+                "n_clusters": 10,
+                **common_config,
+            },
+        },
+        {
             "sdm_class": SpotlightSDM,
             "sdm_config": {
                 "learning_rate": 1e-3,
@@ -218,10 +247,8 @@ setting_dp = p.run(
             },
         },
         {
-            "sdm_class": MixtureModelSDM,
+            "sdm_class": GeorgeSDM,
             "sdm_config": {
-                "weight_y_log_likelihood": 10,  # tune.grid_search([1, 5, 10, 20]),
-                "n_clusters": 10,
                 **common_config,
             },
         },
