@@ -1,11 +1,10 @@
-SDM_PALETTE = {
-    "domino.sdm.george.GeorgeSDM": "#9CBDE8",
-    "domino.sdm.multiaccuracy.MultiaccuracySDM": "#EFAB79",
-    "domino.sdm.spotlight.SpotlightSDM": "#1B6C7B",
-    "domino.sdm.confusion.ConfusionSDM": "#19416E",
-    "domino.sdm.gmm.MixtureModelSDM": "#53B7AE",
-}
-PALETTE = ["#9CBDE8", "#53B7AE", "#EFAB79", "#E27E51", "#19416E", "#1B6C7B"]
+import meerkat as mk
+import pandas as pd
+
+from domino.evaluate import run_sdm, run_sdms, score_sdm_explanations, score_sdms
+
+# PALETTE = ["#9CBDE8", "#53B7AE", "#EFAB79", "#E27E51", "#19416E", "#1B6C7B"]
+PALETTE = ["#9CBDE8", "#316FAE", "#29B2A1", "#007C6E", "#FFA17A", "#A4588F"]
 
 
 def coherence_metric(grouped_df):
@@ -13,10 +12,13 @@ def coherence_metric(grouped_df):
 
 
 EMB_PALETTE = {
-    "random": "#19416E",
-    "bit": "#1B6C7B",
-    "clip": "#E27E51",
-    # "mimic_multimodal": "#9CBDE8",
+    # "random": "#19416E",
+    "bit": PALETTE[0],
+    "imagenet": PALETTE[1],
+    "clip": PALETTE[2],
+    "mimic_multimodal": PALETTE[3],
+    "mimic_multimodal_class": PALETTE[4],
+    "mimic_imageonly": PALETTE[5],
 }
 
 
@@ -36,11 +38,13 @@ def generate_group_df(run_sdms_id, score_sdms_id, slice_type):
     results_df = results_dp.to_pandas()
     grouped_df = results_df.iloc[
         results_df.reset_index()
-        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_type"])["auroc"]
+        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_type"])[
+            "precision_at_10"
+        ]
         .idxmax()
         .astype(int)
     ]
-    grouped_df = grouped_df[grouped_df["emb_type"] != "mimic_imageonly"]
+    # grouped_df = grouped_df[grouped_df['emb_type'] != 'mimic_imageonly']
     grouped_df["alpha"] = grouped_df["alpha"].round(3)
 
     if slice_type == "correlation":
