@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1  #https://stackoverflow.com/questions/58481850/no-matches-for-kind-deployment-in-version-extensions-v1beta1
 kind: Deployment
 metadata:
   name: nfs-server
@@ -13,7 +13,7 @@ spec:
         role: nfs-server
     spec:
       nodeSelector:
-        cloud.google.com/gke-nodepool: io-nfs # Make sure this is the name of the non-GPU pool in your cluster!
+        cloud.google.com/gke-nodepool: io-nfs-60 # Make sure this is the name of the non-GPU pool in your cluster!
       containers:
       - name: nfs-server
         image: gcr.io/google_containers/volume-nfs:0.8

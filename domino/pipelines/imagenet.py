@@ -3,6 +3,7 @@ from typing import List
 import nltk
 import numpy as np
 import psutil
+import ray
 import torch
 from ray import tune
 
@@ -17,6 +18,7 @@ from domino.emb.clip import (
     get_wiki_words,
 )
 from domino.evaluate import run_sdms, score_sdm_explanations, score_sdms
+from domino.pipelines.utils import parse_pipeline_args
 from domino.sdm import (
     ConfusionSDM,
     GeorgeSDM,
@@ -25,17 +27,24 @@ from domino.sdm import (
     SpotlightSDM,
 )
 from domino.slices import collect_settings
-from domino.slices.abstract import concat_settings
-from domino.train import score_settings, synthetic_score_settings, train_settings
-from domino.utils import parse_worker_info, split_dp
+from domino.slices.abstract import concat_settings, random_filter_settings
+from domino.train import (
+    filter_settings,
+    score_settings,
+    synthetic_score_settings,
+    train_settings,
+)
+from domino.utils import split_dp
 
 # support for splitting up the job among multiple worker machines
-worker_idx, num_workers = parse_worker_info()
+args = parse_pipeline_args()
+worker_idx, num_workers = args.worker_idx, args.num_workers
 print(f"{worker_idx=}, {num_workers=}")
 
 NUM_GPUS = torch.cuda.device_count()
 NUM_CPUS = psutil.cpu_count()
 print(f"Found {NUM_GPUS=}, {NUM_CPUS=}")
+ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS, ignore_reinit_error=True)
 
 # simpler to install earlier on to avoid race condition with train
 try:
@@ -96,34 +105,44 @@ embs = {
 
 setting_dp = concat_settings(
     [
-        collect_settings(
-            dataset="imagenet",
-            slice_category="rare",
-            data_dp=data_dp,
-            num_slices=1,
-            words_dp=words_dp,
-            min_slice_frac=0.03,
-            max_slice_frac=0.03,
-            n=30_000,
-        ),
         # collect_settings(
         #     dataset="imagenet",
-        #     slice_category="noisy_label",
+        #     slice_category="rare",
         #     data_dp=data_dp,
         #     num_slices=1,
         #     words_dp=words_dp,
-        #     min_error_rate=0.1,
-        #     max_error_rate=0.5,
+        #     min_slice_frac=0.03,
+        #     max_slice_frac=0.03,
         #     n=30_000,
         # ),
+        # collect_settings(
+        #     dataset="celeba",
+        #     slice_category="correlation",
+        #     data_dp=data_dp,
+        #     min_corr=0.5,
+        #     max_corr=0.5,
+        #     num_corr=1,
+        #     n=30_000,
+        # ),
+        collect_settings(
+            dataset="imagenet",
+            slice_category="noisy_label",
+            data_dp=data_dp,
+            num_slices=1,
+            words_dp=words_dp,
+            min_error_rate=0.3,
+            max_error_rate=0.3,
+            n=30_000,
+        ),
     ]
 )
 
+if args.sanity:
+    # filture
+    setting_dp = random_filter_settings(setting_dp, subset_size=64)
 
-# setting_dp = setting_dp.load()
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 16)]
 
-if False:
+if args.synthetic:
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -136,7 +155,7 @@ if False:
         },
     )
 else:
-    setting_dp, _ = train_settings(
+    train_settings_kwargs = dict(
         setting_dp=setting_dp,
         data_dp=data_dp,
         split_dp=split,
@@ -148,21 +167,42 @@ else:
         check_val_every_n_epoch=2,
         max_epochs=10,
         ckpt_monitor="valid_auroc",
-        num_gpus=NUM_GPUS,
-        num_cpus=NUM_CPUS,
-        worker_idx=worker_idx,
-        num_workers=num_workers,
+        continue_run_ids=[56437, 56436, 56427, 56418],
     )
 
-    setting_dp, _ = score_settings(
-        model_dp=setting_dp,
+    score_settings_kwargs = dict(
         layers={"layer4": "model.layer4"},
         batch_size=512,
         reduction_fns=["mean"],
-        num_gpus=NUM_GPUS,
-        num_cpus=NUM_CPUS,
         split=["test", "valid"],
     )
+
+    if num_workers is not None and worker_idx is None:
+        # supported for distributed training
+        setting_dp = concat_settings(
+            [
+                score_settings(
+                    model_dp=train_settings(
+                        **train_settings_kwargs,
+                        worker_idx=worker_idx,
+                        num_workers=num_workers,
+                    )[0],
+                    **score_settings_kwargs,
+                )[0]
+                for worker_idx in range(num_workers)
+            ]
+        )
+    elif worker_idx is None:
+        setting_dp, _ = train_settings(**train_settings_kwargs)
+        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+    else:
+        setting_dp, _ = train_settings(
+            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        )
+        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+
+    setting_dp = filter_settings(setting_dp)
+
 
 common_config = {
     "n_slices": 5,
@@ -171,6 +211,9 @@ common_config = {
             ("imagenet", "emb"),
             ("bit", "body"),
             ("clip", "emb"),
+            # passing None for emb group tells run_sdms that the embedding is in
+            # the score_dp – this for the model embeddings
+            (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",
@@ -214,8 +257,6 @@ setting_dp = run_sdms(
         #     },
         # },
     ],
-    num_gpus=NUM_GPUS,
-    num_cpus=NUM_CPUS,
     skip_terra_cache=False,
 )
 

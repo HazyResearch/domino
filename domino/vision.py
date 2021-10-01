@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from typing import Iterable, List, Mapping, Sequence, Union
 
 import meerkat as mk
@@ -242,7 +243,26 @@ def train(
             name=f"{metadata['fn']}-run_id={os.path.basename(run_dir)}",
             tags=[f"{metadata['module']}.{metadata['fn']}"],
             config={} if wandb_config is None else wandb_config,
+            # https://docs.wandb.ai/guides/track/launch#how-do-i-launch-multiple-runs-from-one-script
+            settings=wandb.Settings(start_method="fork"),
+            reinit=True,
         )
+
+        # https://github.com/wandb/client/issues/1409#issuecomment-723371808
+        for retry_idx in range(20):
+            try:
+                # need to do this to ensure we pass the config
+                logger._experiment = wandb.init(**logger._wandb_init)
+                break
+            except:
+                if retry_idx == 19:
+                    print("No more retries for connecting to wandb...")
+                    logger = None
+                    break
+                else:
+                    print("Retrying connection to wandb...")
+                    time.sleep(10)
+
         checkpoint_callbacks = [
             TerraCheckpoint(
                 dirpath=run_dir,
@@ -259,6 +279,7 @@ def train(
             config={} if wandb_config is None else wandb_config,
             # https://docs.wandb.ai/guides/track/launch#how-do-i-launch-multiple-runs-from-one-script
             settings=wandb.Settings(start_method="fork"),
+            reinit=True,
         )
         checkpoint_callbacks = []
 

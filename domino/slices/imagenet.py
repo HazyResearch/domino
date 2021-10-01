@@ -15,12 +15,12 @@ from tqdm import tqdm
 from domino.data.gqa import ATTRIBUTE_GROUPS, DATASET_DIR, split_gqa
 from domino.slices.abstract import AbstractSliceBuilder
 
+try:
+    nltk.data.find("corpora/wordnet")
+except LookupError:
+    nltk.download("wordnet")
 
 def _get_hypernyms(data_dp: mk.DataPanel):
-    try:
-        nltk.data.find("corpora/wordnet")
-    except LookupError:
-        nltk.download("wordnet")
     synsets = set(data_dp["synset"].unique())
     hypernyms = []
 
@@ -161,7 +161,7 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
         dp = data_dp.lz[np.random.permutation(np.concatenate((pos_idxs, neg_idxs)))]
 
         # flip the labels in the slice with probability equal to `error_rate`
-        flip = (np.random.rand(len(dp)) > error_rate) * dp["slices"].any(axis=1)
+        flip = (np.random.rand(len(dp)) < error_rate) * dp["slices"].any(axis=1)
         dp["target"][flip] = np.abs(1 - dp["target"][flip])
 
         return dp
@@ -250,6 +250,14 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                             "n": n,
                             "slice_synsets": slice_synsets,
                             "target_synset": target_synset,
+<<<<<<< HEAD
+                        }
+                        for slice_frac in np.geomspace(
+                            min_slice_frac, max_slice_frac, num_frac
+                        )
+                    ] 
+                )
+=======
                         },
                     }
                     for slice_frac in np.geomspace(
@@ -306,6 +314,7 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                     )
                 ]
             )
+>>>>>>> 915f260cb23b84d95033fd68c60e604cc12c9818
         return mk.DataPanel(settings)
 
 

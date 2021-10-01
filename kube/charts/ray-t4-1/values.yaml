@@ -3,7 +3,6 @@
 # RayCluster settings:
 
 # image is Ray image to use for the head and workers of this Ray cluster.
-image: gcr.io/hai-gcp-fine-grained/domino-ray
 # headPodType is the podType used for the Ray head node (as configured below).
 headPodType: rayHeadType
 # podTypes is the list of pod configurations available for use as Ray nodes.
@@ -32,6 +31,8 @@ podTypes:
         # Optionally, set a node selector for this podType: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
         nodeSelector: 
             cloud.google.com/gke-nodepool: ray-head
+        image: rayproject/ray:nightly-py38
+
     # The key for each podType is a user-defined string.
     rayWorkerType:
         # minWorkers is the minimum number of Ray workers of this pod type to keep running.
@@ -52,6 +53,8 @@ podTypes:
         # For example, rayResources: {"CPU": 0} can be used in the head podType to prevent Ray from scheduling tasks on the head.
         # See https://docs.ray.io/en/master/advanced.html#dynamic-remote-parameters for an example of usage of custom resources in a Ray task.
         rayResources: {}
+        image: gcr.io/hai-gcp-fine-grained/domino-ray-gpu
+
         # Optionally, set a node selector for this Pod type. See https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
         nodeSelector: 
             cloud.google.com/gke-nodepool: train-t4-1

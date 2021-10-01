@@ -428,21 +428,6 @@ def get_worker_assignment(
     return dp.lz[(np.arange(len(dp)) % num_workers) == worker_idx]
 
 
-def parse_worker_info():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--worker_idx", type=int, help="The index of this worker.", default=None
-    )
-    parser.add_argument(
-        "--num_workers", type=int, help="The total number of workers.", default=None
-    )
-    args = parser.parse_args()
-    return (
-        args.worker_idx,
-        args.num_workers,
-    )
-
-
 def get_wandb_runs():
     import pandas as pd
     import wandb
@@ -452,21 +437,24 @@ def get_wandb_runs():
     # Project is specified by <entity/project-name>
     runs = api.runs("hazy-research/domino")
 
-    summary_list, config_list, name_list = [], [], []
+    config_list = []
     for run in runs:
-        # .summary contains the output keys/values for metrics like accuracy.
-        #  We call ._json_dict to omit large files
-        summary_list.append(run.summary._json_dict)
+        try:
+            train_model_run_id = int(run.name.split("=")[-1])
+        except ValueError:
+            continue
 
         # .config contains the hyperparameters.
         #  We remove special values that start with _.
         config_list.append(
-            {k: v for k, v in run.config.items() if not k.startswith("_")}
+            {
+                "name": run.name,
+                "state": run.state,
+                "start_time" "train_model_run_id": train_model_run_id,
+                **run.summary._json_dict,
+                **{k: v for k, v in run.config.items() if not k.startswith("_")},
+            }
         )
 
-        # .name is the human-readable name of the run.
-        name_list.append(run.name)
-
     df = pd.DataFrame(config_list)
-    df["name"] = name_list
     return df

@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Collection, Mapping, Sequence, Union
+from typing import Collection, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import numpy as np
@@ -11,12 +11,30 @@ import torch
 from ray import tune
 from ray.tune.progress_reporter import CLIReporter
 from torch import nn
+from torchvision.datasets import folder
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
-from domino.utils import get_worker_assignment, nested_getattr
+from domino.utils import get_wandb_runs, get_worker_assignment, nested_getattr
 from domino.vision import Classifier, score, train
+
+
+def cache_loader(filepath: str):
+    if not isinstance(filepath, str):
+        return folder.default_loader(filepath)
+    LOCAL_DIR = "/tmp/domino_cache"
+    local_path = os.path.join(LOCAL_DIR, filepath[1:])
+    if os.path.exists(local_path):
+        try:
+            return folder.default_loader(local_path)
+        except OSError:
+            pass
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    img = folder.default_loader(filepath)
+    img.save(local_path)
+    return img
 
 
 @terra.Task
@@ -27,6 +45,7 @@ def train_model(
     run_dir: str = None,
     **kwargs,
 ):
+    dp["input"].loader = cache_loader
     return train(
         dp=dp,
         input_column="input",
@@ -51,11 +70,12 @@ def train_settings(
     num_samples: int = 1,
     num_gpus: int = 1,
     num_cpus: int = 8,
-    score_model_split: str = None,
-    score_model_kwargs: dict = None,
+    continue_run_ids: List[int] = None,
     run_dir: str = None,
     **kwargs,
 ):
+    train_settings_run_id = int(os.path.basename(run_dir))
+
     # support for splitting up the job among multiple worker machines
     setting_dp = get_worker_assignment(
         dp=setting_dp,
@@ -63,11 +83,10 @@ def train_settings(
         num_workers=kwargs.pop("num_workers", None),
     )
 
-    train_settings_run_id = int(os.path.basename(run_dir))
-
     def _train_model(setting_spec):
         import terra
-
+        import meerkat.contrib.mimic.gcs
+        
         build_setting_run_id, dp = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,
@@ -81,6 +100,7 @@ def train_settings(
             setting_spec={
                 **setting_spec,
                 "train_settings_run_id": train_settings_run_id,
+                "build_setting_run_id": build_setting_run_id,
             },
             model_config=model_config,
             pbar=False,
@@ -94,48 +114,45 @@ def train_settings(
             "train_model_run_id": train_model_run_id,
             "build_setting_run_id": build_setting_run_id,
         }
-
-        if score_model_split is not None:
-            score_run_id, _ = score_model(
-                model=train_model.get(train_model_run_id, "best_chkpt")["model"],
-                dp=data_dp,
-                split=score_model_split,
-                pbar=False,
-                return_run_id=True,
-                **score_model_kwargs,
-            )
-            result.update(
-                {
-                    "score_settings_run_id": None,
-                    "score_model_run_id": score_run_id,
-                    "synthetic_preds": False,
-                }
-            )
         return result
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
+    if continue_run_ids is not None:
+        # support for restarting failed runs
+        df = get_wandb_runs()
+        finished_df = df[
+            df["train_settings_run_id"].isin(continue_run_ids)
+            & (df["state"] == "finished")
+        ]
+        print(len(finished_df))
+        setting_to_run_dp = setting_dp.lz[
+            ~setting_dp["setting_id"].isin(finished_df["setting_id"])
+        ]
+    else:
+        setting_to_run_dp = setting_dp
+        finished_df = None
 
     analysis = tune.run(
         _train_model,
-        config=tune.grid_search(list(setting_dp)),
+        config=tune.grid_search(list(setting_to_run_dp)),
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
         verbose=1,
+        local_dir=run_dir,
     )
     cols = [
         "setting_id",
-        "build_setting_run_id",
+        # "build_setting_run_id",
         "train_model_run_id",
         "train_settings_run_id",
     ]
-
-    if score_model_split is None:
-        cols += ["score_settings_run_id", "score_model_run_id", "synthetic_preds"]
+    analysis_df = analysis.dataframe()[cols]
+    if finished_df is not None:
+        analysis_df = pd.concat([analysis_df, finished_df[cols]])
 
     return (
         mk.merge(
             setting_dp,
-            mk.DataPanel.from_pandas(analysis.dataframe()[cols]),
+            mk.DataPanel.from_pandas(analysis_df),
             on="setting_id",
         ),
         analysis.dataframe(),
@@ -218,11 +235,12 @@ def score_settings(
             "synthetic_preds": False,
         }
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus, ignore_reinit_error=True)
     analysis = tune.run(
         _score_model,
         config=tune.grid_search(list(model_dp)),
         resources_per_trial={"gpu": 1},
+        raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
+        local_dir=run_dir,
     )
     cols = [
         "train_model_run_id",
@@ -238,6 +256,18 @@ def score_settings(
         ),
         analysis.dataframe(),
     )
+
+
+@terra.Task
+def filter_settings(setting_dp: mk.DataPanel):
+    def _is_degraded(row: dict):
+        metrics = score_model.out(row["score_model_run_id"])[1]
+        return (
+            metrics["out_slice_recall_lower"]
+            > metrics["in_slice_0_recall_upper"] + 0.05
+        )
+
+    return setting_dp.filter(_is_degraded, input_columns=["score_model_run_id"])
 
 
 @terra.Task.make(no_load_args={"data_dp", "split_dp"})

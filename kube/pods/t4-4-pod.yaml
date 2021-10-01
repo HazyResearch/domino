@@ -8,7 +8,7 @@ spec:
   containers:
     - command:
         - sh
-        - /home/sabri/startup.sh # sleep forever so that the Pod doesn't die
+        - /pd/sabri/startup.sh # sleep forever so that the Pod doesn't die
       image: gcr.io/hai-gcp-fine-grained/default # replace this with whatever image you want
       name: pod-sabri
       resources:
@@ -18,7 +18,7 @@ spec:
           nvidia.com/gpu: "4" # ask for 1 GPU
       volumeMounts:
         - name: pv-1 # replace this with the name of the persistent volume you want to mount
-          mountPath: /home # this will mount the volume pv-1 at /home
+          mountPath: /pd # this will mount the volume pv-1 at /home
         - name: dshm
           mountPath: /dev/shm
   volumes:

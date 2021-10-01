@@ -1,4 +1,4 @@
-FROM  rayproject/ray:nightly-py38
+FROM  rayproject/ray:nightly-py38-gpu
 
 ENV CONDA_EXE=/pd/common/envs/conda/bin/conda
 ENV RAY_CONDA_HOME=/pd/common/envs/conda
