@@ -6,8 +6,7 @@ import torch
 import torch.nn as nn
 import umap
 from sklearn.decomposition import PCA
-
-# from stratification.cluster.models.cluster import AutoKMixtureModel
+from stratification.cluster.models.cluster import AutoKMixtureModel
 from torch.nn.functional import cross_entropy
 from umap import UMAP
 

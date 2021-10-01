@@ -85,8 +85,38 @@ class EegSliceBuilder(AbstractSliceBuilder):
         ]
         return dp
 
-    def build_noisy_label_setting(self):
-        raise NotImplementedError
+    def build_noisy_label_setting(
+        self,
+        data_dp: mk.DataPanel,
+        attribute: str,
+        attribute_thresh: float,
+        error_rate: float,
+        target_frac: float,
+        n: int,
+        **kwargs,
+    ):
+
+        data_dp["slices"] = np.array([data_dp[attribute].data < attribute_thresh]).T
+
+        n_pos = int(n * target_frac)
+
+        pos_idxs = np.random.choice(
+            np.where(data_dp["target"] == 1)[0],
+            n_pos,
+            replace=False,
+        )
+        neg_idxs = np.random.choice(
+            np.where(data_dp["target"] == 0)[0],
+            n - n_pos,
+            replace=False,
+        )
+        dp = data_dp.lz[np.random.permutation(np.concatenate((pos_idxs, neg_idxs)))]
+
+        # flip the labels in the slice with probability equal to `error_rate`
+        flip = (np.random.rand(len(dp)) > error_rate) * dp["slices"].any(axis=1)
+        dp["target"][flip] = np.abs(1 - dp["target"][flip])
+
+        return dp
 
     def buid_noisy_feature_setting(self):
         raise NotImplementedError
@@ -185,4 +215,46 @@ class EegSliceBuilder(AbstractSliceBuilder):
                 except CorrelationImpossibleError:
                     pass
 
+        return mk.DataPanel(settings)
+
+    def collect_noisy_label_settings(
+        self,
+        data_dp: mk.DataPanel,
+        attributes: List[str] = ["age"],
+        attribute_thresholds: List[float] = [1],
+        min_error_rate: float = 0.1,
+        max_error_rate: float = 0.5,
+        num_samples: int = 1,
+        n: int = 8000,
+    ) -> mk.DataPanel:
+
+        settings = []
+        for attribute in attributes:
+            for attribute_threshold in attribute_thresholds:
+                # get the maximum class balance (up to 0.5) for which the n is possible
+                target_frac = min(
+                    0.5,
+                    data_dp["target"].sum() / n,
+                )
+                settings.extend(
+                    [
+                        {
+                            "dataset": "eeg",
+                            "slice_category": "noisy_label",
+                            "alpha": error_rate,
+                            "target_name": "sz",
+                            "slice_names": [f"{attribute}<{attribute_threshold}"],
+                            "build_setting_kwargs": {
+                                "target_frac": target_frac,
+                                "error_rate": error_rate,
+                                "n": n,
+                                "attribute": attribute,
+                                "attribute_thresh": attribute_threshold,
+                            },
+                        }
+                        for error_rate in np.linspace(
+                            min_error_rate, max_error_rate, num_samples
+                        )
+                    ]
+                )
         return mk.DataPanel(settings)
