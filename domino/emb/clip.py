@@ -1,5 +1,6 @@
 import os
-from typing import Iterable
+from itertools import product
+from typing import Iterable, List
 
 import clip
 import meerkat as mk
@@ -35,6 +36,29 @@ def embed_words(
 
 
 @Task
+def embed_phrases(
+    words_dp: mk.DataPanel,
+    batch_size: int = 128,
+    model: str = "ViT-B/32",
+    top_k: int = None,
+) -> mk.DataPanel:
+    if top_k is not None:
+        words_dp = words_dp.lz[words_dp["loss"].argsort()[:top_k]]
+    model, _ = clip.load(model, device=torch.device(0))
+    words_dp["tokens"] = mk.LambdaColumn(
+        words_dp["output_phrase"], fn=lambda x: clip.tokenize(x).squeeze()
+    )
+    words_dp["emb"] = words_dp["tokens"].map(
+        lambda x: model.encode_text(x.data.to(0)).cpu().detach().numpy(),
+        pbar=True,
+        is_batched_fn=True,
+        batch_size=batch_size,
+    )
+    words_dp["word"] = words_dp["output_phrase"]
+    return words_dp
+
+
+@Task
 def embed_images(
     dp: mk.DataPanel,
     img_column: str,
@@ -42,14 +66,9 @@ def embed_images(
     num_workers: int = 4,
     model: str = "ViT-B/32",
     mmap: bool = False,
-    split_dp: mk.DataPanel = None,
-    splits: Iterable[str] = None,
     run_dir: str = None,
     **kwargs,
 ) -> mk.DataPanel:
-    if splits is not None:
-        dp = merge_in_split(dp, split_dp)
-        dp = dp.lz[dp["split"].isin(splits)]
 
     model, preprocess = clip.load(model, device=torch.device(0))
 
@@ -157,3 +176,98 @@ def find_explanatory_words(
             )
         )
     return pd.concat(dfs)
+
+
+PAD_TOKEN_ID = 103
+
+
+@Task
+def generate_phrases(
+    words_dp: mk.DataPanel,
+    templates: List[str],
+    device: int = 0,
+    k: int = 2,
+    bert_size: str = "base",
+    num_candidates: str = 30_000,
+):
+    from transformers import BertForMaskedLM, BertModel, BertTokenizer
+
+    tokenizer = BertTokenizer.from_pretrained(f"bert-{bert_size}-uncased")
+    model = (
+        BertForMaskedLM.from_pretrained(f"bert-{bert_size}-uncased").to(device).eval()
+    )
+
+    @torch.no_grad()
+    def _forward_mlm(words):
+        input_phrases = [
+            template.format(word) for word in words for template in templates
+        ]
+        inputs = tokenizer(input_phrases, return_tensors="pt", padding=True).to(device)
+        input_ids = inputs["input_ids"]
+
+        outputs = model(**inputs)  # shape=(num_sents, num_tokens_in_sent, size_vocab)
+        probs = torch.softmax(outputs.logits, dim=-1).detach()
+        top_k_out = probs.topk(k=k, dim=-1)
+
+        output_phrases = []
+        output_probs = []
+        for sent_idx in range(probs.shape[0]):
+            mask_mask = input_ids[sent_idx] == PAD_TOKEN_ID
+            mask_range = torch.arange(mask_mask.sum())
+            token_ids = top_k_out.indices[sent_idx, mask_mask]
+            token_probs = top_k_out.values[sent_idx, mask_mask]
+            for local_idxs in product(np.arange(k), repeat=mask_mask.sum()):
+                output_ids = torch.clone(input_ids[sent_idx])
+                output_ids[mask_mask] = token_ids[mask_range, local_idxs]
+                output_phrases.append(
+                    tokenizer.decode(output_ids, skip_special_tokens=True)
+                )
+                output_probs.append(
+                    token_probs[mask_range, local_idxs].mean().cpu().numpy()
+                )
+
+        return {"prob": output_probs, "output_phrase": output_phrases}
+
+    candidate_phrases = words_dp["word"].map(
+        _forward_mlm, is_batched_fn=True, batch_size=16, pbar=True
+    )
+
+    candidate_phrases = (
+        candidate_phrases.to_pandas()
+        .dropna()
+        .sort_values("prob", ascending=False)[:num_candidates]
+    )
+
+    from transformers import GPT2LMHeadModel, GPT2Tokenizer
+
+    gpt_model = GPT2LMHeadModel.from_pretrained("gpt2").to(device)
+    gpt_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+
+    @torch.no_grad()
+    def _forward_lm(phrase):
+        tokens_tensor = gpt_tokenizer.encode(
+            phrase, add_special_tokens=False, return_tensors="pt"
+        ).to(device)
+        loss = gpt_model(tokens_tensor, labels=tokens_tensor)[0]
+        return {"loss": np.exp(loss.cpu().detach().numpy()), "output_phrase": phrase}
+
+    # unclear how to get loss for a batch of sentences
+    return mk.DataPanel.from_pandas(candidate_phrases)["output_phrase"].map(
+        _forward_lm, is_batched_fn=False, pbar=True
+    )
+
+
+CELEBA_PHRASE_TEMPLATES = [
+    "a photo of a person {} [MASK].",
+    "a photo of a person [MASK] {}.",
+    "a photo of a person [MASK] {} [MASK].",
+    "a photo of a person [MASK] [MASK] {}.",
+    "a photo of [MASK] {} person",
+    "[MASK] {} photo of a person",
+]
+
+CELEBA_GENDER_PHRASE_TEMPLATES = [
+    template.replace("person", person_sub)
+    for template in CELEBA_PHRASE_TEMPLATES
+    for person_sub in ["man", "woman", "guy", "boy", "girl"]
+]

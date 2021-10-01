@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Collection, Mapping, Sequence, Union
+from typing import Collection, List, Mapping, Sequence, Union
 
 import meerkat as mk
 import numpy as np
@@ -9,23 +9,43 @@ import ray
 import terra
 import torch
 from ray import tune
+from ray.tune.progress_reporter import CLIReporter
 from torch import nn
+from torchvision.datasets import folder
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
-from domino.utils import nested_getattr
+from domino.utils import get_wandb_runs, get_worker_assignment, nested_getattr
 from domino.vision import Classifier, score, train
+
+
+def cache_loader(filepath: str):
+    if not isinstance(filepath, str):
+        return folder.default_loader(filepath)
+    LOCAL_DIR = "/tmp/domino_cache"
+    local_path = os.path.join(LOCAL_DIR, filepath[1:])
+    if os.path.exists(local_path):
+        try:
+            return folder.default_loader(local_path)
+        except OSError:
+            pass
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    img = folder.default_loader(filepath)
+    img.save(local_path)
+    return img
 
 
 @terra.Task
 def train_model(
     dp: mk.DataPanel,
-    setting_config: dict,
+    setting_spec: dict,
     model_config: dict,
     run_dir: str = None,
     **kwargs,
 ):
+    dp["input"].loader = cache_loader
     return train(
         dp=dp,
         input_column="input",
@@ -34,7 +54,7 @@ def train_model(
         run_dir=run_dir,
         wandb_config={
             "train_model_run_id": int(os.path.basename(run_dir)),
-            **setting_config,
+            **setting_spec,
         },
         config=model_config,
         **kwargs,
@@ -48,44 +68,93 @@ def train_settings(
     split_dp: mk.DataPanel,
     model_config: dict,
     num_samples: int = 1,
+    num_gpus: int = 1,
+    num_cpus: int = 8,
+    continue_run_ids: List[int] = None,
     run_dir: str = None,
     **kwargs,
 ):
-    def _train_model(setting_config):
+    train_settings_run_id = int(os.path.basename(run_dir))
+
+    # support for splitting up the job among multiple worker machines
+    setting_dp = get_worker_assignment(
+        dp=setting_dp,
+        worker_idx=kwargs.pop("worker_idx", None),
+        num_workers=kwargs.pop("num_workers", None),
+    )
+
+    def _train_model(setting_spec):
         import terra
 
         build_setting_run_id, dp = build_setting(
-            data_dp=data_dp, split_dp=split_dp, return_run_id=True, **setting_config
+            data_dp=data_dp,
+            split_dp=split_dp,
+            dataset=setting_spec["dataset"],
+            slice_category=setting_spec["slice_category"],
+            build_setting_kwargs=setting_spec["build_setting_kwargs"],
+            return_run_id=True,
         )
-        run_id, _ = train_model(
+        train_model_run_id, _ = train_model(
             dp=dp,
-            setting_config=setting_config,
+            setting_spec={
+                **setting_spec,
+                "train_settings_run_id": train_settings_run_id,
+                "build_setting_run_id": build_setting_run_id,
+            },
             model_config=model_config,
-            pbar=True,
+            pbar=False,
             **kwargs,
             return_run_id=True,
         )
-        return {
-            "setting_id": setting_config["setting_id"],
-            "parent_run_id": int(os.path.basename(run_dir)),
-            "train_model_run_id": run_id,
+
+        result = {
+            "setting_id": setting_spec["setting_id"],
+            "train_settings_run_id": train_settings_run_id,
+            "train_model_run_id": train_model_run_id,
             "build_setting_run_id": build_setting_run_id,
         }
+        return result
 
-    print("Connecting to ray cluster.")
-    ray.init(num_gpus=1, num_cpus=8)
-    print("Connected to ray cluster.")
+    if continue_run_ids is not None:
+        # support for restarting failed runs
+        df = get_wandb_runs()
+        finished_df = df[
+            df["train_settings_run_id"].isin(continue_run_ids)
+            & (df["state"] == "finished")
+        ]
+        print(len(finished_df))
+        setting_to_run_dp = setting_dp.lz[
+            ~setting_dp["setting_id"].isin(finished_df["setting_id"])
+        ]
+    else:
+        setting_to_run_dp = setting_dp
+        finished_df = None
 
     analysis = tune.run(
         _train_model,
-        config=tune.grid_search(list(setting_dp)),
+        config=tune.grid_search(list(setting_to_run_dp)),
         num_samples=num_samples,
         resources_per_trial={"gpu": 1},
+        verbose=1,
+        local_dir=run_dir,
     )
-    return mk.merge(
-        setting_dp,
-        mk.DataPanel.from_pandas(analysis.dataframe()),
-        on="setting_id",
+    cols = [
+        "setting_id",
+        # "build_setting_run_id",
+        "train_model_run_id",
+        "train_settings_run_id",
+    ]
+    analysis_df = analysis.dataframe()[cols]
+    if finished_df is not None:
+        analysis_df = pd.concat([analysis_df, finished_df[cols]])
+
+    return (
+        mk.merge(
+            setting_dp,
+            mk.DataPanel.from_pandas(analysis_df),
+            on="setting_id",
+        ),
+        analysis.dataframe(),
     )
 
 
@@ -93,7 +162,7 @@ def train_settings(
 def score_model(
     dp: mk.DataPanel,
     model: Classifier,
-    split: str,
+    split: Union[str, Collection[str]],
     layers: Union[nn.Module, Mapping[str, nn.Module]] = None,
     reduction_fns: Sequence[str] = None,
     run_dir: str = None,
@@ -131,8 +200,8 @@ def score_model(
         reduction_fns=reduction_fns,
         **kwargs,
     )
-
-    return score_dp
+    metrics = compute_model_metrics(score_dp, num_iter=1000, flat=True)
+    return score_dp, metrics
 
 
 @terra.Task
@@ -141,7 +210,6 @@ def score_settings(
     split: Union[str, Collection[str]] = "test",
     layers: Union[nn.Module, Mapping[str, str]] = None,
     reduction_fns: Sequence[str] = None,
-    slice_col: str = "slices",
     num_gpus: int = 1,
     num_cpus: int = 8,
     run_dir: str = None,
@@ -160,26 +228,45 @@ def score_settings(
             **kwargs,
         )
         return {
-            "synthetic_preds": False,
             "train_model_run_id": run_id,
-            "parent_run_id": int(os.path.basename(run_dir)),
+            "score_settings_run_id": int(os.path.basename(run_dir)),
             "score_model_run_id": score_run_id,
-            **compute_model_metrics(
-                score_dp.load(), num_iter=1000, flat=True, aliases={"slices": slice_col}
-            ),
+            "synthetic_preds": False,
         }
 
-    ray.init(num_gpus=num_gpus, num_cpus=num_cpus)
     analysis = tune.run(
         _score_model,
         config=tune.grid_search(list(model_dp)),
         resources_per_trial={"gpu": 1},
+        raise_on_failed_trial=False,  # still want to return dataframe even if some trials fails
+        local_dir=run_dir,
     )
-    return mk.merge(
-        model_dp,
-        mk.DataPanel.from_pandas(analysis.dataframe()),
-        on="train_model_run_id",
+    cols = [
+        "train_model_run_id",
+        "score_settings_run_id",
+        "score_model_run_id",
+        "synthetic_preds",
+    ]
+    return (
+        mk.merge(
+            model_dp,
+            mk.DataPanel.from_pandas(analysis.dataframe()[cols]),
+            on="train_model_run_id",
+        ),
+        analysis.dataframe(),
     )
+
+
+@terra.Task
+def filter_settings(setting_dp: mk.DataPanel):
+    def _is_degraded(row: dict):
+        metrics = score_model.out(row["score_model_run_id"])[1]
+        return (
+            metrics["out_slice_recall_lower"]
+            > metrics["in_slice_0_recall_upper"] + 0.05
+        )
+
+    return setting_dp.filter(_is_degraded, input_columns=["score_model_run_id"])
 
 
 @terra.Task.make(no_load_args={"data_dp", "split_dp"})
@@ -192,14 +279,16 @@ def synthetic_score_settings(
     **kwargs,
 ):
     rows = []
-    for config in tqdm(setting_dp):
+    for setting_spec in tqdm(setting_dp):
         run_id, _ = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,
             return_run_id=True,
             synthetic_preds=True,
             synthetic_kwargs=synthetic_kwargs,
-            **config,
+            dataset=setting_spec["dataset"],
+            slice_category=setting_spec["slice_category"],
+            build_setting_kwargs=setting_spec["build_setting_kwargs"],
             **kwargs,
         )
         rows.append(
@@ -207,8 +296,8 @@ def synthetic_score_settings(
                 "synthetic_preds": True,
                 "build_setting_run_id": run_id,
                 "score_model_run_id": run_id,
-                "parent_run_id": int(os.path.basename(run_dir)),
-                **config,
+                "score_settings_run_id": int(os.path.basename(run_dir)),
+                "setting_id": setting_spec["setting_id"],
             }
         )
-    return mk.DataPanel(rows)
+    return mk.merge(mk.DataPanel(rows), setting_dp, on="setting_id")

@@ -11,6 +11,7 @@ scratch/sabri/_fb_imgs
 scratch/sabri/data
 scratch/sabri/test_data
 kube/jobs/tmp
+scratch/sabri/wandb
 
 
 # logs

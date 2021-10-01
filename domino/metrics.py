@@ -26,6 +26,8 @@ RECALL_K = [50, 100, 200]
 @requires_columns(dp_arg="dp", columns=["pred_slices", "slices"])
 def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
     pred_slice = dp["pred_slices"].argmax(axis=-1)
+    no_nan_preds = not np.isnan(dp["pred_slices"]).any()
+
     return pd.DataFrame(
         [
             {
@@ -34,7 +36,7 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                 "auroc": roc_auc_score(
                     dp["slices"][:, slice_idx], dp["pred_slices"][:, pred_slice_idx]
                 )
-                if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                 else np.nan,
                 **{
                     f"precision_at_{k}": precision_at_k(
@@ -42,7 +44,7 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                         dp["pred_slices"][:, pred_slice_idx],
                         k=k,
                     )
-                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                     else np.nan
                     for k in PRECISION_K
                 },
@@ -52,18 +54,22 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
                         dp["pred_slices"][:, pred_slice_idx],
                         k=k,
                     )
-                    if len(np.unique(dp["slices"][:, slice_idx])) > 1
+                    if len(np.unique(dp["slices"][:, slice_idx])) > 1 and no_nan_preds
                     else np.nan
                     for k in RECALL_K
                 },
                 "recall": recall_score(
                     dp["slices"][:, slice_idx],
                     (pred_slice == pred_slice_idx).astype(int),
-                ),
+                )
+                if no_nan_preds
+                else np.nan,
                 "precision": precision_score(
                     dp["slices"][:, slice_idx],
                     (pred_slice == pred_slice_idx).astype(int),
-                ),
+                )
+                if no_nan_preds
+                else np.nan,
             }
             for slice_idx in range(dp["slices"].shape[1])
             for pred_slice_idx in range(dp["pred_slices"].shape[1])
@@ -104,52 +110,36 @@ def compute_expl_metrics(
     return pd.DataFrame(rows)
 
 
-@requires_columns(dp_arg="dp", columns=["output", "target", "slices"])
+@requires_columns(dp_arg="dp", columns=["target", "slices"])
 def compute_model_metrics(
     dp: mk.DataPanel,
     num_iter: int = 1000,
     threshold: float = 0.5,
     flat: bool = False,
 ):
-
-    probs = dp["output"].softmax(1)[:, 1]
+    if "output" in dp:
+        probs = dp["output"].softmax(1)[:, 1]
+    else:
+        probs = dp["probs"][:, 1]
     preds = (probs > threshold).float()
 
     # # KS: Hacky way to get around having one slice for now
-    # if len(dp["slices"].shape) == 1:
-    #     dp["slices"] = dp["slices"].reshape(-1, 1)
+    if len(dp["slices"].shape) == 1:
+        dp["slices"] = dp["slices"].reshape(-1, 1)
 
-    # metrics = {
-    #     name: {
-    #         "auroc": auroc_bootstrap_ci(
-    #             dp["target"][mask], probs[mask], num_iter=num_iter
-    #         )
-    #         if len(np.unique(dp["target"][mask])) == 2
-    #         else np.nan,
-    #         "recall": recall_bootstrap_ci(
-    #             dp["target"][mask], preds[mask], num_iter=num_iter
-    #         ),
-    #         "precision": precision_bootstrap_ci(
-    #             dp["target"][mask], preds[mask], num_iter=num_iter
-    #         ),
-    #     }
-    #     for name, mask in [
-    #         ("overall", np.ones_like(probs, dtype=bool)),
-    #         *(
-    #             (f"in_slice_{slice_idx}", (dp["slices"][:, slice_idx] == 1))
-    #             for slice_idx in range(dp["slices"].shape[-1])
-    #         ),
-    #         ("out_slice", dp["slices"].sum(axis=1) == 0),
-    #     ]
-    # }
     metrics = {
         name: {
-            "auroc": roc_auc_score(dp["target"][mask], probs[mask])
+            "auroc": auroc_bootstrap_ci(
+                dp["target"][mask], probs[mask], num_iter=num_iter
+            )
             if len(np.unique(dp["target"][mask])) == 2
             else np.nan,
-            "recall": recall_score(dp["target"][mask], preds[mask]),
-            "precision": precision_score(dp["target"][mask], preds[mask]),
-            "f1_score": f1_score(dp["target"][mask], preds[mask]),
+            "recall": recall_bootstrap_ci(
+                dp["target"][mask], preds[mask], num_iter=num_iter
+            ),
+            "precision": precision_bootstrap_ci(
+                dp["target"][mask], preds[mask], num_iter=num_iter
+            ),
         }
         for name, mask in [
             ("overall", np.ones_like(probs, dtype=bool)),
@@ -160,6 +150,24 @@ def compute_model_metrics(
             ("out_slice", dp["slices"].sum(axis=1) == 0),
         ]
     }
+    # metrics = {
+    #     name: {
+    #         "auroc": roc_auc_score(dp["target"][mask], probs[mask])
+    #         if len(np.unique(dp["target"][mask])) == 2
+    #         else np.nan,
+    #         "recall": recall_score(dp["target"][mask], preds[mask]),
+    #         "precision": precision_score(dp["target"][mask], preds[mask]),
+    #         "f1_score": f1_score(dp["target"][mask], preds[mask]),
+    #     }
+    #     for name, mask in [
+    #         ("overall", np.ones_like(probs, dtype=bool)),
+    #         *(
+    #             (f"in_slice_{slice_idx}", (dp["slices"][:, slice_idx] == 1))
+    #             for slice_idx in range(dp["slices"].shape[-1])
+    #         ),
+    #         ("out_slice", dp["slices"].sum(axis=1) == 0),
+    #     ]
+    # }
 
     return flatten_dict(metrics) if flat else metrics
 

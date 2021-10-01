@@ -32,19 +32,20 @@ class MixtureModelSDM(SliceDiscoveryMethod):
     class Config(SliceDiscoveryMethod.Config):
         weight_y_log_likelihood: float = 1
         covariance_type: str = "diag"
-        pca_components: int = 128
+        n_components: int = 128
         n_clusters: int = 25
-        explain_w_model: bool = False
         init_params: str = "error"
 
-    RESOURCES_REQUIRED = {"cpu": 1}
+        explain_w_model: bool = False
+
+    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 0}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
-        if self.config.pca_components is None:
+        if self.config.n_components is None:
             self.pca = None
         else:
-            self.pca = PCA(n_components=self.config.pca_components)
+            self.pca = PCA(n_components=self.config.n_components)
         self.gmm = ErrorMixtureModel(
             n_components=self.config.n_clusters,
             weight_y_log_likelihood=self.config.weight_y_log_likelihood,
@@ -52,7 +53,9 @@ class MixtureModelSDM(SliceDiscoveryMethod):
             init_params=self.config.init_params,
         )
 
-    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    @requires_columns(
+        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
+    )
     def fit(
         self,
         data_dp: mk.DataPanel,
@@ -62,14 +65,16 @@ class MixtureModelSDM(SliceDiscoveryMethod):
         if self.pca is not None:
             self.pca.fit(X=emb[:1000])
             emb = self.pca.transform(X=emb)
-        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["pred"])
+        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["probs"])
 
         self.slice_cluster_indices = (
             -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
         ).argsort()[: self.config.n_slices]
         return self
 
-    @requires_columns(dp_arg="data_dp", columns=[VariableColumn("self.config.emb")])
+    @requires_columns(
+        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
+    )
     def transform(
         self,
         data_dp: mk.DataPanel,
@@ -79,13 +84,13 @@ class MixtureModelSDM(SliceDiscoveryMethod):
             emb = self.pca.transform(X=emb)
         dp = data_dp.view()
         clusters = self.gmm.predict_proba(
-            emb, y=data_dp["target"], y_hat=data_dp["pred"]
+            emb, y=data_dp["target"], y_hat=data_dp["probs"]
         )
 
         dp["pred_slices"] = clusters[:, self.slice_cluster_indices]
         return dp
 
-    @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
+    # @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
     def explain(
         self, words_dp: mk.DataPanel, data_dp: mk.DataPanel = None
     ) -> mk.DataPanel:
@@ -239,7 +244,7 @@ class ErrorMixtureModel(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in tqdm(range(1, self.max_iter + 1)):
+            for n_iter in range(1, self.max_iter + 1):  # removed tqdm from here
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)

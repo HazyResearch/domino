@@ -14,7 +14,7 @@ from meerkat.columns.lambda_column import PIL
 from meerkat.nn import ClassificationOutputColumn
 from pytorch_lightning.loggers import WandbLogger
 from terra import Task
-from terra.torch import TerraModule
+from terra.pytorch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
@@ -49,10 +49,12 @@ def default_train_transform(img: PIL.Image.Image):
 class Classifier(pl.LightningModule, TerraModule):
 
     DEFAULT_CONFIG = {
-        "lr": 1e-4,
+        "lr": 1e-6,
         "model_name": "resnet",
+        "data_shape": (12000, 19),
         "arch": "resnet18",
         "pretrained": True,
+        "clip_loss": False,
         "num_classes": 2,
         "transform": default_transform,
         "train_transform": default_train_transform,
@@ -77,6 +79,8 @@ class Classifier(pl.LightningModule, TerraModule):
             metrics, num_classes=self.config["num_classes"]
         )
         self.valid_preds = PredLogger()
+
+        self.clip_func = nn.CrossEntropyLoss(reduction="none")
 
     def _get_metrics(self, metrics: List[str], num_classes: int = None):
         num_classes = self.config["num_classes"] if num_classes is None else num_classes
@@ -106,7 +110,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 num_classes=self.config["num_classes"], arch=self.config["arch"]
             )
         elif self.config["model_name"] == "dense_inception":
-            self.model = DenseInception()
+            self.model = DenseInception(data_shape=self.config["data_shape"])
         else:
             raise ValueError(f"Model name {self.config['model_name']} not supported.")
 
@@ -124,31 +128,66 @@ class Classifier(pl.LightningModule, TerraModule):
         embs = self.model(inputs)
         text_embs = self.text_model(texts)
 
-        cosine_loss = nn.functional.cosine_embedding_loss(
-            embs, text_embs, torch.ones_like(text_embs)[:, 0]
+        labels = torch.ones_like(text_embs)[:, 0].long()
+        if self.config["clip_loss"]:
+            logits = text_embs @ embs.T
+            loss_t = self.clip_func(logits, labels)
+            loss_i = self.clip_func(logits.T, labels)
+            loss = (loss_i + loss_t) / 2
+            multimodal_loss = loss.mean()
+
+        else:
+            multimodal_loss = nn.functional.cosine_embedding_loss(
+                embs, text_embs, labels
+            )
+
+        outs = self.forward(inputs)
+        ce_loss = nn.functional.cross_entropy(outs, targets)
+
+        loss = ce_loss + self.config["multimodal_weight"] * multimodal_loss
+
+        self.log("train_loss", loss, on_step=True, logger=True)
+        self.log("CE train_loss", ce_loss, on_step=True, logger=True)
+        self.log("multimodal train_loss", multimodal_loss, on_step=True, logger=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        inputs, texts, targets, sample_id = (
+            batch["input"],
+            batch["text"],
+            batch["target"],
+            batch["id"],
         )
 
         outs = self.forward(inputs)
         ce_loss = nn.functional.cross_entropy(outs, targets)
 
-        loss = ce_loss + self.config["cosine_weight"] * cosine_loss
-
-        self.log("train_loss", loss, on_step=True, logger=True)
-        self.log("CE train_loss", ce_loss, on_step=True, logger=True)
-        self.log("COS train_loss", cosine_loss, on_step=True, logger=True)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        inputs, targets, sample_id = batch["input"], batch["target"], batch["id"]
-
-        outs = self.forward(inputs)
-        loss = nn.functional.cross_entropy(outs, targets)
-        self.log("valid_loss", loss)
-
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
 
         self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+
+        embs = self.model(inputs)
+        text_embs = self.text_model(texts)
+
+        labels = torch.ones_like(text_embs)[:, 0].long()
+        if self.config["clip_loss"]:
+            logits = text_embs @ embs.T
+            loss_t = self.clip_func(logits, labels)
+            loss_i = self.clip_func(logits.T, labels)
+            loss = (loss_i + loss_t) / 2
+            multimodal_loss = loss.mean()
+
+        else:
+            multimodal_loss = nn.functional.cosine_embedding_loss(
+                embs, text_embs, labels
+            )
+
+        loss = ce_loss + self.config["multimodal_weight"] * multimodal_loss
+
+        self.log("valid_loss", loss)
+        self.log("CE valid_loss", ce_loss)
+        self.log("multimodal valid_loss", multimodal_loss)
 
     def validation_epoch_end(self, outputs) -> None:
         for metric_name, metric in self.metrics.items():
@@ -218,7 +257,7 @@ class BinaryMTClassifier(Classifier):
 def train(
     dp: mk.DataPanel,
     input_column: str,
-    text_column: str,
+    text_columns: List[str],
     target_column: Union[Sequence[str], str],
     id_column: str,
     model: Classifier = None,
@@ -230,6 +269,7 @@ def train(
     num_workers: int = 6,
     batch_size: int = 16,
     ckpt_monitor: str = "valid_accuracy",
+    ckpt_mode: str = "max",
     train_split: str = "train",
     valid_split: str = "valid",
     wandb_config: dict = None,
@@ -270,7 +310,7 @@ def train(
                 dirpath=run_dir,
                 monitor=ckpt_monitor,
                 save_top_k=1,
-                mode="max",
+                mode=ckpt_mode,
             )
         ]
     else:
@@ -297,10 +337,15 @@ def train(
     )
 
     if isinstance(target_column, str):
+        text_col = dp[text_columns[0]]
+        if len(text_columns) > 1:
+            for text_column in text_columns[1:]:
+                text_col = text_col + dp[text_column]
+
         dp = mk.DataPanel.from_batch(
             {
                 "input": dp[input_column],
-                "text": dp[text_column],
+                "text": text_col,
                 "target": dp[target_column].astype(int),
                 "id": dp[id_column],
                 "split": dp["split"],

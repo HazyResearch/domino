@@ -18,6 +18,7 @@ class SliceDiscoveryMethod(ABC):
         n_slices: int = 5
         emb_group: str = "main"
         emb: str = "emb"
+        xmodal_emb: str = "emb"
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 
@@ -40,17 +41,19 @@ class SliceDiscoveryMethod(ABC):
     def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
         pass
 
-    @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
+    # @requires_columns(dp_arg="words_dp", columns=[VariableColumn("self.config.emb")])
     def explain(self, words_dp: mk.DataPanel, data_dp: mk.DataPanel) -> mk.DataPanel:
         words_dp = words_dp.view()
         slice_proto = (
-            np.dot(data_dp["pred_slices"].T, data_dp["emb"])
+            np.dot(data_dp["pred_slices"].T, data_dp[self.config.xmodal_emb])
             / data_dp["pred_slices"].sum(axis=0, keepdims=True).T
         )
 
-        ref_proto = data_dp.lz[data_dp["target"] == 1]["emb"].data.mean(axis=0)
+        ref_proto = data_dp.lz[data_dp["target"] == 1][
+            self.config.xmodal_emb
+        ].data.mean(axis=0)
 
         words_dp["pred_slices"] = np.dot(
-            words_dp["emb"].data.numpy(), (slice_proto - ref_proto).T
+            words_dp["emb"].data, (slice_proto - ref_proto).T
         )
-        return words_dp[["word", "pred_slices", "frequency"]]
+        return words_dp[["word", "pred_slices"]]

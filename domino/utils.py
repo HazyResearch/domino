@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import math
 import os
@@ -27,6 +28,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.utilities.distributed import rank_zero_only
 from sklearn.metrics import roc_auc_score
 from terra import Task
+from torch._C import Value
 from torchmetrics import Metric
 
 
@@ -49,6 +51,16 @@ def merge_in_split(dp: mk.DataPanel, split_dp: mk.DataPanel):
     split_on = [col for col in split_dp.columns if (col != "split") and col != "index"]
     assert len(split_on) == 1
     split_on = split_on[0]
+
+    if split_dp[split_on].duplicated().any():
+        # convert the datapanel to one row per split_on id
+        df = split_dp[[split_on, "split"]].to_pandas()
+        gb = df.groupby(split_on)
+
+        # cannot have multiple splits per `split_on` id
+        assert (gb["split"].nunique() == 1).all()
+        split_dp = mk.DataPanel.from_pandas(gb["split"].first().reset_index())
+
     return dp.merge(split_dp, on=split_on)
 
 
@@ -400,3 +412,49 @@ def flatten_dict(d, parent_key="", sep="_"):
         else:
             items.append((new_key, v))
     return dict(items)
+
+
+def get_worker_assignment(
+    dp: mk.DataPanel,
+    worker_idx: int = None,
+    num_workers: int = None,
+):
+    if (worker_idx is None) != (num_workers is None):
+        raise ValueError("Must pass both `worker_idx` and `num_workers` or neither.")
+
+    if worker_idx is None:
+        return dp
+
+    return dp.lz[(np.arange(len(dp)) % num_workers) == worker_idx]
+
+
+def get_wandb_runs():
+    import pandas as pd
+    import wandb
+
+    api = wandb.Api()
+
+    # Project is specified by <entity/project-name>
+    runs = api.runs("hazy-research/domino")
+
+    config_list = []
+    for run in runs:
+        try:
+            train_model_run_id = int(run.name.split("=")[-1])
+        except ValueError:
+            continue
+
+        # .config contains the hyperparameters.
+        #  We remove special values that start with _.
+        config_list.append(
+            {
+                "name": run.name,
+                "state": run.state,
+                "start_time" "train_model_run_id": train_model_run_id,
+                **run.summary._json_dict,
+                **{k: v for k, v in run.config.items() if not k.startswith("_")},
+            }
+        )
+
+    df = pd.DataFrame(config_list)
+    return df

@@ -38,6 +38,10 @@ def embed_images(
 ) -> mk.DataPanel:
     if model == "resnet50":
         model = models.resnet50(pretrained=True)
+    elif model == "resnet50_random":
+        model = models.resnet50(pretrained=False)
+    elif model == "resnet18":
+        model = models.resnet18(pretrained=True)
     else:
         raise ValueError(f"Model {model} not supported.")
 
@@ -76,11 +80,13 @@ def embed_images(
     @torch.no_grad()
     def _score(batch: mk.TensorColumn):
         x = batch.data.to(device)
-        model(x)  # Run forward pass
+        out = model(x)  # Run forward pass
 
         return {
-            name: extractor.activation.cpu().detach().numpy()
-            for name, extractor in layer_to_extractor.items()
+            **{
+                name: extractor.activation.cpu().detach().numpy()
+                for name, extractor in layer_to_extractor.items()
+            },
         }
 
     model.to(device)
