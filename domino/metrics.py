@@ -110,15 +110,17 @@ def compute_expl_metrics(
     return pd.DataFrame(rows)
 
 
-@requires_columns(dp_arg="dp", columns=["output", "target", "slices"])
+@requires_columns(dp_arg="dp", columns=["target", "slices"])
 def compute_model_metrics(
     dp: mk.DataPanel,
     num_iter: int = 1000,
     threshold: float = 0.5,
     flat: bool = False,
 ):
-
-    probs = dp["output"].softmax(1)[:, 1]
+    if "output" in dp:
+        probs = dp["output"].softmax(1)[:, 1]
+    else:
+        probs = dp["probs"][:, 1]
     preds = (probs > threshold).float()
 
     # # KS: Hacky way to get around having one slice for now

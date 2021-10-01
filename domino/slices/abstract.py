@@ -74,7 +74,7 @@ def collect_settings(
 
 
 @terra.Task
-def filter_settings(settings_dp: List[mk.DataPanel], subset_size: int):
+def random_filter_settings(settings_dp: List[mk.DataPanel], subset_size: int):
     return settings_dp.lz[np.random.choice(len(settings_dp), subset_size)]
 
 

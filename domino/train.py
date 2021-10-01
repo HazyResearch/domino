@@ -11,12 +11,30 @@ import torch
 from ray import tune
 from ray.tune.progress_reporter import CLIReporter
 from torch import nn
+from torchvision.datasets import folder
 from tqdm.auto import tqdm
 
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
 from domino.utils import get_wandb_runs, get_worker_assignment, nested_getattr
 from domino.vision import Classifier, score, train
+
+
+def cache_loader(filepath: str):
+    if not isinstance(filepath, str):
+        return folder.default_loader(filepath)
+    LOCAL_DIR = "/tmp/domino_cache"
+    local_path = os.path.join(LOCAL_DIR, filepath[1:])
+    if os.path.exists(local_path):
+        try:
+            return folder.default_loader(local_path)
+        except OSError:
+            pass
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    img = folder.default_loader(filepath)
+    img.save(local_path)
+    return img
 
 
 @terra.Task
@@ -27,6 +45,7 @@ def train_model(
     run_dir: str = None,
     **kwargs,
 ):
+    dp["input"].loader = cache_loader
     return train(
         dp=dp,
         input_column="input",
@@ -103,6 +122,7 @@ def train_settings(
             df["train_settings_run_id"].isin(continue_run_ids)
             & (df["state"] == "finished")
         ]
+        print(len(finished_df))
         setting_to_run_dp = setting_dp.lz[
             ~setting_dp["setting_id"].isin(finished_df["setting_id"])
         ]
@@ -235,6 +255,18 @@ def score_settings(
         ),
         analysis.dataframe(),
     )
+
+
+@terra.Task
+def filter_settings(setting_dp: mk.DataPanel):
+    def _is_degraded(row: dict):
+        metrics = score_model.out(row["score_model_run_id"])[1]
+        return (
+            metrics["out_slice_recall_lower"]
+            > metrics["in_slice_0_recall_upper"] + 0.05
+        )
+
+    return setting_dp.filter(_is_degraded, input_columns=["score_model_run_id"])
 
 
 @terra.Task.make(no_load_args={"data_dp", "split_dp"})

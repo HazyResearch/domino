@@ -450,7 +450,7 @@ def get_wandb_runs():
             {
                 "name": run.name,
                 "state": run.state,
-                "train_model_run_id": train_model_run_id,
+                "start_time" "train_model_run_id": train_model_run_id,
                 **run.summary._json_dict,
                 **{k: v for k, v in run.config.items() if not k.startswith("_")},
             }
