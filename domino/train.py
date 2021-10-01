@@ -85,7 +85,8 @@ def train_settings(
 
     def _train_model(setting_spec):
         import terra
-
+        import meerkat.contrib.mimic.gcs
+        
         build_setting_run_id, dp = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,

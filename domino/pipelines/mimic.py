@@ -15,23 +15,22 @@ from domino.sdm import MixtureModelSDM, SpotlightSDM
 from domino.slices import collect_settings
 from domino.train import score_settings, synthetic_score_settings, train_settings
 
-NUM_GPUS = 1
-NUM_CPUS = 8
+NUM_GPUS = 4
+NUM_CPUS = 16
 ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS)
 
-data_dp = get_mimic_dp(skip_terra_cache=True)
+data_dp = get_mimic_dp(skip_terra_cache=False)
 
-split = split_dp_preloaded(dp=data_dp, skip_terra_cache=True)
+split = split_dp_preloaded(dp=data_dp, skip_terra_cache=False)
 
 ##CORRELATION##
-'''
 setting_dp = collect_settings(
     dataset="mimic",
     slice_category="correlation",
     data_dp=data_dp,
     num_corr=5,
     n=30_000,
-    skip_terra_cache=True,
+    skip_terra_cache=False,
 )
 '''
 ##RARE###
@@ -41,19 +40,30 @@ setting_dp = collect_settings(
     data_dp=data_dp,
     min_slice_frac=0.01,
     max_slice_frac=0.1,
-    num_frac = 1,
+    num_frac = 5,
     n = 30_000,
-    skip_terra_cache=True,
+    skip_terra_cache=False,
 )
 
-###NOISY FEATURE####
-
 ###NOISY LABEL####
+setting_dp = collect_settings(
+    dataset="mimic",
+    slice_category="noisy_label",
+    data_dp=data_dp,
+    min_slice_frac=0.01,
+    max_slice_frac=0.1,
+    num_frac = 5,
+    n = 30_000,
+    skip_terra_cache=False,
+)
+'''
+
+###NOISY FEATURE####
 
 setting_dp = setting_dp.load()
 #setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 3)]
 
-if True:
+if False:
     setting_dp = synthetic_score_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -67,6 +77,7 @@ if True:
         skip_terra_cache=True,
     )
 else:
+    #train_settings.out(57076) rare semi-synthetic
     setting_dp, _ = train_settings(
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -74,10 +85,11 @@ else:
         model_config={},  # {"pretrained": False},
         batch_size=256,
         val_check_interval=50,
-        max_epochs=15,
+        max_epochs=10,
         ckpt_monitor="valid_auroc",
         num_gpus=NUM_GPUS,
         num_cpus=NUM_CPUS,
+        skip_terra_cache=False
     )
 
     setting_dp, _ = score_settings(
@@ -88,6 +100,7 @@ else:
         num_gpus=NUM_GPUS,
         num_cpus=NUM_CPUS,
         split=["test", "valid"],
+        skip_terra_cache=True
     )
 
 
@@ -100,7 +113,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=True,
+        skip_terra_cache=False,
     ),
     "imagenet": embed_images(
         emb_type="imagenet",
@@ -111,7 +124,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=True,
+        skip_terra_cache=False,
     ),
     "clip": embed_images(
         emb_type="clip",
@@ -121,7 +134,7 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=True,
+        skip_terra_cache=False,
     ),
     "mimic_multimodal": embed_images(
         emb_type="mimic_multimodal",
@@ -131,20 +144,31 @@ embs = {
         img_column="cxr_jpg_1024",
         num_workers=7,
         mmap=True,
-        skip_terra_cache=True,
+        skip_terra_cache=False,
         file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0919_clip_vit_findingsimpressions_full/'
     ),
-    #"mimic_imageonly": embed_images(
-    #    emb_type="mimic_imageonly",
-    #    dp=data_dp,
-    #    split_dp=split,
-    #    splits=["valid", "test"],
-    #    img_column="cxr_jpg_1024",
-    #    num_workers=7,
-    #    mmap=True,
-    #    skip_terra_cache=True,
-    #    file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0926_domino_vit_imageonly/'
-    #)
+    "mimic_multimodal_class": embed_images(
+        emb_type="mimic_multimodal_class",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=False,
+        file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0927_clip_vit_findingsimpressions_full_classification/'
+    ),
+    "mimic_imageonly": embed_images(
+        emb_type="mimic_imageonly",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="cxr_jpg_1024",
+        num_workers=7,
+        mmap=True,
+        skip_terra_cache=True,
+        file_path='/pd/maya/rx-multimodal/classifier/checkpoints/0926_domino_vit_imageonly/'
+    )
 }
 
 
@@ -152,6 +176,7 @@ embs = {
 #words_dp = embed_words(words_dp=words_dp, skip_terra_cache=False)
 #words_dp = embed_words.out(6537).load()
 #words_dp = words_dp.lz[:int(1e4)]
+
 
 common_config = {
     "n_slices": 5,
@@ -161,7 +186,8 @@ common_config = {
             ("bit", "body"),
             ("clip", "emb"),
             ("mimic_multimodal", "emb"),
-            #("mimic_imageonly", "emb")
+            ("mimic_multimodal_class", "emb"),
+            ("mimic_imageonly", "emb")
         ]
     ),
     "xmodal_emb": "emb",
