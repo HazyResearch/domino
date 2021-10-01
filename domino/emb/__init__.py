@@ -32,7 +32,7 @@ def embed_images(
         from .bit import embed_images as _embed_images
 
         return _embed_images(dp=dp, img_column=img_column, **kwargs)
-    elif emb_type == "mimic_multimodal" or emb_type=="mimic_imageonly":
+    elif emb_type == "mimic_multimodal" or emb_type=="mimic_imageonly" or emb_type=="mimic_multimodal_class":
         from .mimic_multimodal import embed_images as _embed_images
 
         return _embed_images(dp=dp, img_column=img_column, file_path=file_path, **kwargs)

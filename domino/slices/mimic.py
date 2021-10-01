@@ -112,6 +112,39 @@ class MimicSliceBuilder(AbstractSliceBuilder):
         ]
         return dp
     
+    def build_noisy_label_setting(
+        self,
+        data_dp: mk.DataPanel,
+        target_name: str,
+        slice_name: str,
+        error_rate: float,
+        target_frac: float,
+        n: int,
+        **kwargs,
+    ):
+        data_dp = data_dp.view()
+        n_pos = int(n * target_frac)
+        data_dp["target"] = np.array(data_dp[target_name]==1)
+        data_dp["slices"] = np.array((data_dp[target_name]==1) & (data_dp[slice_name]==1)).reshape(-1,1)
+
+        pos_idxs = np.random.choice(
+            np.where(data_dp["target"] == 1)[0],
+            n_pos,
+            replace=False,
+        )
+        neg_idxs = np.random.choice(
+            np.where(data_dp["target"] == 0)[0],
+            n - n_pos,
+            replace=False,
+        )
+        dp = data_dp.lz[np.random.permutation(np.concatenate((pos_idxs, neg_idxs)))]
+
+        # flip the labels in the slice with probability equal to `error_rate
+        flip = (np.random.rand(len(dp)) < error_rate) * dp["slices"].any(axis=1)
+        dp["target"][flip] = np.abs(1 - dp["target"][flip])
+
+        return dp
+    
     def collect_correlation_settings(
         self,
         data_dp: mk.DataPanel,
@@ -207,8 +240,57 @@ class MimicSliceBuilder(AbstractSliceBuilder):
                                 "n": n,
                             },
                         }
-                        for slice_frac in np.geomspace(
+                        for slice_frac in np.linspace(
                             min_slice_frac, max_slice_frac, num_frac
+                        )
+                    ]
+                )
+        print('Number of Valid Settings:', len(settings))
+        return mk.DataPanel(settings)
+    
+    def collect_noisy_label_settings(
+        self,
+        data_dp: mk.DataPanel,
+        min_error_rate: float = 0.1,
+        max_error_rate: float = 0.5,
+        num_samples: int = 1,
+        num_slices: int = 3,
+        n: int = 100_000,
+    ) -> mk.DataPanel:
+        
+        data_dp = data_dp.view()
+        target_groups = LABEL_HIERARCHY.keys()
+
+        settings = []
+        for target in tqdm(target_groups):
+            targets = data_dp[target]==1
+            for subgroup in LABEL_HIERARCHY[target]:
+                in_slice = data_dp[subgroup]==1
+                out_slice = (in_slice == 0) & (targets == 1)
+
+                # get the maximum class balance (up to 0.5) for which the n is possible
+                target_frac = min(
+                    0.5,
+                    targets.sum() / n,
+                )
+                settings.extend(
+                    [
+                        {
+                            "dataset": "mimic",
+                            "slice_category": "noisy_label",
+                            "alpha": error_rate,
+                            "target_name": target,
+                            "slice_names": [subgroup],
+                            "build_setting_kwargs": {
+                                "target_frac": target_frac,
+                                "error_rate": error_rate,
+                                "n": n,
+                                "slice_name": subgroup,
+                                "target_name": target,
+                            },
+                        }
+                        for error_rate in np.linspace(
+                            min_error_rate, max_error_rate, num_samples
                         )
                     ]
                 )
