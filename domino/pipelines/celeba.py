@@ -66,6 +66,7 @@ setting_dp = concat_settings(
             min_corr=0.2,
             max_corr=0.8,
             num_corr=4,
+            match_mu=True,
             n=30_000,
         ),
     ]
@@ -84,9 +85,9 @@ if args.synthetic:
         split_dp=split,
         synthetic_kwargs={
             "sensitivity": 0.75,
-            "slice_sensitivities": 0.5,
+            "slice_sensitivities": 0.4,
             "specificity": 0.75,
-            "slice_specificities": 0.5,
+            "slice_specificities": 0.4,
         },
     )
 else:
@@ -129,15 +130,18 @@ else:
         )
     elif worker_idx is None:
         setting_dp, _ = train_settings(**train_settings_kwargs)
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
     else:
-        setting_dp, _ = train_settings(
-            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # setting_dp, _ = train_settings(
+        #     **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # )
+        setting_dp, _ = train_settings.out(
+            {2: 69628, 3: 69611, 4: 69606, 1: 69599, 5: 69588, 0: 69581}[worker_idx]
         )
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
+    quit()
 
     setting_dp = filter_settings(setting_dp)
-quit()
 words_dp = get_wiki_words(top_k=20_000, eng_only=True)
 phrase_dp = generate_phrases(
     words_dp=words_dp,

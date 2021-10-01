@@ -7,4 +7,4 @@ ln -s /pd/* /home
 
 
 source /home/common/envs/conda/bin/activate /home/common/envs/conda/envs/domino
-python /pd/sabri/code/domino/domino/pipelines/imagenet.py   
+python /pd/sabri/code/domino/domino/pipelines/imagenet.py   --synthetic

@@ -84,9 +84,9 @@ def train_settings(
     )
 
     def _train_model(setting_spec):
-        import terra
         import meerkat.contrib.mimic.gcs
-        
+        import terra
+
         build_setting_run_id, dp = build_setting(
             data_dp=data_dp,
             split_dp=split_dp,
@@ -123,7 +123,6 @@ def train_settings(
             df["train_settings_run_id"].isin(continue_run_ids)
             & (df["state"] == "finished")
         ]
-        print(len(finished_df))
         setting_to_run_dp = setting_dp.lz[
             ~setting_dp["setting_id"].isin(finished_df["setting_id"])
         ]
@@ -219,8 +218,8 @@ def score_settings(
     def _score_model(config):
         run_id = config.pop("train_model_run_id")
         score_run_id, score_dp = score_model(
-            model=train_model.get(run_id, "best_chkpt")["model"],
-            dp=train_model.inp(run_id)["dp"],
+            model=train_model.get(int(run_id), "best_chkpt")["model"],
+            dp=train_model.inp(int(run_id))["dp"],
             split=split,
             layers=layers,
             pbar=True,

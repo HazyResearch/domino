@@ -70,17 +70,17 @@ embs = {
         num_workers=7,
         mmap=True,
     ),
-    "imagenet": embed_images(
-        emb_type="imagenet",
-        model="resnet18",
-        dp=data_dp,
-        split_dp=split,
-        layers={"emb": "layer4"},
-        splits=["valid", "test"],
-        img_column="image",
-        num_workers=7,
-        mmap=True,
-    ),
+    # "imagenet": embed_images(
+    #     emb_type="imagenet",
+    #     model="resnet18",
+    #     dp=data_dp,
+    #     split_dp=split,
+    #     layers={"emb": "layer4"},
+    #     splits=["valid", "test"],
+    #     img_column="image",
+    #     num_workers=7,
+    #     mmap=True,
+    # ),
     "random": embed_images(
         emb_type="imagenet",
         dp=data_dp,
@@ -105,33 +105,24 @@ embs = {
 
 setting_dp = concat_settings(
     [
-        # collect_settings(
-        #     dataset="imagenet",
-        #     slice_category="rare",
-        #     data_dp=data_dp,
-        #     num_slices=1,
-        #     words_dp=words_dp,
-        #     min_slice_frac=0.03,
-        #     max_slice_frac=0.03,
-        #     n=30_000,
-        # ),
-        # collect_settings(
-        #     dataset="celeba",
-        #     slice_category="correlation",
-        #     data_dp=data_dp,
-        #     min_corr=0.5,
-        #     max_corr=0.5,
-        #     num_corr=1,
-        #     n=30_000,
-        # ),
+        collect_settings(
+            dataset="imagenet",
+            slice_category="rare",
+            data_dp=data_dp,
+            num_slices=4,
+            words_dp=words_dp,
+            min_slice_frac=0.01,
+            max_slice_frac=0.1,
+            n=30_000,
+        ),
         collect_settings(
             dataset="imagenet",
             slice_category="noisy_label",
             data_dp=data_dp,
-            num_slices=1,
+            num_slices=4,
             words_dp=words_dp,
-            min_error_rate=0.3,
-            max_error_rate=0.3,
+            min_error_rate=0.1,
+            max_error_rate=0.4,
             n=30_000,
         ),
     ]
@@ -149,9 +140,9 @@ if args.synthetic:
         split_dp=split,
         synthetic_kwargs={
             "sensitivity": 0.75,
-            "slice_sensitivities": 0.5,
+            "slice_sensitivities": 0.4,
             "specificity": 0.75,
-            "slice_specificities": 0.5,
+            "slice_specificities": 0.4,
         },
     )
 else:
@@ -194,12 +185,13 @@ else:
         )
     elif worker_idx is None:
         setting_dp, _ = train_settings(**train_settings_kwargs)
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
     else:
         setting_dp, _ = train_settings(
             **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
         )
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
 
     setting_dp = filter_settings(setting_dp)
 
@@ -208,12 +200,12 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("imagenet", "emb"),
+            ("random", "emb"),
             ("bit", "body"),
             ("clip", "emb"),
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            (None, "layer4"),
+            # (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",
@@ -224,25 +216,25 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        # {
-        #     "sdm_class": SpotlightSDM,
-        #     "sdm_config": {
-        #         "learning_rate": 1e-3,
-        #         **common_config,
-        #     },
-        # },
-        # {
-        #     "sdm_class": MultiaccuracySDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
-        # {
-        #     "sdm_class": GeorgeSDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
+        {
+            "sdm_class": SpotlightSDM,
+            "sdm_config": {
+                "learning_rate": 1e-3,
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": MultiaccuracySDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": GeorgeSDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
@@ -250,12 +242,12 @@ setting_dp = run_sdms(
                 **common_config,
             },
         },
-        # {
-        #     "sdm_class": ConfusionSDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
+        {
+            "sdm_class": ConfusionSDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
     ],
     skip_terra_cache=False,
 )
