@@ -10,13 +10,10 @@ from .utils import CorrelationImpossibleError, induce_correlation
 # this is a subset of the full attribute set
 ATTRIBUTES = [
     "bald",
-    "bangs",
     "black_hair",
     "blond_hair",
-    "blurry",
     "brown_hair",
     "eyeglasses",
-    "goatee",
     "gray_hair",
     "male",
     "mustache",
@@ -132,6 +129,7 @@ class CelebASliceBuilder(AbstractSliceBuilder):
         min_corr: float = 0.0,
         max_corr: float = 0.8,
         num_corr: int = 5,
+        match_mu: bool = False,
         n: int = 20_000,
     ):
 
@@ -152,7 +150,7 @@ class CelebASliceBuilder(AbstractSliceBuilder):
                             corr=corr,
                             attr_a=target,
                             attr_b=correlate,
-                            match_mu=False,
+                            match_mu=match_mu,
                             n=n,
                         )
 

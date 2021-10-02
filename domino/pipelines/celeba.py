@@ -66,6 +66,7 @@ setting_dp = concat_settings(
             min_corr=0.2,
             max_corr=0.8,
             num_corr=4,
+            match_mu=True,
             n=30_000,
         ),
     ]
@@ -84,9 +85,9 @@ if args.synthetic:
         split_dp=split,
         synthetic_kwargs={
             "sensitivity": 0.75,
-            "slice_sensitivities": 0.5,
+            "slice_sensitivities": 0.4,
             "specificity": 0.75,
-            "slice_specificities": 0.5,
+            "slice_specificities": 0.4,
         },
     )
 else:
@@ -129,15 +130,18 @@ else:
         )
     elif worker_idx is None:
         setting_dp, _ = train_settings(**train_settings_kwargs)
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
     else:
-        setting_dp, _ = train_settings(
-            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # setting_dp, _ = train_settings(
+        #     **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # )
+        setting_dp, _ = train_settings.out(
+            {2: 69628, 3: 69611, 4: 69606, 1: 69599, 5: 69588, 0: 69581}[worker_idx]
         )
-        setting_dp = score_settings(setting_dp=setting_dp, **score_settings_kwargs)
+        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
+    quit()
 
     setting_dp = filter_settings(setting_dp)
-quit()
 words_dp = get_wiki_words(top_k=20_000, eng_only=True)
 phrase_dp = generate_phrases(
     words_dp=words_dp,
@@ -176,6 +180,17 @@ embs = {
         num_workers=7,
         mmap=True,
     ),
+    "random": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+        model="resnet50_random",
+    ),
 }
 
 
@@ -183,12 +198,13 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("imagenet", "emb"),
-            ("bit", "body"),
-            ("clip", "emb"),
+            # ("imagenet", "emb"),
+            # ("bit", "body"),
+            # ("clip", "emb"),
+            ("random", "emb")
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            (None, "layer4"),
+            # (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",

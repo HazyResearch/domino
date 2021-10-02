@@ -20,6 +20,7 @@ try:
 except LookupError:
     nltk.download("wordnet")
 
+
 def _get_hypernyms(data_dp: mk.DataPanel):
     synsets = set(data_dp["synset"].unique())
     hypernyms = []
@@ -250,14 +251,6 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                             "n": n,
                             "slice_synsets": slice_synsets,
                             "target_synset": target_synset,
-<<<<<<< HEAD
-                        }
-                        for slice_frac in np.geomspace(
-                            min_slice_frac, max_slice_frac, num_frac
-                        )
-                    ] 
-                )
-=======
                         },
                     }
                     for slice_frac in np.geomspace(
@@ -314,7 +307,6 @@ class ImageNetSliceBuilder(AbstractSliceBuilder):
                     )
                 ]
             )
->>>>>>> 915f260cb23b84d95033fd68c60e604cc12c9818
         return mk.DataPanel(settings)
 
 

@@ -26,7 +26,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
         learning_rate: float = 1e-3  # default from the implementation
         device: Union[str, int] = 0
 
-    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 1}
+    RESOURCES_REQUIRED = {"cpu": 1}  # , "gpu": 1}
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
