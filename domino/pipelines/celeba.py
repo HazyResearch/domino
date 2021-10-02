@@ -192,7 +192,7 @@ common_config = {
             ("clip", "emb"),
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            (None, "layer4"),
+            # (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",

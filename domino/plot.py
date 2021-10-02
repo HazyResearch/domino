@@ -1,3 +1,5 @@
+from typing import List
+
 import meerkat as mk
 import pandas as pd
 
@@ -12,7 +14,7 @@ def coherence_metric(grouped_df):
 
 
 EMB_PALETTE = {
-    # "random": "#19416E",
+    "random": "#19416E",
     "bit": PALETTE[0],
     "imagenet": PALETTE[1],
     "clip": PALETTE[2],
@@ -22,18 +24,23 @@ EMB_PALETTE = {
 }
 
 
-def generate_group_df(run_sdms_id, score_sdms_id, slice_type):
-    setting_dp = run_sdms.out(run_sdms_id).load()
+def generate_group_df(
+    score_sdms_id: int, slice_type: str, spec_columns: List[str] = None
+):
     slice_df = score_sdms.out(score_sdms_id).load()
-    slice_df = pd.DataFrame(slice_df)
-    score_dp = mk.DataPanel.from_pandas(slice_df)
-    results_dp = mk.merge(
-        score_dp,
-        setting_dp["config/sdm", "alpha", "run_sdm_run_id", "sdm_class"],
-        on="run_sdm_run_id",
-    )
-    emb_col = results_dp["config/sdm"].map(lambda x: x["sdm_config"]["emb"][0])
-    results_dp["emb_type"] = emb_col
+    slice_df = slice_df.fillna(0)
+    results_dp = mk.DataPanel.from_pandas(slice_df)
+
+    if spec_columns is None:
+        spec_columns = ["emb_group", "alpha", "sdm_class"]
+    if len(spec_columns) > 0:
+        setting_dp = score_sdms.inp(score_sdms_id)["setting_dp"].load()
+        results_dp = mk.merge(
+            results_dp,
+            setting_dp[spec_columns + ["run_sdm_run_id"]],
+            on="run_sdm_run_id",
+        )
+    results_dp["emb_type"] = results_dp["emb_group"]
 
     results_df = results_dp.to_pandas()
     grouped_df = results_df.iloc[
@@ -50,5 +57,5 @@ def generate_group_df(run_sdms_id, score_sdms_id, slice_type):
     if slice_type == "correlation":
         grouped_df = grouped_df[grouped_df["alpha"] != 0.0]
     grouped_df["success"] = coherence_metric(grouped_df)
-    grouped_df["slice_type"] = [slice_type] * len(grouped_df)
+    # grouped_df["slice_type"] = [slice_type] * len(grouped_df)
     return grouped_df

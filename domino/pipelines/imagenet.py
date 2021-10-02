@@ -42,7 +42,7 @@ worker_idx, num_workers = args.worker_idx, args.num_workers
 print(f"{worker_idx=}, {num_workers=}")
 
 NUM_GPUS = torch.cuda.device_count()
-NUM_CPUS = psutil.cpu_count()
+NUM_CPUS = min(psutil.cpu_count(), 48)
 print(f"Found {NUM_GPUS=}, {NUM_CPUS=}")
 ray.init(num_gpus=NUM_GPUS, num_cpus=NUM_CPUS, ignore_reinit_error=True)
 
@@ -61,15 +61,15 @@ words_dp = get_wiki_words(top_k=10_000, eng_only=True)
 words_dp = embed_words(words_dp=words_dp)
 
 embs = {
-    "bit": embed_images(
-        emb_type="bit",
-        dp=data_dp,
-        split_dp=split,
-        splits=["valid", "test"],
-        img_column="image",
-        num_workers=7,
-        mmap=True,
-    ),
+    # "bit": embed_images(
+    #     emb_type="bit",
+    #     dp=data_dp,
+    #     split_dp=split,
+    #     splits=["valid", "test"],
+    #     img_column="image",
+    #     num_workers=7,
+    #     mmap=True,
+    # ),
     # "imagenet": embed_images(
     #     emb_type="imagenet",
     #     model="resnet18",
@@ -81,17 +81,17 @@ embs = {
     #     num_workers=7,
     #     mmap=True,
     # ),
-    "random": embed_images(
-        emb_type="imagenet",
-        dp=data_dp,
-        split_dp=split,
-        layers={"emb": "layer4"},
-        splits=["valid", "test"],
-        img_column="image",
-        num_workers=7,
-        mmap=True,
-        model="resnet50_random",
-    ),
+    # "random": embed_images(
+    #     emb_type="imagenet",
+    #     dp=data_dp,
+    #     split_dp=split,
+    #     layers={"emb": "layer4"},
+    #     splits=["valid", "test"],
+    #     img_column="image",
+    #     num_workers=7,
+    #     mmap=True,
+    #     model="resnet50_random",
+    # ),
     "clip": embed_images(
         emb_type="clip",
         dp=data_dp,
@@ -109,27 +109,28 @@ setting_dp = concat_settings(
             dataset="imagenet",
             slice_category="rare",
             data_dp=data_dp,
-            num_slices=4,
+            num_slices=1,
             words_dp=words_dp,
-            min_slice_frac=0.01,
-            max_slice_frac=0.1,
+            min_slice_frac=0.03,
+            max_slice_frac=0.03,
             n=30_000,
         ),
         collect_settings(
             dataset="imagenet",
             slice_category="noisy_label",
             data_dp=data_dp,
-            num_slices=4,
+            num_slices=1,
             words_dp=words_dp,
-            min_error_rate=0.1,
-            max_error_rate=0.4,
+            min_error_rate=0.15,
+            # max_error_rate=0.4,
             n=30_000,
         ),
     ]
 )
+print(len(setting_dp.load()))
 
 if args.sanity:
-    # filture
+    # filter
     setting_dp = random_filter_settings(setting_dp, subset_size=64)
 
 
@@ -200,8 +201,8 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("random", "emb"),
-            ("bit", "body"),
+            # ("random", "emb"),
+            # ("bit", "body"),
             ("clip", "emb"),
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
@@ -220,6 +221,7 @@ setting_dp = run_sdms(
             "sdm_class": SpotlightSDM,
             "sdm_config": {
                 "learning_rate": 1e-3,
+                "device": "cpu",
                 **common_config,
             },
         },
