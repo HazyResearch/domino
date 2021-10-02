@@ -64,6 +64,11 @@ def generate_group_df(score_sdms_id: int):
         (grouped_df["slice_category"] != "correlation") | (grouped_df["alpha"] != 0)
     ]
     grouped_df["success"] = coherence_metric(grouped_df)
+
+    # hard coded exclusions
+    if score_sdms_id == 77006:
+        grouped_df = grouped_df[grouped_df["slice_category"] != "rare"]
+
     return grouped_df
 
 
@@ -88,7 +93,7 @@ def sdm_barplot(
         df = df[df["emb_group"].isin(emb_groups)]
 
     if sdm_classes is not None:
-        df[df["sdm_class"].isin(sdm_classes)]
+        df = df[df["sdm_class"].isin(sdm_classes)]
 
     if filter is not None:
         df = filter(df)
@@ -110,4 +115,53 @@ def sdm_barplot(
 
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.ylim([0, 1])
+    # plt.savefig("figures/08-01_bar.pdf")
+
+
+def sdm_displot(
+    score_sdm_ids: List[int],
+    emb_groups: List[str] = None,
+    sdm_classes: List[str] = None,
+    filter: callable = None,
+):
+
+    # formatting
+    sns.set_style("whitegrid")
+    plt.tight_layout()
+    plt.figure(figsize=(3, 3))
+
+    # preparing dataframe
+    df = pd.concat(
+        [generate_group_df(score_sdms_id=run_id) for run_id in score_sdm_ids]
+    )
+
+    if emb_groups is not None:
+        df = df[df["emb_group"].isin(emb_groups)]
+
+    if sdm_classes is not None:
+        df = df[df["sdm_class"].isin(sdm_classes)]
+
+    if filter is not None:
+        df = filter(df)
+
+    # preparing pallette
+    pallette = {
+        group: color for group, color in EMB_PALETTE.items() if group in emb_groups
+    }
+
+    plt.figure(figsize=(2, 20))
+    plt.tight_layout()
+    sns.displot(
+        data=df,
+        x="precision_at_10",
+        hue="emb_group",
+        multiple="dodge",
+        bins=5,
+        shrink=0.8,
+        hue_order=pallette.keys(),
+        palette=sns.color_palette(pallette.values(), len(pallette)),
+        height=3,
+    )
+    sns.despine()
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     # plt.savefig("figures/08-01_bar.pdf")
