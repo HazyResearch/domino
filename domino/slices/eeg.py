@@ -113,7 +113,7 @@ class EegSliceBuilder(AbstractSliceBuilder):
         dp = data_dp.lz[np.random.permutation(np.concatenate((pos_idxs, neg_idxs)))]
 
         # flip the labels in the slice with probability equal to `error_rate`
-        flip = (np.random.rand(len(dp)) > error_rate) * dp["slices"].any(axis=1)
+        flip = (np.random.rand(len(dp)) < error_rate) * dp["slices"].any(axis=1)
         dp["target"][flip] = np.abs(1 - dp["target"][flip])
 
         return dp

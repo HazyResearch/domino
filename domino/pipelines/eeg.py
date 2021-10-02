@@ -144,6 +144,7 @@ else:
         ckpt_monitor="valid_auroc",
         num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
+        continue_run_ids=[3922],
     )
 
     setting_dp, _ = p.run(
