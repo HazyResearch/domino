@@ -24,8 +24,8 @@ EMB_PALETTE = {
     "mimic_multimodal": PALETTE[3],
     "convirt": PALETTE[4],
     "activations": PALETTE[5],
-    "eeg": PALETTE[0],
-    "multimodal": PALETTE[2],
+    "eeg": PALETTE[1],
+    "multimodal": PALETTE[4],
 }
 
 
