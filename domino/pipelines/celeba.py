@@ -180,6 +180,17 @@ embs = {
         num_workers=7,
         mmap=True,
     ),
+    "random": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+        model="resnet50_random",
+    ),
 }
 
 
@@ -187,9 +198,10 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            ("imagenet", "emb"),
-            ("bit", "body"),
-            ("clip", "emb"),
+            # ("imagenet", "emb"),
+            # ("bit", "body"),
+            # ("clip", "emb"),
+            ("random", "emb")
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
             # (None, "layer4"),

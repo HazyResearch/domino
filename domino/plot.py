@@ -1,7 +1,10 @@
-from typing import List
+from re import I
+from typing import List, Mapping
 
+import matplotlib.pyplot as plt
 import meerkat as mk
 import pandas as pd
+import seaborn as sns
 
 from domino.evaluate import run_sdm, run_sdms, score_sdm_explanations, score_sdms
 
@@ -24,64 +27,29 @@ EMB_PALETTE = {
 }
 
 
-def generate_group_sabri_df(
-    score_sdms_id: int, slice_type: str, spec_columns: List[str] = None
-):
-    slice_df = score_sdms.out(score_sdms_id).load()
-    slice_df = slice_df.fillna(0)
-    results_dp = mk.DataPanel.from_pandas(slice_df)
+def generate_group_df(score_sdms_id: int):
+    setting_dp = score_sdms.inp(score_sdms_id)["setting_dp"].load()
+    score_df = score_sdms.out(score_sdms_id).load()
+    # if a method returns nans, we assign a score of 0
+    score_df = score_df.fillna(0)
+    score_dp = mk.DataPanel.from_pandas(score_df)
 
-    if spec_columns is None:
-        spec_columns = ["emb_group", "alpha", "sdm_class"]
-    if len(spec_columns) > 0:
-        setting_dp = score_sdms.inp(score_sdms_id)["setting_dp"].load()
-        results_dp = mk.merge(
-            results_dp,
-            setting_dp[spec_columns + ["run_sdm_run_id"]],
-            on="run_sdm_run_id",
-        )
-    results_dp["emb_type"] = results_dp["emb_group"]
-
-    results_df = results_dp.to_pandas()
-    grouped_df = results_df.iloc[
-        results_df.reset_index()
-        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_type"])[
-            "precision_at_10"
-        ]
-        .idxmax()
-        .astype(int)
+    spec_columns = [
+        col
+        for col in ["emb_group", "alpha", "sdm_class", "slice_category"]
+        if col not in score_dp
     ]
-    # grouped_df = grouped_df[grouped_df['emb_type'] != 'mimic_imageonly']
-    grouped_df["alpha"] = grouped_df["alpha"].round(3)
-
-    if slice_type == "correlation":
-        grouped_df = grouped_df[grouped_df["alpha"] != 0.0]
-    grouped_df["success"] = coherence_metric(grouped_df)
-    # grouped_df["slice_type"] = [slice_type] * len(grouped_df)
-    return grouped_df
-
-
-def generate_group_df(run_sdms_id, score_sdms_id, slice_type):
-    setting_dp = run_sdms.out(run_sdms_id).load()
-    slice_df = score_sdms.out(score_sdms_id).load()
-    slice_df = pd.DataFrame(slice_df)
-    score_dp = mk.DataPanel.from_pandas(slice_df)
     results_dp = mk.merge(
         score_dp,
-        setting_dp["config/sdm", "alpha", "run_sdm_run_id", "sdm_class"],
+        setting_dp[spec_columns + ["run_sdm_run_id"]],
         on="run_sdm_run_id",
     )
-    emb_col = results_dp["config/sdm"].map(
-        lambda x: x["sdm_config"]["emb"][0]
-        if x["sdm_config"]["emb"][0] != None
-        else "activations"
-    )
-    results_dp["emb_type"] = emb_col
 
     results_df = results_dp.to_pandas()
     grouped_df = results_df.iloc[
         results_df.reset_index()
-        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_type"])[
+        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group",])[
+            # .groupby(["slice_idx", "sdm_class", "alpha", "emb_group", "run_sdm_run_id"])[
             "precision_at_10"
         ]
         .idxmax()
@@ -89,8 +57,55 @@ def generate_group_df(run_sdms_id, score_sdms_id, slice_type):
     ]
     grouped_df["alpha"] = grouped_df["alpha"].round(3)
 
-    if slice_type == "correlation":
-        grouped_df = grouped_df[grouped_df["alpha"] != 0.0]
+    # we want to exclude correlation slices with alpha=0
+    grouped_df = grouped_df[
+        (grouped_df["slice_category"] != "correlation") | (grouped_df["alpha"] != 0)
+    ]
     grouped_df["success"] = coherence_metric(grouped_df)
-    # grouped_df["slice_type"] = [slice_type] * len(grouped_df)
     return grouped_df
+
+
+def sdm_barplot(
+    score_sdm_ids: List[int],
+    emb_groups: List[str] = None,
+    sdm_classes: List[str] = None,
+    filter: callable = None,
+):
+
+    # formatting
+    sns.set_style("whitegrid")
+    plt.tight_layout()
+    plt.figure(figsize=(5, 3))
+
+    # preparing dataframe
+    df = pd.concat(
+        [generate_group_df(score_sdms_id=run_id) for run_id in score_sdm_ids]
+    )
+
+    if emb_groups is not None:
+        df = df[df["emb_group"].isin(emb_groups)]
+
+    if sdm_classes is not None:
+        df[df["sdm_class"].isin(sdm_classes)]
+
+    if filter is not None:
+        df = filter(df)
+
+    # preparing pallette
+    pallette = {
+        group: color for group, color in EMB_PALETTE.items() if group in emb_groups
+    }
+
+    sns.barplot(
+        data=df,
+        y="precision_at_10",
+        x="slice_category",
+        hue="emb_group",
+        hue_order=pallette.keys(),
+        palette=sns.color_palette(pallette.values(), len(pallette)),
+    )
+    sns.despine()
+
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.ylim([0, 1])
+    # plt.savefig("figures/08-01_bar.pdf")
