@@ -24,7 +24,7 @@ class SpotlightSDM(SliceDiscoveryMethod):
         spotlight_size: int = 0.02  # recommended from spotlight paper
         num_steps: int = 1000
         learning_rate: float = 1e-3  # default from the implementation
-        device: Union[str, int] = 0
+        device: Union[str, int] = "cpu"
 
     RESOURCES_REQUIRED = {"cpu": 1}  # , "gpu": 1}
 

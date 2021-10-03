@@ -18,7 +18,12 @@ from domino.sdm import (
     SpotlightSDM,
 )
 from domino.slices import collect_settings
-from domino.train import score_settings, synthetic_score_settings, train_settings
+from domino.train import (
+    filter_settings,
+    score_settings,
+    synthetic_score_settings,
+    train_settings,
+)
 from domino.utils import balance_dp, split_dp
 
 NUM_GPUS = 2
@@ -158,6 +163,7 @@ else:
         split=["test", "valid"],
     )
 
+# setting_dp = filter_settings(setting_dp)
 
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
