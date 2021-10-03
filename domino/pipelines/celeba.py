@@ -90,6 +90,13 @@ if args.synthetic:
             "slice_specificities": 0.4,
         },
     )
+elif args.specific:
+    setting_dp = concat_settings(
+        [
+            score_settings.out(run_id)[0]
+            for run_id in [72022, 72023, 72024, 72027, 72033, 72032]
+        ]
+    )
 else:
     train_settings_kwargs = dict(
         setting_dp=setting_dp,
@@ -198,13 +205,13 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            # ("imagenet", "emb"),
-            # ("bit", "body"),
-            # ("clip", "emb"),
-            ("random", "emb")
+            ("imagenet", "emb"),
+            ("bit", "body"),
+            ("clip", "emb"),
+            # ("random", "emb")
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            # (None, "layer4"),
+            (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",

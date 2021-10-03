@@ -61,15 +61,15 @@ words_dp = get_wiki_words(top_k=10_000, eng_only=True)
 words_dp = embed_words(words_dp=words_dp)
 
 embs = {
-    # "bit": embed_images(
-    #     emb_type="bit",
-    #     dp=data_dp,
-    #     split_dp=split,
-    #     splits=["valid", "test"],
-    #     img_column="image",
-    #     num_workers=7,
-    #     mmap=True,
-    # ),
+    "bit": embed_images(
+        emb_type="bit",
+        dp=data_dp,
+        split_dp=split,
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+    ),
     # "imagenet": embed_images(
     #     emb_type="imagenet",
     #     model="resnet18",
@@ -81,17 +81,17 @@ embs = {
     #     num_workers=7,
     #     mmap=True,
     # ),
-    # "random": embed_images(
-    #     emb_type="imagenet",
-    #     dp=data_dp,
-    #     split_dp=split,
-    #     layers={"emb": "layer4"},
-    #     splits=["valid", "test"],
-    #     img_column="image",
-    #     num_workers=7,
-    #     mmap=True,
-    #     model="resnet50_random",
-    # ),
+    "random": embed_images(
+        emb_type="imagenet",
+        dp=data_dp,
+        split_dp=split,
+        layers={"emb": "layer4"},
+        splits=["valid", "test"],
+        img_column="image",
+        num_workers=7,
+        mmap=True,
+        model="resnet50_random",
+    ),
     "clip": embed_images(
         emb_type="clip",
         dp=data_dp,
@@ -105,24 +105,24 @@ embs = {
 
 setting_dp = concat_settings(
     [
-        collect_settings(
-            dataset="imagenet",
-            slice_category="rare",
-            data_dp=data_dp,
-            num_slices=1,
-            words_dp=words_dp,
-            min_slice_frac=0.03,
-            max_slice_frac=0.03,
-            n=30_000,
-        ),
+        # collect_settings(
+        #     dataset="imagenet",
+        #     slice_category="rare",
+        #     data_dp=data_dp,
+        #     num_slices=1,
+        #     words_dp=words_dp,
+        #     min_slice_frac=0.03,
+        #     max_slice_frac=0.03,
+        #     n=30_000,
+        # ),
         collect_settings(
             dataset="imagenet",
             slice_category="noisy_label",
             data_dp=data_dp,
             num_slices=1,
             words_dp=words_dp,
-            min_error_rate=0.15,
-            # max_error_rate=0.4,
+            min_error_rate=0.3,
+            max_error_rate=0.3,
             n=30_000,
         ),
     ]
@@ -201,12 +201,12 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            # ("random", "emb"),
-            # ("bit", "body"),
+            ("random", "emb"),
+            ("bit", "body"),
             ("clip", "emb"),
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            # (None, "layer4"),
+            (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",
@@ -217,26 +217,26 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        {
-            "sdm_class": SpotlightSDM,
-            "sdm_config": {
-                "learning_rate": 1e-3,
-                "device": "cpu",
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": MultiaccuracySDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": GeorgeSDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
+        # {
+        #     "sdm_class": SpotlightSDM,
+        #     "sdm_config": {
+        #         "learning_rate": 1e-3,
+        #         "device": "cpu",
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": MultiaccuracySDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": GeorgeSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
@@ -244,12 +244,12 @@ setting_dp = run_sdms(
                 **common_config,
             },
         },
-        {
-            "sdm_class": ConfusionSDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
+        # {
+        #     "sdm_class": ConfusionSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
     ],
     skip_terra_cache=False,
 )

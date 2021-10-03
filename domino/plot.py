@@ -22,10 +22,18 @@ EMB_PALETTE = {
     "random": "#9CBDE8",
     "imagenet": "#9CBDE8",
     "bit": "#1B6C7B",
+    "activations": "#19416E",
     "clip": "#E27E51",
     "mimic_multimodal": "#EFAB79",
     "convirt": "#E27E51",
-    "activations": PALETTE[5],
+}
+
+SDM_PALETTE = {
+    "domino.sdm.confusion.ConfusionSDM": "#9CBDE8",
+    "domino.sdm.george.GeorgeSDM": "#19416E",
+    "domino.sdm.multiaccuracy.MultiaccuracySDM": "#53B7AE",
+    "domino.sdm.spotlight.SpotlightSDM": "#1B6C7B",
+    "domino.sdm.gmm.MixtureModelSDM": "#E27E51",
 }
 
 
@@ -48,6 +56,12 @@ def generate_group_df(score_sdms_id: int):
     )
 
     results_df = results_dp.to_pandas()
+
+    # activations are stored as 0, need to map to "activation"
+    results_df["emb_group"] = results_df["emb_group"].map(
+        lambda x: "activations" if x == 0 else x, na_action="ignore"
+    )
+
     grouped_df = results_df.iloc[
         results_df.reset_index()
         .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group",])[
@@ -75,6 +89,7 @@ def generate_group_df(score_sdms_id: int):
 @terra.Task
 def sdm_barplot(
     score_sdm_ids: List[int],
+    hue: str = "emb_group",
     emb_groups: List[str] = None,
     sdm_classes: List[str] = None,
     filter: callable = None,
@@ -90,7 +105,6 @@ def sdm_barplot(
     df = pd.concat(
         [generate_group_df(score_sdms_id=run_id) for run_id in score_sdm_ids]
     )
-
     if emb_groups is not None:
         df = df[df["emb_group"].isin(emb_groups)]
 
@@ -101,16 +115,22 @@ def sdm_barplot(
         df = filter(df)
 
     # preparing pallette
-    pallette = {
-        group: color for group, color in EMB_PALETTE.items() if group in emb_groups
-    }
-
+    pallette = (
+        {group: color for group, color in EMB_PALETTE.items() if group in emb_groups}
+        if hue == "emb_group"
+        else {
+            sdm_class: color
+            for sdm_class, color in SDM_PALETTE.items()
+            if sdm_class in sdm_classes
+        }
+    )
+    print(len(df))
     sns.barplot(
         data=df,
         y="precision_at_10",
         x="slice_category",
         order=["rare", "correlation", "noisy_label"],
-        hue="emb_group",
+        hue=hue,
         hue_order=pallette.keys(),
         palette=sns.color_palette(pallette.values(), len(pallette)),
     )
@@ -119,12 +139,13 @@ def sdm_barplot(
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.ylim([0, 1])
     plt.savefig(os.path.join(run_dir, "plot.pdf"))
-    plt.savefig("figures/sdm_displot.pdf")
+    plt.savefig("figures/sdm_barplot.pdf")
 
 
 @terra.Task
 def sdm_displot(
     score_sdm_ids: List[int],
+    hue: str = "emb_group",
     emb_groups: List[str] = None,
     sdm_classes: List[str] = None,
     filter: callable = None,
@@ -151,16 +172,22 @@ def sdm_displot(
         df = filter(df)
 
     # preparing pallette
-    pallette = {
-        group: color for group, color in EMB_PALETTE.items() if group in emb_groups
-    }
+    pallette = (
+        {group: color for group, color in EMB_PALETTE.items() if group in emb_groups}
+        if hue == "emb_group"
+        else {
+            sdm_class: color
+            for sdm_class, color in SDM_PALETTE.items()
+            if sdm_class in sdm_classes
+        }
+    )
 
     plt.figure(figsize=(2, 20))
     plt.tight_layout()
     sns.displot(
         data=df,
         x="precision_at_10",
-        hue="emb_group",
+        hue=hue,
         multiple="dodge",
         bins=5,
         shrink=0.8,
