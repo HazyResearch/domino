@@ -40,7 +40,7 @@ SDM_PALETTE = {
 }
 
 
-def generate_group_df(score_sdms_id: int):
+def generate_group_df(score_sdms_id: int, metric: str = "precision_at_10"):
     setting_dp = score_sdms.inp(score_sdms_id)["setting_dp"].load()
     score_df = score_sdms.out(score_sdms_id).load()
     # if a method returns nans, we assign a score of 0
@@ -69,7 +69,7 @@ def generate_group_df(score_sdms_id: int):
         results_df.reset_index()
         .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group",])[
             # .groupby(["slice_idx", "sdm_class", "alpha", "emb_group", "run_sdm_run_id"])[
-            "precision_at_10"
+            metric
         ]
         .idxmax()
         .astype(int)
@@ -202,3 +202,51 @@ def sdm_displot(
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.savefig(os.path.join(run_dir, "plot.pdf"))
     plt.savefig("figures/sdm_displot.pdf")
+
+
+def generate_expl_group_df(score_sdm_expl_id: int, metric: str = "precision_at_10"):
+    setting_dp = score_sdm_explanations.inp(score_sdm_expl_id)["setting_dp"].load()
+    score_df = score_sdm_explanations.out(score_sdm_expl_id).load()
+    # if a method returns nans, we assign a score of 0
+    score_df = score_df.fillna(0)
+    score_dp = mk.DataPanel.from_pandas(score_df)
+
+    spec_columns = [
+        col
+        for col in ["emb_group", "alpha", "sdm_class", "slice_category"]
+        if col not in score_dp
+    ]
+    results_dp = mk.merge(
+        score_dp,
+        setting_dp[spec_columns + ["run_sdm_run_id"]],
+        on="run_sdm_run_id",
+    )
+
+    results_df = results_dp.to_pandas()
+
+    # activations are stored as 0, need to map to "activation"
+    results_df["emb_group"] = results_df["emb_group"].map(
+        lambda x: "activations" if x == 0 else x, na_action="ignore"
+    )
+
+    grouped_df = results_df.iloc[
+        results_df.reset_index()
+        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group",])[
+            # .groupby(["slice_idx", "sdm_class", "alpha", "emb_group", "run_sdm_run_id"])[
+            metric
+        ]
+        .idxmax()
+        .astype(int)
+    ]
+    grouped_df["alpha"] = grouped_df["alpha"].round(3)
+
+    # we want to exclude correlation slices with alpha=0
+    grouped_df = grouped_df[
+        (grouped_df["slice_category"] != "correlation") | (grouped_df["alpha"] != 0)
+    ]
+
+    # hard coded exclusions
+    if score_sdm_expl_id == 77006:
+        grouped_df = grouped_df[grouped_df["slice_category"] != "rare"]
+
+    return grouped_df
