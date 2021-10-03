@@ -147,13 +147,6 @@ if args.synthetic:
             "slice_specificities": 0.4,
         },
     )
-elif args.specific:
-    setting_dp = concat_settings(
-        [
-            score_settings.out(run_id)[0]
-            for run_id in [50751, 50750, 49537, 49413, 49333, 49328]
-        ]
-    )
 else:
     train_settings_kwargs = dict(
         setting_dp=setting_dp,
@@ -195,14 +188,25 @@ else:
         )
     elif worker_idx is None:
         setting_dp, _ = train_settings(**train_settings_kwargs)
-        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
+        setting_dp, _ = score_settings(model_dp=setting_dp, **score_settings_kwargs)
     else:
-        setting_dp, _ = train_settings(
-            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # setting_dp, _ = train_settings(
+        #     **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
+        # )
+        setting_dp, _ = train_settings.out(
+            {
+                5: 106208,
+                2: 106182,
+                4: 106181,
+                0: 106175,
+                1: 106161,
+                6: 106160,
+                7: 106157,
+                3: 106155,
+            }[worker_idx]
         )
-
-        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
-
+        setting_dp, _ = score_settings(model_dp=setting_dp, **score_settings_kwargs)
+    quit()
     setting_dp = filter_settings(setting_dp)
 
 

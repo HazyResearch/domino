@@ -78,15 +78,13 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
 
 
 @requires_columns(dp_arg="word_dp", columns=["pred_slices", "word"])
-def compute_expl_metrics(
-    word_dp: mk.DataPanel, slice_synsets: List[str]
-) -> pd.DataFrame:
+def compute_expl_metrics(word_dp: mk.DataPanel, slice_names: List[str]) -> pd.DataFrame:
     from nltk.corpus import wordnet as wn
 
     rows = []
     ranks = rankdata(-word_dp["pred_slices"], axis=0, method="ordinal")
-    for slice_idx, slice_synset in enumerate(slice_synsets):
-        slice_synset = wn.synset(slice_synset)
+    for slice_idx, slice_name in enumerate(slice_names):
+        slice_synset = wn.synset(slice_name)
         lemmas = set(map(lambda x: x.lower(), slice_synset.lemma_names()))
         mask = word_dp["word"].isin(lemmas)
         lemma_ranks = ranks[mask]
@@ -101,6 +99,7 @@ def compute_expl_metrics(
                 {
                     "pred_slice_idx": pred_slice_idx,
                     "slice_idx": slice_idx,
+                    "slice_name": slice_name,
                     "slice_synset": slice_synset.name(),
                     **{k: v[pred_slice_idx] for k, v in metrics.items()},
                 }
@@ -125,7 +124,7 @@ def compute_model_metrics(
         else:
             probs = dp["probs"][:, 1]
 
-    preds = (probs > threshold).float()
+    preds = (probs > threshold).astype(float)
 
     # # KS: Hacky way to get around having one slice for now
     if len(dp["slices"].shape) == 1:
