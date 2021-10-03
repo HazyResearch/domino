@@ -1,3 +1,4 @@
+import os
 from re import I
 from typing import List, Mapping
 
@@ -5,6 +6,7 @@ import matplotlib.pyplot as plt
 import meerkat as mk
 import pandas as pd
 import seaborn as sns
+import terra
 
 from domino.evaluate import run_sdm, run_sdms, score_sdm_explanations, score_sdms
 
@@ -17,15 +19,15 @@ def coherence_metric(grouped_df):
 
 
 EMB_PALETTE = {
-    "random": "#19416E",
-    "bit": PALETTE[0],
-    "imagenet": PALETTE[1],
-    "clip": PALETTE[2],
-    "mimic_multimodal": PALETTE[3],
-    "convirt": PALETTE[4],
+    "random": "#9CBDE8",
+    "imagenet": "#9CBDE8",
+    "bit": "#1B6C7B",
+    "clip": "#E27E51",
+    "mimic_multimodal": "#EFAB79",
+    "convirt": "#E27E51",
     "activations": PALETTE[5],
-    "eeg": PALETTE[1],
-    "multimodal": PALETTE[4],
+    "eeg": "#1B6C7B",
+    "multimodal": "#E27E51",
 }
 
 
@@ -72,11 +74,13 @@ def generate_group_df(score_sdms_id: int):
     return grouped_df
 
 
+@terra.Task
 def sdm_barplot(
     score_sdm_ids: List[int],
     emb_groups: List[str] = None,
     sdm_classes: List[str] = None,
     filter: callable = None,
+    run_dir: str = None,
 ):
 
     # formatting
@@ -107,6 +111,7 @@ def sdm_barplot(
         data=df,
         y="precision_at_10",
         x="slice_category",
+        order=["rare", "correlation", "noisy_label"],
         hue="emb_group",
         hue_order=pallette.keys(),
         palette=sns.color_palette(pallette.values(), len(pallette)),
@@ -115,14 +120,17 @@ def sdm_barplot(
 
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.ylim([0, 1])
-    # plt.savefig("figures/08-01_bar.pdf")
+    plt.savefig(os.path.join(run_dir, "plot.pdf"))
+    plt.savefig("figures/sdm_barplot.pdf")
 
 
+@terra.Task
 def sdm_displot(
     score_sdm_ids: List[int],
     emb_groups: List[str] = None,
     sdm_classes: List[str] = None,
     filter: callable = None,
+    run_dir: str = None,
 ):
 
     # formatting
@@ -164,4 +172,5 @@ def sdm_displot(
     )
     sns.despine()
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    # plt.savefig("figures/08-01_bar.pdf")
+    plt.savefig(os.path.join(run_dir, "plot.pdf"))
+    plt.savefig("figures/sdm_displot.pdf")

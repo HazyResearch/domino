@@ -246,6 +246,7 @@ def score_settings(
         "score_model_run_id",
         "synthetic_preds",
     ]
+
     return (
         mk.merge(
             model_dp,

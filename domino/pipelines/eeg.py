@@ -49,7 +49,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["collect_settings"])
+p = Pipeline(to_rerun=["run_sdms"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -132,6 +132,7 @@ else:
     }
     setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
+        task_run_id=3960,
         task=train_settings,
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -144,11 +145,11 @@ else:
         ckpt_monitor="valid_auroc",
         num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
-        continue_run_ids=[3922],
     )
 
     setting_dp, _ = p.run(
         parent_tasks=["train_settings"],
+        task_run_id=4002,
         task=score_settings,
         model_dp=setting_dp,
         batch_size=16,
