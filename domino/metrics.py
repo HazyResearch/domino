@@ -226,3 +226,9 @@ def precision_bootstrap_ci(
     targets: np.ndarray, preds: np.ndarray, num_iter: int = 10000, alpha: float = 0.05
 ):
     return compute_bootstrap_ci(targets[preds == 1], num_iter=num_iter, alpha=alpha)
+
+
+def accuracy_bootstrap_ci(
+    targets: np.ndarray, preds: np.ndarray, num_iter: int = 10000, alpha: float = 0.05
+):
+    return compute_bootstrap_ci(targets == preds, num_iter=num_iter, alpha=alpha)
