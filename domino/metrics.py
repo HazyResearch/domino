@@ -118,9 +118,13 @@ def compute_model_metrics(
     flat: bool = False,
 ):
     if "output" in dp:
-        probs = dp["output"].softmax(1)[:, 1]
+        probs = dp["output"].softmax(1)[:, 1].numpy()
     else:
-        probs = dp["probs"][:, 1]
+        if isinstance(dp["probs"], mk.TensorColumn):
+            probs = dp["probs"][:, 1].numpy()
+        else:
+            probs = dp["probs"][:, 1]
+
     preds = (probs > threshold).float()
 
     # # KS: Hacky way to get around having one slice for now
