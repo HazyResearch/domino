@@ -260,7 +260,7 @@ setting_dp = run_sdms(
         #     },
         # },
     ],
-    skip_terra_cache=True,
+    skip_terra_cache=False,
 )
 
 
