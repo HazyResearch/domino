@@ -105,26 +105,6 @@ embs = {
 
 setting_dp = concat_settings(
     [
-        # collect_settings(
-        #     dataset="imagenet",
-        #     slice_category="rare",
-        #     data_dp=data_dp,
-        #     num_slices=1,
-        #     words_dp=words_dp,
-        #     min_slice_frac=0.03,
-        #     max_slice_frac=0.03,
-        #     n=30_000,
-        # ),
-        # collect_settings(
-        #     dataset="imagenet",
-        #     slice_category="noisy_label",
-        #     data_dp=data_dp,
-        #     num_slices=1,
-        #     words_dp=words_dp,
-        #     min_error_rate=0.3,
-        #     max_error_rate=0.3,
-        #     n=30_000,
-        # ),
         collect_settings(
             dataset="imagenet",
             slice_category="rare",
@@ -182,14 +162,12 @@ else:
         # we do not use imagenet pretrained models, since the classification task is
         # a subset of imagenet
         model_config={"pretrained": False},
-        num_gpus=4,
-        num_cpus=32,
         batch_size=256,
         # val_check_interval=250,
         check_val_every_n_epoch=2,
         max_epochs=10,
         ckpt_monitor="valid_auroc",
-        continue_run_ids=[46915, 46933, 46934, 46914, 46913, 46928],
+        # continue_run_ids=[46915, 46933, 46934, 46914, 46913, 46928],
         # continue_run_ids=[56437, 56436, 56427, 56418],
     )
 
@@ -232,12 +210,12 @@ common_config = {
     "n_slices": 5,
     "emb": tune.grid_search(
         [
-            # ("random", "emb"),
-            # ("bit", "body"),
+            ("random", "emb"),
+            ("bit", "body"),
             ("clip", "emb"),
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
-            # (None, "layer4"),
+            (None, "layer4"),
         ]
     ),
     "xmodal_emb": "emb",
@@ -248,26 +226,26 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        {
-            "sdm_class": SpotlightSDM,
-            "sdm_config": {
-                "learning_rate": 1e-3,
-                "device": "cpu",
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": MultiaccuracySDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
-        {
-            "sdm_class": GeorgeSDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
+        # {
+        #     "sdm_class": SpotlightSDM,
+        #     "sdm_config": {
+        #         "learning_rate": 1e-3,
+        #         "device": "cpu",
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": MultiaccuracySDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
+        # {
+        #     "sdm_class": GeorgeSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
@@ -275,12 +253,12 @@ setting_dp = run_sdms(
                 **common_config,
             },
         },
-        {
-            "sdm_class": ConfusionSDM,
-            "sdm_config": {
-                **common_config,
-            },
-        },
+        # {
+        #     "sdm_class": ConfusionSDM,
+        #     "sdm_config": {
+        #         **common_config,
+        #     },
+        # },
     ],
     skip_terra_cache=True,
 )

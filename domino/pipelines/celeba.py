@@ -207,8 +207,8 @@ common_config = {
         [
             # ("imagenet", "emb"),
             # ("bit", "body"),
-            # ("clip", "emb"),
-            ("random", "emb")
+            ("clip", "emb"),
+            # ("random", "emb")
             # passing None for emb group tells run_sdms that the embedding is in
             # the score_dp – this for the model embeddings
             # (None, "layer4"),
@@ -222,25 +222,25 @@ setting_dp = run_sdms(
     xmodal_emb_dp=embs["clip"],
     word_dp=words_dp,
     sdm_config=[
-        # {
-        #     "sdm_class": SpotlightSDM,
-        #     "sdm_config": {
-        #         "learning_rate": 1e-3,
-        #         **common_config,
-        #     },
-        # },
-        # {
-        #     "sdm_class": MultiaccuracySDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
-        # {
-        #     "sdm_class": GeorgeSDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
+        {
+            "sdm_class": SpotlightSDM,
+            "sdm_config": {
+                "learning_rate": 1e-3,
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": MultiaccuracySDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
+        {
+            "sdm_class": GeorgeSDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
         {
             "sdm_class": MixtureModelSDM,
             "sdm_config": {
@@ -248,12 +248,12 @@ setting_dp = run_sdms(
                 **common_config,
             },
         },
-        # {
-        #     "sdm_class": ConfusionSDM,
-        #     "sdm_config": {
-        #         **common_config,
-        #     },
-        # },
+        {
+            "sdm_class": ConfusionSDM,
+            "sdm_config": {
+                **common_config,
+            },
+        },
     ],
     skip_terra_cache=False,
 )
