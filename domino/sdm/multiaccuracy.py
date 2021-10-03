@@ -23,6 +23,7 @@ class MultiaccuracySDM(SliceDiscoveryMethod):
     class Config(SliceDiscoveryMethod.Config):
         eta: float = 0.1  # step size for the logits update, see final line algorithm 1
         dev_valid_frac: float = 0.3  # the fraction of data held out for computing corr
+        partition_size_threshold: int = 10
 
     RESOURCES_REQUIRED = {"cpu": 1, "gpu": 0}
 
@@ -87,7 +88,10 @@ class MultiaccuracySDM(SliceDiscoveryMethod):
                 # derivative of the cross entropy loss with respect to predictions
                 partition_dev_train = np.where(partition[dev_train_idxs] == 1)[0]
                 partition_dev_valid = np.where(partition[dev_valid_idxs] == 1)[0]
-
+                if (
+                    len(partition_dev_train) < self.config.partition_size_threshold
+                ) or (len(partition_dev_valid) < self.config.partition_size_threshold):
+                    continue
                 rr = Ridge(alpha=1)
                 rr.fit(
                     latent[dev_train_idxs][partition_dev_train],
