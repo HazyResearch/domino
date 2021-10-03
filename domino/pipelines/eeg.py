@@ -54,7 +54,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["collect_settings"])
+p = Pipeline(to_rerun=["score_settings"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -111,7 +111,6 @@ setting_dp = mk.concat([setting_dp1.load(), setting_dp2.load(), setting_dp3.load
 
 # setting_dp = setting_dp.load()
 
-# setting_dp = setting_dp.lz[np.random.choice(len(setting_dp), 8)]
 
 if False:
     setting_dp = p.run(
@@ -137,7 +136,7 @@ else:
     }
     setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
-        task_run_id=3960,
+        task_run_id=4497,
         task=train_settings,
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -163,7 +162,7 @@ else:
         split=["test", "valid"],
     )
 
-# setting_dp = filter_settings(setting_dp)
+setting_dp = filter_settings(setting_dp)
 
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
