@@ -9,7 +9,8 @@ import pandas as pd
 import PIL
 import terra
 import torch
-from meerkat.contrib.mimic import GCSImageColumn, build_mimic_dp
+
+# from meerkat.contrib.mimic import GCSImageColumn, build_mimic_dp
 from terra import Task
 from torchvision.transforms import Compose, Lambda, Normalize, Resize, ToTensor
 from torchxrayvision.datasets import XRayCenterCrop, XRayResizer, normalize

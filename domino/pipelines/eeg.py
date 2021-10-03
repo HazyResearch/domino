@@ -18,7 +18,12 @@ from domino.sdm import (
     SpotlightSDM,
 )
 from domino.slices import collect_settings
-from domino.train import score_settings, synthetic_score_settings, train_settings
+from domino.train import (
+    filter_settings,
+    score_settings,
+    synthetic_score_settings,
+    train_settings,
+)
 from domino.utils import balance_dp, split_dp
 
 NUM_GPUS = 2
@@ -49,7 +54,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["collect_settings"])
+p = Pipeline(to_rerun=["run_sdms"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -132,6 +137,7 @@ else:
     }
     setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
+        task_run_id=3960,
         task=train_settings,
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -148,6 +154,7 @@ else:
 
     setting_dp, _ = p.run(
         parent_tasks=["train_settings"],
+        task_run_id=4002,
         task=score_settings,
         model_dp=setting_dp,
         batch_size=16,
@@ -156,6 +163,7 @@ else:
         split=["test", "valid"],
     )
 
+# setting_dp = filter_settings(setting_dp)
 
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],

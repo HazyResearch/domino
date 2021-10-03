@@ -26,6 +26,9 @@ EMB_PALETTE = {
     "clip": "#E27E51",
     "mimic_multimodal": "#EFAB79",
     "convirt": "#E27E51",
+    "activations": PALETTE[5],
+    "eeg": "#1B6C7B",
+    "multimodal": "#E27E51",
 }
 
 SDM_PALETTE = {

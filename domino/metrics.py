@@ -140,6 +140,9 @@ def compute_model_metrics(
             "precision": precision_bootstrap_ci(
                 dp["target"][mask], preds[mask], num_iter=num_iter
             ),
+            "accuracy": accuracy_bootstrap_ci(
+                dp["target"][mask], preds[mask], num_iter=num_iter
+            ),
         }
         for name, mask in [
             ("overall", np.ones_like(probs, dtype=bool)),
