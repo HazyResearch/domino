@@ -54,7 +54,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["run_sdms"])
+p = Pipeline(to_rerun=["collect_settings"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -75,7 +75,7 @@ setting_dp1 = p.run(
     data_dp=data_dp,
     correlate_list=["age"],
     correlate_thresholds=[1],
-    num_corr=5,
+    num_corr=10,
     n=8000,
 )
 
@@ -87,7 +87,7 @@ setting_dp2 = p.run(
     data_dp=data_dp,
     attributes=["age"],
     attribute_thresholds=[1],
-    num_frac=5,
+    num_frac=10,
     n=8000,
     min_slice_frac=0.01,
     max_slice_frac=0.5,
@@ -101,7 +101,7 @@ setting_dp3 = p.run(
     data_dp=data_dp,
     attributes=["age"],
     attribute_thresholds=[1],
-    num_samples=5,
+    num_samples=10,
     n=8000,
     min_error_rate=0.1,
     max_error_rate=0.5,
