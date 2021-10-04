@@ -27,6 +27,28 @@ ATTRIBUTES = [
     "young",
 ]
 
+ATTRIBUTE_SYNSETS = {
+    "bald": ["bald.a.01", "bald.v.01"],
+    "black_hair": ["black.a.01", "dark.v.01"],
+    "blond_hair": ["blond.a.01", "golden.a.01"],
+    "brown_hair": ["brown.a.01", "brunet.n.01", "brunette.a.01"],
+    "eyeglasses": ["glasses.n.01", "sunglasses.n.01"],
+    "gray_hair": ["gray.a.01", "silver.a.01"],
+    "male": ["male.a.01", "man.n.01"],
+    "mustache": ["mustache.n.01"],
+    "no_beard": ["beardless.a.01"],
+    "smiling": ["smile.v.01", "smile.n.01"],
+    "wearing_earrings": ["earring.n.01", "stud.n.02"],
+    "wearing_hat": ["cap.n.01", "hat.n.01"],
+    "wearing_lipstick": ["lipstick.n.01", "makeup.n.01"],
+    "wearing_necklace": [
+        "necklace.n.01",
+        "chain.n.01",
+    ],
+    "wearing_necktie": ["necktie.n.01"],
+    "young": ["young.a.01", "teen.a.01", "youth.n.01"],
+}
+
 
 class CelebASliceBuilder(AbstractSliceBuilder):
     def build_correlation_setting(
