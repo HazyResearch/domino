@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from domino.metrics import compute_expl_metrics, compute_sdm_metrics
 from domino.sdm.abstract import SliceDiscoveryMethod
+from domino.sdm.gmm import MixtureModelSDM
 from domino.slices.abstract import build_setting
 from domino.train import score_model
 
@@ -189,6 +190,42 @@ def score_sdms(setting_dp: mk.DataPanel, spec_columns: Sequence[str] = None):
         )
         dfs.append(metrics_df)
 
+    return pd.concat(dfs, axis=0)
+
+
+def run_sdm_explanations(
+    setting_dp: mk.DataPanel,
+    xmodal_emb_dp: Union[mk.DataPanel, Dict[str, mk.DataPanel]],
+    word_dp: mk.DataPanel = None,
+    id_column: str = "image_id",
+    spec_columns: Sequence[str] = None,
+):
+    setting_dp = setting_dp.lz[
+        (setting_dp["emb_group"] == "clip")
+        & (setting_dp["sdm_class"] == "domino.sdm.gmm.MixtureModelSDM")
+    ]
+    cols = ["target_name", "run_sdm_run_id"]
+    if spec_columns is not None:
+        cols += spec_columns
+
+    dfs = []
+    sdm = MixtureModelSDM()
+    for row in tqdm(setting_dp):
+        slice_dp = run_sdm.out(run_id=row["run_sdm_run_id"])[0].load()
+        if sdm.config.xmodal_emb in slice_dp:
+            slice_dp.remove_column(sdm.config.xmodal_emb)
+        slice_dp = slice_dp.merge(
+            xmodal_emb_dp[[id_column, sdm.config.xmodal_emb]], on=id_column
+        )
+
+        expl_dp = sdm.explain(word_dp, data_dp=slice_dp)
+
+        metrics_df = compute_expl_metrics(expl_dp, slice_names=row["slice_names"])
+
+        for col in cols:
+            metrics_df[col] = row[col]
+
+        dfs.append(metrics_df)
     return pd.concat(dfs, axis=0)
 
 

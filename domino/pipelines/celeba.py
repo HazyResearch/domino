@@ -110,7 +110,7 @@ else:
         check_val_every_n_epoch=2,
         max_epochs=10,
         ckpt_monitor="valid_auroc",
-        continue_run_ids=[56437, 56436, 56427, 56418],
+        # continue_run_ids=[56437, 56436, 56427, 56418],
     )
 
     score_settings_kwargs = dict(
@@ -139,14 +139,13 @@ else:
         setting_dp, _ = train_settings(**train_settings_kwargs)
         setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
     else:
-        # setting_dp, _ = train_settings(
-        #     **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
-        # )
-        setting_dp, _ = train_settings.out(
-            {2: 69628, 3: 69611, 4: 69606, 1: 69599, 5: 69588, 0: 69581}[worker_idx]
+        setting_dp, _ = train_settings(
+            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
         )
+        # setting_dp, _ = train_settings.out(
+        #     {2: 69628, 3: 69611, 4: 69606, 1: 69599, 5: 69588, 0: 69581}[worker_idx]
+        # )
         setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)[0]
-    quit()
 
     setting_dp = filter_settings(setting_dp)
 words_dp = get_wiki_words(top_k=20_000, eng_only=True)

@@ -6,6 +6,7 @@ import psutil
 import ray
 import torch
 from ray import tune
+from torch._C import Value
 
 from domino.data.imagenet import get_imagenet_dp
 from domino.emb import embed_images
@@ -167,77 +168,8 @@ if args.synthetic:
             "slice_specificities": 0.4,
         },
     )
-elif args.specific:
-    setting_dp = concat_settings(
-        [
-            score_settings.out(run_id)[0]
-            # for run_id in [50751, 50750, 49537, 49413, 49333, 49328]
-            for run_id in [
-                117102,
-                117105,
-                117104,
-                117107,
-                117106,
-                117108,
-                117115,
-                117114,
-            ]
-        ]
-    )
-    setting_dp = filter_settings(setting_dp)
 else:
-    train_settings_kwargs = dict(
-        setting_dp=setting_dp,
-        data_dp=data_dp,
-        split_dp=split,
-        # we do not use imagenet pretrained models, since the classification task is
-        # a subset of imagenet
-        model_config={"pretrained": False},
-        num_gpus=4,
-        num_cpus=32,
-        batch_size=256,
-        # val_check_interval=250,
-        check_val_every_n_epoch=2,
-        max_epochs=10,
-        ckpt_monitor="valid_auroc",
-        continue_run_ids=[46915, 46933, 46934, 46914, 46913, 46928],
-        # continue_run_ids=[56437, 56436, 56427, 56418],
-    )
-
-    score_settings_kwargs = dict(
-        layers={"layer4": "model.layer4"},
-        batch_size=512,
-        reduction_fns=["mean"],
-        split=["test", "valid"],
-    )
-
-    if num_workers is not None and worker_idx is None:
-        # supported for distributed training
-        setting_dp = concat_settings(
-            [
-                score_settings(
-                    model_dp=train_settings(
-                        **train_settings_kwargs,
-                        worker_idx=worker_idx,
-                        num_workers=num_workers,
-                    )[0],
-                    **score_settings_kwargs,
-                )[0]
-                for worker_idx in range(num_workers)
-            ]
-        )
-    elif worker_idx is None:
-        setting_dp, _ = train_settings(**train_settings_kwargs)
-        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
-    else:
-        setting_dp, _ = train_settings(
-            **train_settings_kwargs, worker_idx=worker_idx, num_workers=num_workers
-        )
-
-        setting_dp = score_settings(model_dp=setting_dp, **score_settings_kwargs)
-
-    setting_dp = filter_settings(setting_dp)
-
+    raise ValueError
 
 common_config = {
     "n_slices": 5,

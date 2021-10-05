@@ -4,11 +4,13 @@ from typing import List, Mapping
 
 import matplotlib.pyplot as plt
 import meerkat as mk
+import numpy as np
 import pandas as pd
 import seaborn as sns
 import terra
 
 from domino.evaluate import run_sdm, run_sdms, score_sdm_explanations, score_sdms
+from domino.train import score_model
 
 # PALETTE = ["#9CBDE8", "#53B7AE", "#EFAB79", "#E27E51", "#19416E", "#1B6C7B"]
 PALETTE = ["#9CBDE8", "#316FAE", "#29B2A1", "#007C6E", "#FFA17A", "#A4588F"]
@@ -40,7 +42,32 @@ SDM_PALETTE = {
 }
 
 
-def generate_group_df(score_sdms_id: int, metric: str = "precision_at_10"):
+def _is_degraded(row: dict, threshold: float = 0):
+    metrics = terra.io.load_nested_artifacts(
+        score_model.out(row["score_model_run_id"])[1]
+    )
+    try:
+        return (
+            metrics["out_slice_accuracy_lower"]
+            > metrics["in_slice_0_accuracy_upper"] + threshold
+        )
+    except KeyError:
+        pass
+
+    if row["slice_category"] == "rare" or row["slice_category"] == "noisy_label":
+        return (
+            metrics["out_slice_recall_lower"]
+            > metrics["in_slice_0_recall_upper"] + threshold
+        )
+    elif row["slice_category"] == "correlation":
+        return True
+
+
+def generate_group_df(
+    score_sdms_id: int,
+    metric: str = "precision_at_10",
+    degraded_threshold: float = None,
+):
     setting_dp = score_sdms.inp(score_sdms_id)["setting_dp"].load()
     score_df = score_sdms.out(score_sdms_id).load()
     # if a method returns nans, we assign a score of 0
@@ -49,7 +76,7 @@ def generate_group_df(score_sdms_id: int, metric: str = "precision_at_10"):
 
     spec_columns = [
         col
-        for col in ["emb_group", "alpha", "sdm_class", "slice_category"]
+        for col in ["emb_group", "alpha", "sdm_class", "slice_category", "setting_id"]
         if col not in score_dp
     ]
     results_dp = mk.merge(
@@ -62,18 +89,18 @@ def generate_group_df(score_sdms_id: int, metric: str = "precision_at_10"):
 
     # activations are stored as 0, need to map to "activation"
     results_df["emb_group"] = results_df["emb_group"].map(
-        lambda x: "activations" if x == 0 else x, na_action="ignore"
+        lambda x: "activations" if ((x == 0) or (x is None)) else x,
     )
 
     grouped_df = results_df.iloc[
         results_df.reset_index()
-        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group",])[
+        .groupby(["slice_name", "slice_idx", "sdm_class", "alpha", "emb_group"])[
             # .groupby(["slice_idx", "sdm_class", "alpha", "emb_group", "run_sdm_run_id"])[
             metric
         ]
         .idxmax()
         .astype(int)
-    ]
+    ].copy()
     grouped_df["alpha"] = grouped_df["alpha"].round(3)
 
     # we want to exclude correlation slices with alpha=0
@@ -86,6 +113,13 @@ def generate_group_df(score_sdms_id: int, metric: str = "precision_at_10"):
     if score_sdms_id == 77006:
         grouped_df = grouped_df[grouped_df["slice_category"] != "rare"]
 
+    if degraded_threshold is not None and score_sdms_id not in [99336, 99862, 102466]:
+        grouped_df = grouped_df[
+            grouped_df.apply(
+                lambda x: _is_degraded(x, threshold=degraded_threshold), axis=1
+            )
+        ]
+
     return grouped_df
 
 
@@ -95,27 +129,24 @@ def sdm_barplot(
     hue: str = "emb_group",
     emb_groups: List[str] = None,
     sdm_classes: List[str] = None,
-    filter: callable = None,
     run_dir: str = None,
+    path: str = None,
+    **kwargs,
 ):
 
     # formatting
     sns.set_style("whitegrid")
-    plt.tight_layout()
     plt.figure(figsize=(5, 3))
 
     # preparing dataframe
     df = pd.concat(
-        [generate_group_df(score_sdms_id=run_id) for run_id in score_sdm_ids]
+        [generate_group_df(score_sdms_id=run_id, **kwargs) for run_id in score_sdm_ids]
     )
     if emb_groups is not None:
         df = df[df["emb_group"].isin(emb_groups)]
 
     if sdm_classes is not None:
         df = df[df["sdm_class"].isin(sdm_classes)]
-
-    if filter is not None:
-        df = filter(df)
 
     # preparing pallette
     pallette = (
@@ -127,7 +158,6 @@ def sdm_barplot(
             if sdm_class in sdm_classes
         }
     )
-    print(len(df))
     sns.barplot(
         data=df,
         y="precision_at_10",
@@ -138,11 +168,12 @@ def sdm_barplot(
         palette=sns.color_palette(pallette.values(), len(pallette)),
     )
     sns.despine()
-
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.legend([], [], frameon=False)
     plt.ylim([0, 1])
     plt.savefig(os.path.join(run_dir, "plot.pdf"))
-    plt.savefig("figures/sdm_barplot.pdf")
+    if path is not None:
+        plt.savefig(path)
+    return df
 
 
 @terra.Task
@@ -153,16 +184,22 @@ def sdm_displot(
     sdm_classes: List[str] = None,
     filter: callable = None,
     run_dir: str = None,
+    path: str = None,
+    **kwargs,
 ):
 
     # formatting
     sns.set_style("whitegrid")
-    plt.tight_layout()
-    plt.figure(figsize=(3, 3))
 
     # preparing dataframe
     df = pd.concat(
-        [generate_group_df(score_sdms_id=run_id) for run_id in score_sdm_ids]
+        [
+            generate_group_df(
+                score_sdms_id=run_id,
+                **kwargs,
+            )
+            for run_id in score_sdm_ids
+        ]
     )
 
     if emb_groups is not None:
@@ -184,9 +221,6 @@ def sdm_displot(
             if sdm_class in sdm_classes
         }
     )
-
-    plt.figure(figsize=(2, 20))
-    plt.tight_layout()
     sns.displot(
         data=df,
         x="precision_at_10",
@@ -198,10 +232,12 @@ def sdm_displot(
         palette=sns.color_palette(pallette.values(), len(pallette)),
         height=3,
     )
+    plt.legend([], [], frameon=False)
     sns.despine()
-    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.savefig(os.path.join(run_dir, "plot.pdf"))
-    plt.savefig("figures/sdm_displot.pdf")
+    if path is not None:
+        plt.savefig(path)
+    return df
 
 
 def generate_expl_group_df(score_sdm_expl_id: int, metric: str = "precision_at_10"):
@@ -246,7 +282,58 @@ def generate_expl_group_df(score_sdm_expl_id: int, metric: str = "precision_at_1
     ]
 
     # hard coded exclusions
-    if score_sdm_expl_id == 77006:
+    if score_sdm_expl_id == 122560:
         grouped_df = grouped_df[grouped_df["slice_category"] != "rare"]
 
     return grouped_df
+
+
+def expl_plot(
+    score_sdm_explanation_ids: List[int],
+    emb_groups: str = ["clip", "bit", "random"],
+    run_dir: str = None,
+):
+    rows = []
+    for run_id in score_sdm_explanation_ids:
+        df = generate_expl_group_df(run_id, metric="max_reciprocal_rank")
+        for emb_group in emb_groups:
+            df = df[df["emb_group"] == emb_group]
+
+            for slice_category in df["slice_category"].unique():
+                curr_df = df[df["slice_category"] == slice_category]
+                hist = np.histogram(
+                    curr_df["min_rank"],
+                    bins=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, curr_df["min_rank"].max()],
+                )
+                fracs = np.cumsum(hist[0][:-1]) / len(curr_df)
+                bins = hist[1][:-2]
+                rows.extend(
+                    [
+                        {
+                            "frac": frac,
+                            "min_rank": fr"$\leq{bin_end}$",
+                            "emb_group": emb_group,
+                            "slice_category": slice_category,
+                        }
+                        for frac, bin_end in zip(fracs, bins)
+                    ]
+                )
+    plot_df = pd.DataFrame(rows)
+    # plot_df = plot_df[plot_df["slice_category"] == "rare"]
+    pallette = {
+        group: color for group, color in EMB_PALETTE.items() if group in emb_groups
+    }
+    plt.figure(figsize=(4, 4))
+    sns.pointplot(
+        data=plot_df,
+        x="min_rank",
+        y="frac",
+        hue="emb_group",
+        hue_order=pallette.keys(),
+        palette=sns.color_palette(pallette.values(), len(pallette)),
+    )
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    sns.despine()
+    plt.ylim(0, 0.7)
+    plt.savefig("figures/pointplot.pdf")
+    return plot_df

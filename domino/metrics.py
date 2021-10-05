@@ -1,12 +1,17 @@
-from typing import List, Union
+from typing import List, Set, Union
 
 import meerkat as mk
+import nltk
 import numpy as np
 import pandas as pd
+from nltk.tokenize import word_tokenize
 from scipy.stats import rankdata
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+from torch._C import Value
 
 from domino.utils import flatten_dict, requires_columns
+
+nltk.download("punkt")
 
 
 def precision_at_k(slice: np.ndarray, pred_slice: np.ndarray, k: int = 25):
@@ -78,21 +83,40 @@ def compute_sdm_metrics(dp: mk.DataPanel) -> pd.DataFrame:
 
 
 @requires_columns(dp_arg="word_dp", columns=["pred_slices", "word"])
-def compute_expl_metrics(word_dp: mk.DataPanel, slice_names: List[str]) -> pd.DataFrame:
+def compute_expl_metrics(
+    word_dp: mk.DataPanel, slice_names: List[str], dataset: int = "imagenet"
+) -> pd.DataFrame:
     from nltk.corpus import wordnet as wn
+
+    def _check_phrase(phrase: str, slice_synsets: Set[str]):
+        words = word_tokenize(phrase)
+        for word in words:
+            if not set(wn.synsets(word)).isdisjoint(slice_synsets):
+                return True
+        return False
 
     rows = []
     ranks = rankdata(-word_dp["pred_slices"], axis=0, method="ordinal")
     for slice_idx, slice_name in enumerate(slice_names):
-        slice_synset = wn.synset(slice_name)
-        lemmas = set(map(lambda x: x.lower(), slice_synset.lemma_names()))
-        mask = word_dp["word"].isin(lemmas)
-        lemma_ranks = ranks[mask]
+        if dataset == "imagenet":
+            slice_synsets = [wn.synset(slice_name)]
+        elif dataset == "celeba":
+            from domino.slices.celeba import ATTRIBUTE_SYNSETS
+
+            attr, attr_value = slice_name.split("_", 1)[-1].split("=")
+            slice_synsets = [wn.synset(s) for s in ATTRIBUTE_SYNSETS[attr]]
+        else:
+            raise ValueError("Dataset not supported.")
+
+        matches = word_dp["word"].apply(
+            lambda x: _check_phrase(x, slice_synsets=slice_synsets)
+        )
+        match_ranks = ranks[matches]
         metrics = {
-            "mean_reciprocal_rank": (1 / lemma_ranks).mean(axis=0),
-            "max_reciprocal_rank": (1 / lemma_ranks).max(axis=0),
-            "mean_rank": lemma_ranks.mean(axis=0),
-            "min_rank": lemma_ranks.min(axis=0),
+            "mean_reciprocal_rank": (1 / match_ranks).mean(axis=0),
+            "max_reciprocal_rank": (1 / match_ranks).max(axis=0),
+            "mean_rank": match_ranks.mean(axis=0),
+            "min_rank": match_ranks.min(axis=0),
         }
         rows.extend(
             [
@@ -100,7 +124,7 @@ def compute_expl_metrics(word_dp: mk.DataPanel, slice_names: List[str]) -> pd.Da
                     "pred_slice_idx": pred_slice_idx,
                     "slice_idx": slice_idx,
                     "slice_name": slice_name,
-                    "slice_synset": slice_synset.name(),
+                    "slice_synsets": [s.name() for s in slice_synsets],
                     **{k: v[pred_slice_idx] for k, v in metrics.items()},
                 }
                 for pred_slice_idx in range(ranks.shape[1])
