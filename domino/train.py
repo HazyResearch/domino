@@ -258,16 +258,23 @@ def score_settings(
 
 
 @terra.Task
-def filter_settings(setting_dp: mk.DataPanel):
+def filter_settings(setting_dp: mk.DataPanel, thresh=0.05):
     def _is_degraded(row: dict):
         metrics = score_model.out(row["score_model_run_id"])[1]
-        import pdb
-
-        pdb.set_trace()
-        return (
-            metrics["out_slice_accuracy_lower"]
-            > metrics["in_slice_0_accuracy_upper"] + 0.05
+        include = (
+            np.abs(
+                metrics["out_slice_accuracy_lower"]
+                - metrics["in_slice_0_accuracy_upper"]
+            )
+            > thresh
         )
+
+        # if not include:
+        #     import pdb
+
+        #     pdb.set_trace()
+
+        return include
 
     return setting_dp.filter(_is_degraded, input_columns=["score_model_run_id"])
 

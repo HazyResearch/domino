@@ -54,7 +54,7 @@ class Pipeline:
         return task.out()
 
 
-p = Pipeline(to_rerun=["score_settings"])
+p = Pipeline(to_rerun=["score_sdm_explanations"])
 
 data_dp = p.run(
     parent_tasks=[], task=build_stanford_eeg_dp, task_run_id=925
@@ -136,7 +136,6 @@ else:
     }
     setting_dp, _ = p.run(
         parent_tasks=["collect_settings"],
-        task_run_id=4497,
         task=train_settings,
         setting_dp=setting_dp,
         data_dp=data_dp,
@@ -150,10 +149,10 @@ else:
         num_cpus=NUM_CPUS,
         num_gpus=NUM_GPUS,
     )
+    #         task_run_id=4497,
 
     setting_dp, _ = p.run(
         parent_tasks=["train_settings"],
-        task_run_id=4002,
         task=score_settings,
         model_dp=setting_dp,
         batch_size=16,
@@ -162,7 +161,7 @@ else:
         split=["test", "valid"],
     )
 
-setting_dp = filter_settings(setting_dp)
+    setting_dp = filter_settings(setting_dp)
 
 eeg_emb_dp = p.run(
     parent_tasks=["build_stanford_eeg_dp", "balance_dp", "split_dp"],
