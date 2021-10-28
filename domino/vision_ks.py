@@ -12,19 +12,26 @@ from meerkat.nn import ClassificationOutputColumn
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from terra.torch import TerraModule
+from terra.pytorch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
 from torchvision import transforms as transforms
 
 from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.gdro_loss import LossComputer
-from domino.modeling import DenseNet, ResNet
+from domino.modeling import DenseNet, ResNet, basic_LSTM
 from domino.utils import PredLogger
 
 # from domino.data.iwildcam import get_iwildcam_model
 # from domino.data.wilds import get_wilds_model
 
 DOMINO_DIR = "/home/ksaab/Documents/domino"
+
+
+def free_gpu(tensors, delete):
+    for tensor in tensors:
+        tensor = tensor.detach().cpu()
+        if delete:
+            del tensor
 
 
 def get_save_dir(config):
@@ -35,29 +42,39 @@ def get_save_dir(config):
     for name in subgroup_columns:
         subgroups += f"_{name}"
     subgroups = subgroups if len(subgroup_columns) > 0 else "none"
-    method = "erm"
-    if config["train"]["loss"]["gdro"]:
-        method = "gdro"
-    elif config["train"]["loss"]["reweight_class"]:
-        method = "reweight"
-    elif config["train"]["loss"]["robust_sampler"]:
-        method = "sampler"
-    elif config["train"]["multiclass"]:
-        method = "multiclass"
-    elif "upsampled" in config["dataset"]["datapanel_pth"]:
-        method = "upsample"
-    elif config["train"]["cnc"]:
-        method = "cnc"
+    method = config["train"]["method"]
+    # if config["train"]["loss"]["gdro"]:
+    #     method = "gdro"
+    # elif config["train"]["loss"]["reweight_class"]:
+    #     method = "reweight"
+    # elif config["train"]["loss"]["robust_sampler"]:
+    #     method = "sampler"
+    # elif config["train"]["multiclass"]:
+    #     method = "multiclass"
+    # elif "upsampled" in config["dataset"]["datapanel_pth"]:
+    #     method = "upsample"
+    # elif config["train"]["method"] == "cnc":
+    #     method = "cnc"
+    # elif config["train"]["method"] == "cnc_gaze":
+    #     method = "cnc_gaze"
+    # elif config["train"]["method"] == "randcon":
+    #     method = "randcon"
 
     lr = config["train"]["lr"]
     wd = config["train"]["wd"]
     dropout = config["model"]["dropout"]
     save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}/dropout_{dropout}"
 
-    if method == "cnc":
-        cw = config["train"]["cnc_config"]["contrastive_weight"]
+    if "erm" not in config["train"]["method"]:
+        cw = config["train"]["contrastive_config"]["contrastive_weight"]
         save_dir += f"/cw_{cw}"
 
+        # if method == "cnc_gaze":
+        #     alpha = config["train"]["cnc_config"]["gaze_alpha"]
+        #     save_dir += f"/alpha_{alpha}"
+
+    seed = config["train"]["seed"]
+    save_dir += f"/seed_{seed}"
     if not os.path.isdir(save_dir):
         os.makedirs(save_dir)
     return save_dir
@@ -93,13 +110,15 @@ class Classifier(pl.LightningModule, TerraModule):
 
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
-        self.cnc = config["train"]["cnc"]
-        if self.cnc:
+        self.contrastive = "erm" not in config["train"]["method"]
+        self.cnc = config["train"]["method"] == "cnc"
+        self.cnc_gaze = config["train"]["method"] == "cnc_gaze"
+        self.randcon = config["train"]["method"] == "randcon"
+        if self.contrastive:
             self.contrastive_loss = SupervisedContrastiveLoss(
-                config["train"]["cnc_config"]
+                config["train"]["contrastive_config"]
             )
             self.encoder = nn.Sequential(*list(self.model.children())[:-1])
-            # self.model.fc = nn.Identity()
 
             self.train_loss_computer = criterion
             self.val_loss_computer = criterion
@@ -120,10 +139,6 @@ class Classifier(pl.LightningModule, TerraModule):
 
         if config["train"]["loss"]["criterion"] == "mse":
             self.metrics = {}
-        elif self.cnc:
-            self.metrics = {}
-            # metrics = self.config.get("metrics", ["accuracy"])
-            # self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
         else:
             metrics = self.config.get("metrics", ["auroc", "accuracy"])
             self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
@@ -152,107 +167,126 @@ class Classifier(pl.LightningModule, TerraModule):
     def _set_model(self):
         model_cfg = self.config["model"]
         num_classes = self.config["dataset"]["num_classes"]
-        if model_cfg["model_name"] == "resnet":
-            self.model = ResNet(
-                num_classes=num_classes,
-                arch=model_cfg["arch"],
-                dropout=model_cfg["dropout"],
-                pretrained=model_cfg["pretrained"],
+        if self.config["train"]["method"] == "gaze_erm":
+            self.model = basic_LSTM(
+                input_size=3, hidden_size=1024, num_layers=20, bidirectional=False
             )
-        elif model_cfg["model_name"] == "densenet":
-            self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
         else:
-            raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
+            if model_cfg["model_name"] == "resnet":
+                self.model = ResNet(
+                    num_classes=num_classes,
+                    arch=model_cfg["arch"],
+                    dropout=model_cfg["dropout"],
+                    pretrained=model_cfg["pretrained"],
+                )
+            elif model_cfg["model_name"] == "densenet":
+                self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
+            else:
+                raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
 
     def forward(self, x):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        if self.cnc:
-
+        if self.contrastive:
             a_inputs, a_targets, a_group_ids = (
                 batch["input"],
                 batch["target"],
                 batch["group_id"],
             )
-            p_entries, n_entries = batch["contrastive_input_pair"]
-            all_p_inputs = p_entries[0]
-            all_n_inputs = n_entries[0]
-            all_p_targets = p_entries[1]
-            all_n_targets = n_entries[1]
+            if self.cnc:
+                p_entries, n_entries = batch["contrastive_input_pair"]
+                all_p_inputs = p_entries[0]
+                all_n_inputs = n_entries[0]
+                all_p_targets = p_entries[1]
+                all_n_targets = n_entries[1]
 
             contrastive_loss = 0
             pos_sim = 0
             neg_sim = 0
             for a_ix in range(len(a_inputs)):
+                if self.cnc:
+                    p_inputs = all_p_inputs[a_ix]
+                    n_inputs = all_n_inputs[a_ix]
+                    p_targets = all_p_targets[a_ix]
+                    n_targets = all_n_targets[a_ix]
 
-                # p_inputs, p_targets, p_group_ids = (
-                #     p_entries[a_ix]["input"],
-                #     p_entries[a_ix]["target"],
-                #     p_entries[a_ix]["group_id"],
-                # )
-                # n_inputs, n_targets, n_group_ids = (
-                #     n_entries[a_ix]["input"],
-                #     n_entries[a_ix]["target"],
-                #     n_entries[a_ix]["group_id"],
-                # )
-                p_inputs = all_p_inputs[a_ix]
-                n_inputs = all_n_inputs[a_ix]
+                elif self.cnc_gaze or self.randcon:
+                    gaze_features = batch["gaze_features"]
+                    a_gfeats = gaze_features[a_ix]
+                    gfeat_dist = torch.norm(gaze_features - a_gfeats, dim=1)
+                    if self.randcon:
+                        gfeat_dist = torch.rand_like(gfeat_dist)
+                    alpha = gfeat_dist.median()
+                    same_class = a_targets == a_targets[a_ix]
 
-                # inputs = torch.cat([a_inputs, p_inputs, n_inputs])
-                # targets = torch.cat([a_targets, p_targets, n_targets])
-                # group_ids = torch.cat([a_group_ids, p_group_ids, n_group_ids])
-                encoded_a = (
-                    self.encoder(a_inputs[a_ix].unsqueeze(0)).squeeze().unsqueeze(0)
-                )
-                encoded_ps = self.encoder(p_inputs).squeeze()
-                encoded_ns = self.encoder(n_inputs).squeeze()
+                    # n_mask = gfeat_dist <= alpha
+                    n_mask = torch.logical_and(gfeat_dist > alpha, same_class)
+                    p_mask = torch.logical_and(gfeat_dist <= alpha, same_class)
+                    # p_mask = gfeat_dist > alpha
+                    # remove anchor from p_mask
+                    p_mask[a_ix] = False
+
+                    if p_mask.sum() < 2 or n_mask.sum() < 2:
+                        continue
+
+                    p_inputs = a_inputs[p_mask]
+                    p_targets = a_targets[p_mask]
+                    n_inputs = a_inputs[n_mask]
+                    n_targets = a_targets[n_mask]
 
                 c_loss, pos_sim_, neg_sim_ = self.contrastive_loss(
-                    (encoded_a, encoded_ps, encoded_ns)
+                    (a_inputs[a_ix], p_inputs, n_inputs), self.encoder
                 )
-                contrastive_loss += c_loss
-                pos_sim += pos_sim_
-                neg_sim += neg_sim_
+
+                c_loss.backward()
+                free_gpu([c_loss], delete=True)
+
+                contrastive_loss += c_loss.item()
+                pos_sim += pos_sim_.item()
+                neg_sim += neg_sim_.item()
 
             contrastive_loss /= len(a_inputs)
             pos_sim /= len(a_inputs)
             neg_sim /= len(a_inputs)
-            # loss = contrastive_loss
 
-            # inputs = torch.cat(
-            #     [
-            #         a_inputs,
-            #         all_p_inputs.view(-1, *all_p_inputs.shape[-3:]),
-            #         all_p_inputs.view(-1, *all_n_inputs.shape[-3:]),
-            #     ]
-            # )
-            # targets = torch.cat(
-            #     [a_targets, all_p_targets.flatten(), all_n_targets.flatten()]
-            # )
-            inputs = a_inputs  # torch.cat([a_inputs, p_inputs, n_inputs])
-            targets = a_targets  # torch.cat([a_targets, all_p_targets[-1], all_n_targets[-1]])
+            if self.cnc:
+                inputs = torch.cat([a_inputs, p_inputs, n_inputs])
+                targets = torch.cat([a_targets, p_targets, n_targets])
+            else:
+                inputs = a_inputs
+                targets = a_targets
+
             # group_ids = (
             #     a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
             # )
 
         else:
+            input_key = (
+                "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
+            )
             inputs, targets, group_ids = (
-                batch["input"],
+                batch[input_key],
                 batch["target"],
                 batch["group_id"],
             )
-            outs = self.forward(inputs)
+
+            if self.config["train"]["method"] == "gaze_erm":
+                seq_len = batch["gaze_seq_len"]
+                outs = self.model(inputs, seq_len)
+            else:
+                outs = self.forward(inputs)
+
             loss = self.train_loss_computer.loss(outs, targets, group_ids)
             self.train_loss_computer.log_stats(self.log, is_training=True)
             self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
-        if self.cnc:
+        if self.contrastive:
             outs = self.forward(inputs)
             loss = self.train_loss_computer(outs, targets.long()).mean()
             self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
-            cw = self.config["train"]["cnc_config"]["contrastive_weight"]
+            cw = self.config["train"]["contrastive_config"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
             self.log(
                 "contrastive_loss",
@@ -279,14 +313,23 @@ class Classifier(pl.LightningModule, TerraModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        input_key = (
+            "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
+        )
+
         inputs, targets, group_ids, sample_id = (
-            batch["input"],
+            batch[input_key],
             batch["target"],
             batch["group_id"],
             batch["id"],
         )
-        outs = self.forward(inputs)
-        if self.cnc:
+        if self.config["train"]["method"] == "gaze_erm":
+            seq_len = batch["gaze_seq_len"]
+            outs = self.model(inputs, seq_len)
+        else:
+            outs = self.forward(inputs)
+
+        if self.contrastive:
             loss = self.val_loss_computer(outs, targets).mean()
         else:
             loss = self.val_loss_computer.loss(outs, targets, group_ids)
@@ -298,7 +341,7 @@ class Classifier(pl.LightningModule, TerraModule):
         self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
 
     def validation_epoch_end(self, outputs) -> None:
-        if not self.cnc:
+        if not (self.contrastive):
             self.val_loss_computer.log_stats(self.log)
         for metric_name, metric in self.metrics.items():
             self.log(f"valid_{metric_name}", metric.compute())  # , sync_dist=True)
@@ -347,17 +390,16 @@ def train(
     num_classes: int = 2,
     max_epochs: int = 50,
     samples_per_epoch: int = None,
-    gpus: Union[int, Iterable] = [0],
+    gpus: int = 1,  # Union[int, Iterable] = [0],
     num_workers: int = 10,
     batch_size: int = 16,
     train_split: str = "train",
     valid_split: str = "valid",
     weighted_sampling: bool = False,
-    seed: int = 123,
     **kwargs,
 ):
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
-    pl.utilities.seed.seed_everything(seed)
+    pl.utilities.seed.seed_everything(config["train"]["seed"])
 
     multiclass = config["train"]["multiclass"]
 
@@ -367,6 +409,14 @@ def train(
         train_mask = np.logical_and(
             train_mask, dp["chest_tube"].data.astype(str) != "nan"
         )
+        gaze_features = torch.stack(
+            [
+                torch.Tensor(dp["gaze_time"]),
+                torch.Tensor(dp["gaze_unique"]),
+                torch.Tensor(dp["gaze_diffusivity"]),
+                torch.Tensor(dp["gaze_max_visit"]),
+            ]
+        ).T
 
     subgroup_columns = config["dataset"]["subgroup_columns"]
     if len(subgroup_columns) > 0:
@@ -394,12 +444,24 @@ def train(
             "split": dp["split"],
             "group_id": group_ids.astype(int),
             "chest_tube": dp["chest_tube"],  # DEBUG
+            "gaze_features": gaze_features,
+            "gaze_seq": dp["padded_gaze_seq"],
+            "gaze_seq_len": dp["gaze_seq_len"],
             "filepath": dp["filepath"],
         }
     )
 
+    val_mask = dp["split"].data == valid_split
+    if config["train"]["method"] == "gaze_erm":
+        train_split_frac = 0.8
+        gaze_mask = np.array(
+            [isinstance(entry, torch.FloatTensor) for entry in dp["gaze_seq"]]
+        )
+        rand_vec = np.random.rand(len(gaze_mask))
+        train_mask = np.logical_and(gaze_mask, rand_vec < train_split_frac)
+        val_mask = np.logical_and(gaze_mask, rand_vec >= train_split_frac)
     train_dp = dp.lz[train_mask]
-    val_dp = dp.lz[dp["split"].data == valid_split]
+    val_dp = dp.lz[val_mask]
 
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
@@ -474,9 +536,9 @@ def train(
     model.train()
     ckpt_metric = "valid_accuracy"
     mode = "max"
-    if len(subgroup_columns) > 0:
-        ckpt_metric = "robust val acc"
-    if config["train"]["cnc"]:
+    # if len(subgroup_columns) > 0:
+    #     ckpt_metric = "robust val acc"
+    if "erm" not in config["train"]["method"]:
         ckpt_metric = "contrastive_loss"
         mode = "min"
     checkpoint_callback = ModelCheckpoint(
@@ -544,6 +606,7 @@ def train(
         num_workers=num_workers,
         shuffle=sampler is None,
         sampler=sampler,
+        drop_last=True,
     )
     valid_dl = DataLoader(
         val_dp,

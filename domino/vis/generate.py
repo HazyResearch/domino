@@ -72,6 +72,7 @@ EMBS = {
         "all": ["bit", "imagenet", "convirt", "mimic_multimodal"],
     },
     "natural": {"core": ["clip"], "all": ["bit", "clip", "random"]},
+    "eeg": {"core": ["multimodal"], "all": ["multimodal", "eeg"]},
 }
 
 
@@ -89,7 +90,6 @@ def generate_results(figures: List = FIGURES, run_dir: str = None):
             emb_groups.append("activations")
 
         default_kwargs = dict(
-            skip_terra_cache=True,
             hue="emb_group" if figure["comparison"] != "method" else "sdm_class",
             degraded_threshold=0.1 if figure["model"] == "real" else None,
             emb_groups=emb_groups,

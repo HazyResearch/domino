@@ -65,3 +65,39 @@ class DenseNet(_DenseNet):
             _load_state_dict(self, densenet_model_urls[arch], progress=True)
 
         self.classifier = nn.Linear(self.classifier.in_features, num_classes)
+
+
+class basic_LSTM(nn.Module):
+    def __init__(
+        self, input_size, hidden_size, num_layers, bidirectional, num_classes=2
+    ):
+        super(basic_LSTM, self).__init__()
+
+        self.fc = nn.Linear(input_size, int(hidden_size / 2))
+        self.lstm = nn.LSTM(
+            input_size=int(hidden_size / 2),
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+        )
+        if bidirectional:
+            num_feats = 2 * hidden_size
+        else:
+            num_feats = hidden_size
+        self.classifier = nn.Linear(num_feats, num_classes)
+
+    def forward(self, x_padded, seq_len):
+        x_emb = self.fc(x_padded)
+        packed_input = torch.nn.utils.rnn.pack_padded_sequence(
+            x_emb,
+            seq_len.cpu().numpy(),
+            batch_first=True,
+            enforce_sorted=False,
+        )
+        packed_output, _ = self.lstm(packed_input)
+        output, _ = torch.nn.utils.rnn.pad_packed_sequence(
+            packed_output, batch_first=True
+        )
+
+        # return self.classifier(output[:, -1, :])
+        return self.classifier(output.mean(1))

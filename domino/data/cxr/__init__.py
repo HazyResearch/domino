@@ -16,7 +16,7 @@ from terra import Task
 from torchvision.models import resnet50
 
 from domino.modeling import ResNet
-from domino.vision import score
+from domino.vision_ks import score
 
 from .gaze_utils import (
     apply_lf,
@@ -88,7 +88,8 @@ def get_cxr_activations(
             # "block3": cnn_encoder[-2],
             "block4": cnn_encoder[-1],
         },
-        batch_size=64,
+        batch_size=32,
+        device=1,
     )
     return act_dp
 
@@ -146,7 +147,7 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     gaze_df = pd.DataFrame(
         [
             {
-                # "gaze_seq": gaze_seq_dict[img_id],
+                "gaze_seq": torch.FloatTensor(gaze_seq_dict[img_id]),
                 # "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
                 "gaze_max_visit": gaze_feats_dict[img_id]["gaze_max_visit"],
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
@@ -158,6 +159,29 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
             for img_id in expert_labels_dict
         ]
     )
+
+    # normalize gaze sequences
+    X = []
+    for gaze_seq in gaze_df["gaze_seq"]:
+        X.extend([torch.Tensor(entry) for entry in gaze_seq])
+    X = torch.stack(X)
+
+    norm_gaze_seqs = []
+    X_mean = X.mean(0)
+    X_std = X.std(0)
+    for gaze_seq in gaze_df["gaze_seq"]:
+        norm_gaze_seqs.append(
+            torch.stack([(torch.Tensor(entry) - X_mean) / X_std for entry in gaze_seq])
+        )
+
+    # pad gaze sequences
+    X_padded = torch.nn.utils.rnn.pad_sequence(norm_gaze_seqs).transpose(0, 1)
+    seq_len = torch.LongTensor(list(map(len, norm_gaze_seqs)))
+
+    gaze_df["padded_gaze_seq"] = [X_padded[ndx] for ndx in range(X_padded.shape[0])]
+    gaze_df["gaze_seq_len"] = seq_len
+    #
+    # packed_input = torch.nn.utils.rnn.pack_padded_sequence(X_padded, seq_len,enforce_sorted=False)
 
     return gaze_df
 

@@ -6,8 +6,9 @@ model:
   resume_ckpt: False
 
 train:
-  cnc: False
-  cnc_config:
+  seed: 123
+  method: "erm" # ["erm", "erm_gaze", "cnc", "cnc_gaze", "supcon", "randcon"]
+  contrastive_config:
     contrastive_weight: 0.8
     temperature: 0.05
     num_positive: 8

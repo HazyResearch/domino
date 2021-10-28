@@ -2,6 +2,7 @@ import hydra
 import meerkat as mk
 from omegaconf import DictConfig, OmegaConf
 
+from domino.data.cxr import build_cxr_df, get_dp
 from domino.vision_ks import train
 
 
@@ -12,7 +13,9 @@ def train_cxr(
     dataset_cfg = cfg["dataset"]
     train_cfg = cfg["train"]
 
-    dp = mk.DataPanel.read(path=dataset_cfg["datapanel_pth"])
+    # dp = mk.DataPanel.read(path=dataset_cfg["datapanel_pth"])
+    df = build_cxr_df(root_dir="/media/4tb_hdd/siim")  # .out(load=True)
+    dp = get_dp(df)
 
     train(
         dp=dp,

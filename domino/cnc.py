@@ -132,9 +132,14 @@ class SupervisedContrastiveLoss(nn.Module):
 
         self.sim = nn.CosineSimilarity(dim=1)
 
-    def forward(self, contrastive_batch):
+    def forward(self, contrastive_batch, model):
 
-        a_output, p_outputs, n_outputs = contrastive_batch
+        # a_output, p_outputs, n_outputs = contrastive_batch
+        a_output, p_outputs, n_outputs = (
+            model(contrastive_batch[0].unsqueeze(0)).squeeze().unsqueeze(0),
+            model(contrastive_batch[1]).squeeze(),
+            model(contrastive_batch[2]).squeeze(),
+        )
 
         pos_sim = self.sim(a_output, p_outputs)
         pos_exp = torch.exp(torch.div(pos_sim, self.temperature))

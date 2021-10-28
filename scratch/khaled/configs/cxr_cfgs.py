@@ -1,6 +1,67 @@
 from configs.generate import flag, prod
 
 
+def erm_runs():
+
+    sweep = prod(
+        [
+            flag("train.wd", [0]),
+            flag("train.loss.gdro", [False]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+            flag("train.gaze_split", [True]),
+            flag("train.seed", [101, 102, 103, 104, 105]),
+        ]
+    )
+
+    return sweep
+
+
+def gaze_cnc_runs():
+
+    sweep = prod(
+        [
+            flag("train.method", ["cnc_gaze"]),
+            flag("train.batch_size", [32]),
+            flag("train.contrastive_config.contrastive_weight", [0.1]),
+            flag("train.seed", [101, 102, 103, 104, 105]),
+        ]
+    )
+
+    return sweep
+
+
+def randcon_runs():
+
+    sweep = prod(
+        [
+            flag("train.wd", [0]),
+            flag("train.loss.gdro", [False]),
+            flag("dataset.subgroup_columns", [["chest_tube"]]),
+            flag("train.gaze_split", [True]),
+            flag("train.method", ["randcon"]),
+            flag("train.batch_size", [12]),
+            flag("train.contrastive_config.contrastive_weight", [0.1]),
+            flag("train.seed", [101, 102, 103, 104, 105]),
+        ]
+    )
+
+    return sweep
+
+
+def gaze_erm_sweep():
+
+    sweep = prod(
+        [
+            flag("train.epochs", [25]),
+            flag("train.lr", [1e-1, 1e-3, 1e-5]),
+            flag("train.wd", [0, 1e-5]),
+            flag("train.method", ["gaze_erm"]),
+        ]
+    )
+
+    return sweep
+
+
 def erm_sweep():
 
     sweep = prod(
@@ -29,22 +90,6 @@ def gdro_sweep():
     return sweep
 
 
-def multiclass_sweep():
-
-    sweep = prod(
-        [
-            flag("train.wd", [0, 1e-5, 1e-3, 1e-1]),
-            flag("train.multiclass", [True]),
-            flag("train.loss.reweight_class", [True]),
-            flag("train.loss.reweight_class_alpha", [1, 2, 4]),
-            flag("train.gaze_split", [True]),
-            flag("dataset.subgroup_columns", [["chest_tube"]]),
-        ]
-    )
-
-    return sweep
-
-
 def cnc_sweep():
 
     sweep = prod(
@@ -59,74 +104,6 @@ def cnc_sweep():
             flag("train.gaze_split", [True]),
             flag("dataset.subgroup_columns", [["chest_tube"]]),
             flag("train.epochs", [1]),
-        ]
-    )
-
-    return sweep
-
-
-def upsampling_sweep():
-
-    sweep = prod(
-        [
-            flag("train.wd", [0, 1e-5, 1e-3, 1e-1]),
-            flag("train.loss.robust_sampler", [True]),
-            flag("train.loss.reweight_class_alpha", [1, 2, 4]),
-            flag("train.gaze_split", [True]),
-            flag("dataset.subgroup_columns", [["chest_tube"]]),
-        ]
-    )
-
-    return sweep
-
-
-def scribble_sweep():
-
-    sweep = prod(
-        [
-            flag("train.wd", [1e-5, 1e-3, 1e-1]),
-            flag("train.loss.gdro", [True, False]),
-            flag(
-                "dataset.datapanel_pth",
-                ["/media/4tb_hdd/siim/tubescribble_dp_07-24-21.dp"],
-            ),
-            flag("dataset.subgroup_columns", [["tube"]]),
-        ]
-    )
-
-    return sweep
-
-
-def gazeslicer_time_sweep():
-
-    sweep = prod(
-        [
-            flag("train.wd", [1e-5, 1e-3, 1e-1]),
-            flag("train.loss.gdro", [True, False]),
-            flag(
-                "dataset.datapanel_pth",
-                ["/media/4tb_hdd/siim/gazeslicer_dp_07-23-21.dp"],
-            ),
-            flag("dataset.subgroup_columns", [["gazeslicer_time"]]),
-        ]
-    )
-
-    return sweep
-
-
-def tubeclassification_sweep():
-
-    sweep = prod(
-        [
-            flag("train.epochs", [150]),
-            flag("train.lr", [5e-4, 1e-3]),
-            flag("train.wd", [1e-6, 1e-5]),
-            flag("train.gaze_split", [True]),
-            flag(
-                "dataset.datapanel_pth",
-                ["/media/4tb_hdd/siim/tubescribble_dp_07-24-21.dp"],
-            ),
-            flag("dataset.target_column", ["chest_tube"]),
         ]
     )
 
