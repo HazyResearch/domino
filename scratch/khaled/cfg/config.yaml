@@ -14,6 +14,14 @@ train:
     num_positive: 8
     num_negative: 8
     num_anchor: 1
+
+  gaze_encoder_config:
+    num_layers: 2
+    hidden_size: 128
+    encoder: "transformer"
+    nheads: 8
+    bidirectional: False
+    T: 50
     
   multiclass: False # if true, then uses subgroup columns as multiclass labels
   epochs: 50

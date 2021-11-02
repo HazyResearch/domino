@@ -48,13 +48,55 @@ def randcon_runs():
     return sweep
 
 
-def gaze_erm_sweep():
+def gaze_erm_sweep_lstm():
 
     sweep = prod(
         [
-            flag("train.epochs", [25]),
-            flag("train.lr", [1e-1, 1e-3, 1e-5]),
+            flag("train.epochs", [100]),
+            flag("train.lr", [1e-3, 1e-5]),
             flag("train.wd", [0, 1e-5]),
+            flag("train.gaze_encoder_config.num_layers", [2, 4, 8]),
+            flag("train.gaze_encoder_config.bidirectional", [False]),
+            flag("train.gaze_encoder_config.hidden_size", [64, 128, 256]),
+            flag("train.gaze_encoder_config.encoder", ["lstm"]),
+            flag("train.method", ["gaze_erm"]),
+        ]
+    )
+
+    return sweep
+
+
+def gaze_erm_sweep_1dconv():
+
+    sweep = prod(
+        [
+            flag("train.epochs", [100]),
+            flag("train.lr", [1e-3, 1e-5]),
+            flag("train.wd", [0, 1e-5]),
+            flag("train.gaze_encoder_config.num_layers", [2, 3]),
+            # flag("train.gaze_encoder_config.nheads", [4, 8, 16]),
+            flag("train.gaze_encoder_config.hidden_size", [64, 128, 256]),
+            flag("train.gaze_encoder_config.T", [25, 50, 75]),
+            flag("train.gaze_encoder_config.encoder", ["1dconv"]),
+            flag("train.method", ["gaze_erm"]),
+        ]
+    )
+
+    return sweep
+
+
+def gaze_erm_sweep_transformer():
+
+    sweep = prod(
+        [
+            flag("train.epochs", [100]),
+            flag("train.lr", [1e-3]),
+            flag("train.wd", [0, 1e-5]),
+            flag("train.gaze_encoder_config.num_layers", [2, 4, 8]),
+            flag("train.gaze_encoder_config.nheads", [8, 16]),
+            flag("train.gaze_encoder_config.hidden_size", [64, 128, 256]),
+            flag("train.gaze_encoder_config.T", [25, 50, 75]),
+            flag("train.gaze_encoder_config.encoder", ["transformer"]),
             flag("train.method", ["gaze_erm"]),
         ]
     )

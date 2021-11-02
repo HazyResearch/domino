@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.modules.normalization import LayerNorm
 from torchvision.models import DenseNet as _DenseNet
 from torchvision.models import ResNet as _ResNet
 from torchvision.models.densenet import _load_state_dict
@@ -8,6 +9,8 @@ from torchvision.models.densenet import model_urls as densenet_model_urls
 from torchvision.models.resnet import BasicBlock, Bottleneck
 from torchvision.models.resnet import model_urls as resnet_model_urls
 from torchvision.models.utils import load_state_dict_from_url
+
+from domino.transformer import TransformerEncoder, TransformerEncoderLayer
 
 
 class ResNet(_ResNet):
@@ -67,37 +70,89 @@ class DenseNet(_DenseNet):
         self.classifier = nn.Linear(self.classifier.in_features, num_classes)
 
 
-class basic_LSTM(nn.Module):
+class SequenceModel(nn.Module):
     def __init__(
-        self, input_size, hidden_size, num_layers, bidirectional, num_classes=2
+        self,
+        input_size,
+        hidden_size,
+        num_layers,
+        bidirectional,
+        encoder,
+        nheads=8,
+        T=50,
+        num_classes=2,
     ):
-        super(basic_LSTM, self).__init__()
+        super(SequenceModel, self).__init__()
 
+        self.encoder_type = encoder
+        self.T = T
         self.fc = nn.Linear(input_size, int(hidden_size / 2))
-        self.lstm = nn.LSTM(
-            input_size=int(hidden_size / 2),
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            bidirectional=bidirectional,
-        )
-        if bidirectional:
-            num_feats = 2 * hidden_size
-        else:
+
+        if encoder == "lstm":
+            self.encoder = nn.LSTM(
+                input_size=int(hidden_size / 2),
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                bidirectional=bidirectional,
+            )
+            if bidirectional:
+                num_feats = 2 * hidden_size
+            else:
+                num_feats = hidden_size
+        elif encoder == "transformer":
+            self.encoder = TransformerEncoder(
+                TransformerEncoderLayer(
+                    d_model=int(hidden_size / 2),
+                    nhead=nheads,
+                    dim_feedforward=hidden_size,
+                ),
+                num_layers,
+                LayerNorm(int(hidden_size / 2)),
+            )
+            num_feats = int(hidden_size / 2)
+
+        elif encoder == "1dconv":
+            if num_layers == 2:
+                self.encoder = nn.Sequential(
+                    nn.Conv1d(int(hidden_size / 2), hidden_size, 3),
+                    nn.AvgPool1d(2),
+                    nn.Conv1d(hidden_size, hidden_size, 2),
+                    nn.AvgPool1d(2),
+                )
+            elif num_layers == 3:
+                self.encoder = nn.Sequential(
+                    nn.Conv1d(int(hidden_size / 2), hidden_size, 3),
+                    nn.AvgPool1d(2),
+                    nn.Conv1d(hidden_size, hidden_size, 2),
+                    nn.AvgPool1d(2),
+                    nn.Conv1d(hidden_size, hidden_size, 2),
+                    nn.AvgPool1d(2),
+                )
+
             num_feats = hidden_size
+
         self.classifier = nn.Linear(num_feats, num_classes)
 
     def forward(self, x_padded, seq_len):
         x_emb = self.fc(x_padded)
-        packed_input = torch.nn.utils.rnn.pack_padded_sequence(
-            x_emb,
-            seq_len.cpu().numpy(),
-            batch_first=True,
-            enforce_sorted=False,
-        )
-        packed_output, _ = self.lstm(packed_input)
-        output, _ = torch.nn.utils.rnn.pad_packed_sequence(
-            packed_output, batch_first=True
-        )
+        if self.encoder_type == "lstm":
+            x = torch.nn.utils.rnn.pack_padded_sequence(
+                x_emb,
+                seq_len.cpu().numpy(),
+                batch_first=True,
+                enforce_sorted=False,
+            )
+            output, _ = self.encoder(x)
+            output, _ = torch.nn.utils.rnn.pad_packed_sequence(output, batch_first=True)
+
+        elif self.encoder_type == "1dconv":
+            x = x_emb[:, : self.T, :]
+            x = x.transpose(1, 2)
+            output = self.encoder(x)
+            output = output.transpose(1, 2)
+        else:
+            x = x_emb[:, : self.T, :]
+            output = self.encoder(x)
 
         # return self.classifier(output[:, -1, :])
         return self.classifier(output.mean(1))

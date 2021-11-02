@@ -282,6 +282,15 @@ def get_dp(df: pd.DataFrame):
         overwrite=True,
     )
 
+    seg_col = dp["encoded_pixels"].to_lambda(
+        fn=lambda x: rle2mask(x, 1024, 1024).T if x != "-1" else np.zeros((1024, 1024))
+    )
+    dp.add_column(
+        "segmentation_mask",
+        seg_col,
+        overwrite=True,
+    )
+
     return dp
 
 

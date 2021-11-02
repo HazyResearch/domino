@@ -18,7 +18,7 @@ from torchvision import transforms as transforms
 
 from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.gdro_loss import LossComputer
-from domino.modeling import DenseNet, ResNet, basic_LSTM
+from domino.modeling import DenseNet, ResNet, SequenceModel
 from domino.utils import PredLogger
 
 # from domino.data.iwildcam import get_iwildcam_model
@@ -168,8 +168,15 @@ class Classifier(pl.LightningModule, TerraModule):
         model_cfg = self.config["model"]
         num_classes = self.config["dataset"]["num_classes"]
         if self.config["train"]["method"] == "gaze_erm":
-            self.model = basic_LSTM(
-                input_size=3, hidden_size=1024, num_layers=20, bidirectional=False
+            gaze_enc_cfg = self.config["train"]["gaze_encoder_config"]
+            self.model = SequenceModel(
+                input_size=3,
+                hidden_size=gaze_enc_cfg["hidden_size"],
+                num_layers=gaze_enc_cfg["num_layers"],
+                encoder=gaze_enc_cfg["encoder"],
+                bidirectional=gaze_enc_cfg["bidirectional"],
+                nheads=gaze_enc_cfg["nheads"],
+                T=gaze_enc_cfg["T"],
             )
         else:
             if model_cfg["model_name"] == "resnet":
