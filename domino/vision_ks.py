@@ -95,6 +95,14 @@ class Classifier(pl.LightningModule, TerraModule):
         super().__init__()
         self.config = config
 
+        self.cnc = config["train"]["method"] == "cnc"
+        self.cnc_gaze = config["train"]["method"] == "cnc_gaze"
+        self.randcon = config["train"]["method"] == "randcon"
+        self.gaze_clip = config["train"]["method"] == "gaze_clip"
+        self.contrastive = (
+            "cnc" in config["train"]["method"] or "con" in config["train"]["method"]
+        )
+
         self._set_model()
         criterion_dict = {"cross_entropy": nn.CrossEntropyLoss, "mse": nn.MSELoss}
         criterion_fnc = criterion_dict[config["train"]["loss"]["criterion"]]
@@ -110,10 +118,7 @@ class Classifier(pl.LightningModule, TerraModule):
 
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
-        self.contrastive = "erm" not in config["train"]["method"]
-        self.cnc = config["train"]["method"] == "cnc"
-        self.cnc_gaze = config["train"]["method"] == "cnc_gaze"
-        self.randcon = config["train"]["method"] == "randcon"
+
         if self.contrastive:
             self.contrastive_loss = SupervisedContrastiveLoss(
                 config["train"]["contrastive_config"]
@@ -167,9 +172,9 @@ class Classifier(pl.LightningModule, TerraModule):
     def _set_model(self):
         model_cfg = self.config["model"]
         num_classes = self.config["dataset"]["num_classes"]
-        if self.config["train"]["method"] == "gaze_erm":
+        if self.config["train"]["method"] == "gaze_erm" or self.gaze_clip:
             gaze_enc_cfg = self.config["train"]["gaze_encoder_config"]
-            self.model = SequenceModel(
+            model = SequenceModel(
                 input_size=3,
                 hidden_size=gaze_enc_cfg["hidden_size"],
                 num_layers=gaze_enc_cfg["num_layers"],
@@ -178,7 +183,13 @@ class Classifier(pl.LightningModule, TerraModule):
                 nheads=gaze_enc_cfg["nheads"],
                 T=gaze_enc_cfg["T"],
             )
-        else:
+            if self.gaze_clip:
+                self.gaze_encoder = model
+                self.gaze_encoder.classifier = nn.Identity()
+                self.clip_func = nn.CrossEntropyLoss(reduction="none")
+            else:
+                self.model = model
+        if self.config["train"]["method"] != "gaze_erm":
             if model_cfg["model_name"] == "resnet":
                 self.model = ResNet(
                     num_classes=num_classes,
@@ -191,7 +202,16 @@ class Classifier(pl.LightningModule, TerraModule):
             else:
                 raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
 
+        if self.gaze_clip:
+            self.fc = self.model.fc
+            self.model.fc = nn.Identity()
+            self.image_proj = nn.Linear(
+                self.fc[1].in_features, int(gaze_enc_cfg["hidden_size"] / 2)
+            )
+
     def forward(self, x):
+        if self.gaze_clip:
+            return self.fc(self.model(x))
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
@@ -268,6 +288,25 @@ class Classifier(pl.LightningModule, TerraModule):
             #     a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
             # )
 
+        elif self.gaze_clip:
+            inputs, gaze_inputs, targets, group_ids = (
+                batch["input"],
+                batch["gaze_seq"],
+                batch["target"],
+                batch["group_id"],
+            )
+            embs = self.image_proj(self.model(inputs))
+
+            seq_len = batch["gaze_seq_len"]
+            gaze_embs = self.gaze_encoder(gaze_inputs, seq_len)
+
+            labels = torch.ones_like(gaze_embs)[:, 0].long()
+            logits = gaze_embs @ embs.T
+            loss_t = self.clip_func(logits, labels)
+            loss_i = self.clip_func(logits.T, labels)
+            loss = (loss_i + loss_t) / 2
+            contrastive_loss = loss.mean()
+
         else:
             input_key = (
                 "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
@@ -288,9 +327,13 @@ class Classifier(pl.LightningModule, TerraModule):
             self.train_loss_computer.log_stats(self.log, is_training=True)
             self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
-        if self.contrastive:
+        if self.contrastive or self.gaze_clip:
             outs = self.forward(inputs)
-            loss = self.train_loss_computer(outs, targets.long()).mean()
+            if self.gaze_clip:
+                loss = self.train_loss_computer.loss(outs, targets, group_ids)
+                self.train_loss_computer.log_stats(self.log, is_training=True)
+            else:
+                loss = self.train_loss_computer(outs, targets.long()).mean()
             self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
             cw = self.config["train"]["contrastive_config"]["contrastive_weight"]
@@ -303,19 +346,20 @@ class Classifier(pl.LightningModule, TerraModule):
                 # sync_dist=True,
             )
 
-            self.log(
-                "positive_sim",
-                pos_sim,
-                on_step=True,
-                logger=True,
-            )
+            if self.contrastive:
+                self.log(
+                    "positive_sim",
+                    pos_sim,
+                    on_step=True,
+                    logger=True,
+                )
 
-            self.log(
-                "negative_sim",
-                neg_sim,
-                on_step=True,
-                logger=True,
-            )
+                self.log(
+                    "negative_sim",
+                    neg_sim,
+                    on_step=True,
+                    logger=True,
+                )
 
         return loss
 

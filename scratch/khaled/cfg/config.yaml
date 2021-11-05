@@ -7,7 +7,7 @@ model:
 
 train:
   seed: 123
-  method: "erm" # ["erm", "erm_gaze", "cnc", "cnc_gaze", "supcon", "randcon"]
+  method: "erm" # ["erm", "erm_gaze", "gaze_clip", "cnc", "cnc_gaze", "supcon", "randcon"]
   contrastive_config:
     contrastive_weight: 0.8
     temperature: 0.05
