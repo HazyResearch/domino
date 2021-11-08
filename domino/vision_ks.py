@@ -14,7 +14,9 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from terra.pytorch import TerraModule
 from torch.utils.data import DataLoader, RandomSampler, WeightedRandomSampler
+from torchmetrics.functional import dice_score
 from torchvision import transforms as transforms
+from torchvision.models.segmentation import fcn_resnet50
 
 from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.gdro_loss import LossComputer
@@ -99,6 +101,7 @@ class Classifier(pl.LightningModule, TerraModule):
         self.cnc_gaze = config["train"]["method"] == "cnc_gaze"
         self.randcon = config["train"]["method"] == "randcon"
         self.gaze_clip = config["train"]["method"] == "gaze_clip"
+        self.segmentation = config["train"]["method"] == "segmentation"
         self.contrastive = (
             "cnc" in config["train"]["method"] or "con" in config["train"]["method"]
         )
@@ -142,7 +145,7 @@ class Classifier(pl.LightningModule, TerraModule):
                 gdro_config=loss_cfg["gdro_config"],
             )
 
-        if config["train"]["loss"]["criterion"] == "mse":
+        if config["train"]["loss"]["criterion"] == "mse" or self.segmentation:
             self.metrics = {}
         else:
             metrics = self.config.get("metrics", ["auroc", "accuracy"])
@@ -190,7 +193,13 @@ class Classifier(pl.LightningModule, TerraModule):
             else:
                 self.model = model
         if self.config["train"]["method"] != "gaze_erm":
-            if model_cfg["model_name"] == "resnet":
+            if self.segmentation:
+                self.model = fcn_resnet50(
+                    pretrained=False,
+                    num_classes=num_classes,
+                )
+
+            elif model_cfg["model_name"] == "resnet":
                 self.model = ResNet(
                     num_classes=num_classes,
                     arch=model_cfg["arch"],
@@ -307,6 +316,19 @@ class Classifier(pl.LightningModule, TerraModule):
             loss = (loss_i + loss_t) / 2
             contrastive_loss = loss.mean()
 
+        elif self.segmentation:
+            inputs, targets, group_ids = (
+                batch["input"],
+                batch["segmentation_target"].long(),
+                batch["group_id"],
+            )
+            outs = self.model(inputs)["out"]
+            loss = self.train_loss_computer.loss(outs, targets, group_ids)
+            self.train_loss_computer.log_stats(self.log, is_training=True)
+            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
+            dice = dice_score(outs, targets)
+            self.log("train_dice", dice)
+
         else:
             input_key = (
                 "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
@@ -364,21 +386,34 @@ class Classifier(pl.LightningModule, TerraModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        input_key = (
-            "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
-        )
 
-        inputs, targets, group_ids, sample_id = (
-            batch[input_key],
-            batch["target"],
-            batch["group_id"],
-            batch["id"],
-        )
-        if self.config["train"]["method"] == "gaze_erm":
-            seq_len = batch["gaze_seq_len"]
-            outs = self.model(inputs, seq_len)
+        if self.segmentation:
+            inputs, targets, group_ids = (
+                batch["input"],
+                batch["segmentation_target"].long(),
+                batch["group_id"],
+            )
+            outs = self.model(inputs)["out"]
+            dice = dice_score(outs, targets)
+            self.log("valid_dice", dice)
+
         else:
-            outs = self.forward(inputs)
+            input_key = (
+                "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
+            )
+
+            inputs, targets, group_ids, sample_id = (
+                batch[input_key],
+                batch["target"],
+                batch["group_id"],
+                batch["id"],
+            )
+
+            if self.config["train"]["method"] == "gaze_erm":
+                seq_len = batch["gaze_seq_len"]
+                outs = self.model(inputs, seq_len)
+            else:
+                outs = self.forward(inputs)
 
         if self.contrastive:
             loss = self.val_loss_computer(outs, targets).mean()
@@ -389,7 +424,8 @@ class Classifier(pl.LightningModule, TerraModule):
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1), targets)
 
-        self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+        if not self.segmentation:
+            self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
 
     def validation_epoch_end(self, outputs) -> None:
         if not (self.contrastive):
@@ -499,6 +535,7 @@ def train(
             "gaze_seq": dp["padded_gaze_seq"],
             "gaze_seq_len": dp["gaze_seq_len"],
             "filepath": dp["filepath"],
+            "segmentation_target": dp["segmentation_target"],
         }
     )
 
@@ -587,11 +624,13 @@ def train(
     model.train()
     ckpt_metric = "valid_accuracy"
     mode = "max"
+    if config["train"]["method"] == "segmentation":
+        ckpt_metric = "valid_dice"
     # if len(subgroup_columns) > 0:
     #     ckpt_metric = "robust val acc"
-    if "erm" not in config["train"]["method"]:
-        ckpt_metric = "contrastive_loss"
-        mode = "min"
+    # if "erm" not in config["train"]["method"]:
+    #     ckpt_metric = "contrastive_loss"
+    #     mode = "min"
     checkpoint_callback = ModelCheckpoint(
         monitor=ckpt_metric, mode=mode, every_n_train_steps=5
     )

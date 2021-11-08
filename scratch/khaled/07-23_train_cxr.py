@@ -13,9 +13,11 @@ def train_cxr(
     dataset_cfg = cfg["dataset"]
     train_cfg = cfg["train"]
 
+    segmentation = train_cfg["method"] == "segmentation"
+
     # dp = mk.DataPanel.read(path=dataset_cfg["datapanel_pth"])
     df = build_cxr_df(root_dir="/media/4tb_hdd/siim")  # .out(load=True)
-    dp = get_dp(df)
+    dp = get_dp(df, segmentation=segmentation)
 
     train(
         dp=dp,

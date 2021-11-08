@@ -224,12 +224,12 @@ def cxr_pil_loader(input_dict):
     return Image.fromarray(np.uint8(array))
 
 
-def cxr_loader(input_dict):
+def cxr_loader(input_dict, segmentation):
     train = input_dict["split"] == "train"
     # loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
     # volume = loader(filepath)
     img = cxr_pil_loader(input_dict)
-    if train:
+    if train and not segmentation:
         img = transforms.Compose(
             [
                 transforms.Resize(CXR_SIZE),
@@ -265,10 +265,12 @@ def rle2mask(rle, width, height):
     return mask.reshape(width, height)
 
 
-def get_dp(df: pd.DataFrame):
+def get_dp(df: pd.DataFrame, segmentation: bool = False):
     dp = DataPanel.from_pandas(df)
 
-    input_col = dp[["filepath", "split"]].to_lambda(fn=cxr_loader)
+    input_col = dp[["filepath", "split"]].to_lambda(
+        fn=partial(cxr_loader, segmentation=segmentation)
+    )
     dp.add_column(
         "input",
         input_col,
@@ -286,8 +288,24 @@ def get_dp(df: pd.DataFrame):
         fn=lambda x: rle2mask(x, 1024, 1024).T if x != "-1" else np.zeros((1024, 1024))
     )
     dp.add_column(
-        "segmentation_mask",
+        "segmentation",
         seg_col,
+        overwrite=True,
+    )
+
+    resize_transform = transforms.Compose(
+        [transforms.Resize([CROP_SIZE, CROP_SIZE]), transforms.ToTensor()]
+    )
+    out_seg_col = dp["encoded_pixels"].to_lambda(
+        fn=lambda x: resize_transform(
+            Image.fromarray(np.uint8(rle2mask(x, 1024, 1024).T))
+        ).squeeze()
+        if x != "-1"
+        else torch.zeros((CROP_SIZE, CROP_SIZE))
+    )
+    dp.add_column(
+        "segmentation_target",
+        out_seg_col,
         overwrite=True,
     )
 

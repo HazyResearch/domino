@@ -46,10 +46,24 @@ class LossComputer:
 
     def loss(self, yhat, y, group_idx=None, is_training=False):
         # compute per-sample and per-group losses
+        # if len(y.shape) > 2:
+        #     bs, nc = yhat.shape[0], yhat.shape[1]
+        #     y = y.view(bs, -1)
+        #     yhat = yhat.view(bs, nc, -1)
+
         per_sample_losses = self.criterion(yhat.squeeze(), y)
+        if len(per_sample_losses.shape) > 2:
+            bs = y.shape[0]
+            per_sample_losses = per_sample_losses.view(bs, -1).mean(1)
+            per_sample_accuracies = (
+                (torch.argmax(yhat, 1) == y).float().view(bs, -1).mean(1)
+            )
+        else:
+            per_sample_accuracies = (torch.argmax(yhat, 1) == y).float()
+
         group_loss, group_count = self.compute_group_avg(per_sample_losses, group_idx)
         group_acc, group_count = self.compute_group_avg(
-            (torch.argmax(yhat, 1) == y).float(), group_idx
+            per_sample_accuracies, group_idx
         )
 
         # update historical losses
