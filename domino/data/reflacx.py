@@ -1,10 +1,52 @@
 import os
-import terra
-from meerkat import DataPanel
-import pandas as pd
-import numpy as np
-import pickle
 import shutil
+
+import numpy as np
+import pandas as pd
+import terra
+import torchvision.transforms as transforms
+from dosma import DicomReader
+from meerkat import DataPanel
+from PIL import Image
+
+CXR_MEAN = 0.48865
+CXR_STD = 0.24621
+CXR_SIZE = 256
+CROP_SIZE = 224
+
+
+def cxr_pil_loader(input_dict):
+    filepath = input_dict["local_img_pth"]
+    loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    volume = loader(filepath)[0]
+    array = volume._volume.squeeze()
+    return Image.fromarray(np.uint8(array))
+
+
+def cxr_loader(input_dict):
+    train = input_dict["split"] == "train"
+    # loader = DicomReader(group_by=None, default_ornt=("SI", "AP"))
+    # volume = loader(filepath)
+    img = cxr_pil_loader(input_dict)
+    if train:
+        img = transforms.Compose(
+            [
+                transforms.Resize(CXR_SIZE),
+                transforms.RandomCrop(CROP_SIZE),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
+    else:
+        img = transforms.Compose(
+            [
+                transforms.Resize([CROP_SIZE, CROP_SIZE]),
+                transforms.ToTensor(),
+                transforms.Normalize(CXR_MEAN, CXR_STD),
+            ]
+        )(img)
+    return img.repeat([3, 1, 1])
 
 
 def build_reflacx_dp(data_dir):
@@ -18,10 +60,11 @@ def build_reflacx_dp(data_dir):
 
     # retrieve gaze data and transcriptions
     reflacx_data = []
-    for index, row in metadata_df.iterrows():
+    for _, row in metadata_df.iterrows():
         entry_id = row["id"]
         annot_dir = os.path.join(data_dir, f"main_data/{entry_id}")
         fixation_df = pd.read_csv(os.path.join(annot_dir, "fixations.csv"))
+
         # TODO: scale x_pos and y_pos appropriately
         time = (
             fixation_df["timestamp_end_fixation"]
@@ -37,9 +80,24 @@ def build_reflacx_dp(data_dir):
             lines = f.readlines()
 
         row["transcription"] = lines[0]
+
+        # image directory
+        orig_img_pth = row["image"]
+        im_pth = os.path.join("reflacx_images", orig_img_pth.split("/")[-1])
+        local_img_pth = os.path.join(data_dir, im_pth)
+        row["local_img_pth"] = local_img_pth
+
         reflacx_data.append(dict(row))
 
     dp = DataPanel(reflacx_data)
+
+    # add input col
+    input_col = dp[["local_img_pth", "split"]].to_lambda(fn=cxr_loader)
+    dp.add_column(
+        "input",
+        input_col,
+        overwrite=True,
+    )
 
     return dp
 
@@ -59,22 +117,22 @@ def copy_images_from_mimic(mimic_pth, save_pth, img_list_pth):
 
 
 def main():
-    data_dir = "/data/ssd1crypt/datasets/reflacx"
+    data_dir = "/media/nvme_data/reflacx"
     dp = build_reflacx_dp(data_dir)
+    breakpoint()
 
-    # save image paths
-    img_pths = dp["image"].data
-    txtfile = open("reflacx_img_pths.txt", "w")
-    for pth in img_pths:
-        txtfile.write(pth + "\n")
-    txtfile.close()
+    # # save image paths
+    # img_pths = dp["image"].data
+    # txtfile = open("reflacx_img_pths.txt", "w")
+    # for pth in img_pths:
+    #     txtfile.write(pth + "\n")
+    # txtfile.close()
 
 
 if __name__ == "__main__":
-    # main()
-    copy_images_from_mimic(
-        "/dfs/scratch1/common/public-datasets/mimic-cxr-2.0.0.physionet.org",
-        "/dfs/scratch1/ksaab/data/reflacx_images",
-        "/home/ksaab/Documents/domino/domino/data/reflacx_img_pths.txt",
-    )
-
+    main()
+    # copy_images_from_mimic(
+    #     "/dfs/scratch1/common/public-datasets/mimic-cxr-2.0.0.physionet.org",
+    #     "/dfs/scratch1/ksaab/data/reflacx_images",
+    #     "/home/ksaab/Documents/domino/domino/data/reflacx_img_pths.txt",
+    # )
