@@ -3,6 +3,8 @@ import terra
 from meerkat import DataPanel
 import pandas as pd
 import numpy as np
+import pickle
+import shutil
 
 
 def build_reflacx_dp(data_dir):
@@ -34,9 +36,6 @@ def build_reflacx_dp(data_dir):
         with open(os.path.join(annot_dir, "transcription.txt")) as f:
             lines = f.readlines()
 
-        if len(lines) > 1:
-            breakpoint()
-
         row["transcription"] = lines[0]
         reflacx_data.append(dict(row))
 
@@ -45,11 +44,37 @@ def build_reflacx_dp(data_dir):
     return dp
 
 
+def copy_images_from_mimic(mimic_pth, save_pth, img_list_pth):
+
+    with open(img_list_pth) as f:
+        img_pths = f.readlines()
+
+    for pth in img_pths:
+        pth = pth.strip("\n")
+        mimic_pth_ = os.path.join(mimic_pth, pth.split("2.0.0/")[-1])
+        shutil.copyfile(mimic_pth_, save_pth)
+        breakpoint()
+
+    return None
+
+
 def main():
     data_dir = "/data/ssd1crypt/datasets/reflacx"
     dp = build_reflacx_dp(data_dir)
-    breakpoint()
+
+    # save image paths
+    img_pths = dp["image"].data
+    txtfile = open("reflacx_img_pths.txt", "w")
+    for pth in img_pths:
+        txtfile.write(pth + "\n")
+    txtfile.close()
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    copy_images_from_mimic(
+        "/dfs/scratch1/common/public-datasets/mimic-cxr-2.0.0.physionet.org",
+        "/dfs/scratch1/ksaab/data/reflacx_images",
+        "/home/ksaab/Documents/domino/domino/data/reflacx_img_pths.txt",
+    )
+
