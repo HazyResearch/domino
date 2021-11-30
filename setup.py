@@ -17,7 +17,7 @@ NAME = "domino"
 DESCRIPTION = ""
 URL = ""
 EMAIL = "eyuboglu@stanford.edu"
-AUTHOR = "https://github.com/HazyResearch/domino"
+# AUTHOR = "https://github.com/HazyResearch/domino"
 REQUIRES_PYTHON = ">=3.7.0"
 VERSION = main_ns["__version__"]
 
@@ -25,8 +25,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
-    "meerkat-ml @ git+https://github.com/robustness-gym/meerkat@dev",
-    "terra @ git+https://github.com/seyuboglu/terra",
+    "meerkat-ml",
     "pandas",
     "numpy>=1.18.0",
     "tqdm>=4.49.0",
