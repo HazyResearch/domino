@@ -3,8 +3,10 @@ import pickle
 from functools import partial
 from glob import glob
 
+import meerkat as mk
 import numpy as np
 import pandas as pd
+import terra
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
@@ -12,7 +14,6 @@ from dosma import DicomReader
 from meerkat import DataPanel
 from meerkat.cells.volume import MedicalVolumeCell
 from PIL import Image
-from terra import Task
 from torchvision.models import resnet50
 
 from domino.modeling import ResNet
@@ -89,7 +90,7 @@ def get_cxr_activations(
             "block4": cnn_encoder[-1],
         },
         batch_size=32,
-        device=1,
+        device=0,
     )
     return act_dp
 
@@ -104,7 +105,7 @@ def minmax_norm(dict_arr, key):
 
 
 # @Task.make_task
-def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
+def create_gaze_dp(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # hypers for CXR gaze features:
     s1 = 3
@@ -144,10 +145,10 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     gaze_feats_dict = minmax_norm(gaze_feats_dict, "gaze_diffusivity")
 
     # merge sequences and features into a df
-    gaze_df = pd.DataFrame(
+    gaze_dp = DataPanel(
         [
             {
-                "gaze_seq": torch.FloatTensor(gaze_seq_dict[img_id]),
+                "gaze_seq": np.array(gaze_seq_dict[img_id]),
                 # "gaze_heatmap": gaze_feats_dict[img_id]["gaze_heatmap"],
                 "gaze_max_visit": gaze_feats_dict[img_id]["gaze_max_visit"],
                 "gaze_unique": gaze_feats_dict[img_id]["gaze_unique"],
@@ -162,14 +163,14 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # normalize gaze sequences
     X = []
-    for gaze_seq in gaze_df["gaze_seq"]:
+    for gaze_seq in gaze_dp["gaze_seq"]:
         X.extend([torch.Tensor(entry) for entry in gaze_seq])
     X = torch.stack(X)
 
     norm_gaze_seqs = []
     X_mean = X.mean(0)
     X_std = X.std(0)
-    for gaze_seq in gaze_df["gaze_seq"]:
+    for gaze_seq in gaze_dp["gaze_seq"]:
         norm_gaze_seqs.append(
             torch.stack([(torch.Tensor(entry) - X_mean) / X_std for entry in gaze_seq])
         )
@@ -178,12 +179,12 @@ def create_gaze_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     X_padded = torch.nn.utils.rnn.pad_sequence(norm_gaze_seqs).transpose(0, 1)
     seq_len = torch.LongTensor(list(map(len, norm_gaze_seqs)))
 
-    gaze_df["padded_gaze_seq"] = [X_padded[ndx] for ndx in range(X_padded.shape[0])]
-    gaze_df["gaze_seq_len"] = seq_len
+    gaze_dp["padded_gaze_seq"] = [X_padded[ndx] for ndx in range(X_padded.shape[0])]
+    gaze_dp["gaze_seq_len"] = seq_len
     #
     # packed_input = torch.nn.utils.rnn.pack_padded_sequence(X_padded, seq_len,enforce_sorted=False)
 
-    return gaze_df
+    return gaze_dp
 
 
 class CXRResnet(nn.Module):
@@ -265,7 +266,7 @@ def rle2mask(rle, width, height):
     return mask.reshape(width, height)
 
 
-def get_dp(df: pd.DataFrame, segmentation: bool = False):
+def get_dp(df: pd.DataFrame, segmentation: bool):
     dp = DataPanel.from_pandas(df)
 
     input_col = dp[["filepath", "split"]].to_lambda(
@@ -293,6 +294,13 @@ def get_dp(df: pd.DataFrame, segmentation: bool = False):
         overwrite=True,
     )
 
+    area_col = mk.PandasSeriesColumn([entry.mean() for entry in dp["segmentation"]])
+    dp.add_column(
+        "pmx_area",
+        area_col,
+        overwrite=True,
+    )
+
     resize_transform = transforms.Compose(
         [transforms.Resize([CROP_SIZE, CROP_SIZE]), transforms.ToTensor()]
     )
@@ -313,7 +321,13 @@ def get_dp(df: pd.DataFrame, segmentation: bool = False):
 
 
 # @Task.make_task
-def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
+@terra.Task
+def build_cxr_dp(
+    root_dir: str = ROOT_DIR,
+    tube_mask: bool = False,
+    segmentation: bool = False,
+    run_dir: str = None,
+):
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))
     segment_df = segment_df.rename(
@@ -324,7 +338,7 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
 
     # get binary labels for pneumothorax, any row with a "-1" for encoded pixels is
     # considered a negative
-    segment_df["pmx"] = (segment_df.encoded_pixels != "-1").astype(int)
+    segment_df["target"] = (segment_df.encoded_pixels != "-1").astype(int)
 
     # start building up a main dataframe with a few `merge` operations (i.e. join)
     df = segment_df
@@ -365,9 +379,16 @@ def build_cxr_df(root_dir: str = ROOT_DIR, run_dir: str = None):
     df = df.merge(tube_df, how="left", on="image_id")
     df.split = df.split.fillna("train")
 
-    # integrate gaze features
-    gaze_df = create_gaze_df(root_dir)
-    # gaze_df = create_gaze_df.out(load=True)
-    df = df.merge(gaze_df, how="left", on="image_id")
+    dp = get_dp(df, segmentation=segmentation)
 
-    return df
+    # integrate gaze features
+    gaze_dp = create_gaze_dp(root_dir)
+    # gaze_df = create_gaze_df.out(load=True)
+    dp = dp.merge(gaze_dp, how="left", on="image_id")
+
+    if tube_mask:
+        tube_mask = dp["chest_tube"].data.astype(str) != "nan"
+        dp = dp.lz[tube_mask]
+        dp["chest_tube"] = dp["chest_tube"].astype(int)
+
+    return dp

@@ -21,6 +21,10 @@ def _get_slice_builder(dataset: str):
         from .eeg import EegSliceBuilder
 
         sb = EegSliceBuilder()
+    elif dataset == "cxr":
+        from .cxr import CxrSliceBuilder
+
+        sb = CxrSliceBuilder()
     elif dataset == "celeba":
         from .celeba import CelebASliceBuilder
 

@@ -1,0 +1,60 @@
+model:
+  model_name: resnet
+  arch: resnet50
+  dropout: 0
+  pretrained: True
+  resume_ckpt: False
+
+train:
+  seed: 123
+  method: "erm" # ["erm", "erm_gaze", "gaze_clip", "cnc", "cnc_gaze", "supcon", "randcon"]
+  contrastive_config:
+    contrastive_weight: 0.8
+    temperature: 0.05
+    num_positive: 8
+    num_negative: 8
+    num_anchor: 1
+
+  gaze_encoder_config:
+    num_layers: 2
+    hidden_size: 128
+    encoder: "transformer"
+    nheads: 8
+    bidirectional: False
+    T: 50
+    
+  multiclass: False # if true, then uses subgroup columns as multiclass labels
+  epochs: 50
+  batch_size: 32
+  lr: 1e-5
+  wd: 0
+  valid_split: test
+  gaze_split: True
+  val_check_interval: 20
+  loss:
+    criterion: "cross_entropy"
+    reweight_class_alpha: 10
+    reweight_class: False
+    robust_sampler: False
+    gdro: False
+    gdro_config:
+      alpha: 0.01
+      gamma: 0.1
+      min_var_weight: 0
+      robust_step_size: 0.01
+      use_normalized_loss: False
+      btl: False
+
+dataset:
+  num_workers: 4
+  id_column: "image_id"
+  input_column: "input"
+  target_column: "pmx"
+  subgroup_columns: ["chest_tube"]
+  datapanel_pth: "/media/4tb_hdd/siim/mimic_dp_09-06-21.dp"
+
+wandb:
+  project: domino
+  group: ''
+  log_model: False
+

@@ -108,12 +108,12 @@ def gaze_clip_sweep():
 
     sweep = prod(
         [
-            flag("train.epochs", [100]),
+            flag("train.epochs", [200]),
             flag("train.lr", [1e-4]),
             flag("train.wd", [0]),
             flag(
                 "train.contrastive_config.contrastive_weight",
-                [0, 0.1, 0.3, 0.5],
+                [0.1, 0.3, 0.5],
             ),
             flag("train.gaze_encoder_config.num_layers", [2]),
             flag("train.gaze_encoder_config.nheads", [16]),
@@ -121,7 +121,7 @@ def gaze_clip_sweep():
             flag("train.gaze_encoder_config.T", [50]),
             flag("train.gaze_encoder_config.encoder", ["transformer"]),
             flag("train.method", ["gaze_clip"]),
-            flag("train.seed", [101, 102, 103, 104, 105]),
+            flag("train.seed", [101, 102, 103]),
         ]
     )
 

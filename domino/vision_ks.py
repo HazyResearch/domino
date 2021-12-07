@@ -19,6 +19,7 @@ from torchvision import transforms as transforms
 from torchvision.models.segmentation import fcn_resnet50
 
 from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
+from domino.contrastive_loss import ContrastiveLoss
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet, SequenceModel
 from domino.utils import PredLogger
@@ -45,22 +46,6 @@ def get_save_dir(config):
         subgroups += f"_{name}"
     subgroups = subgroups if len(subgroup_columns) > 0 else "none"
     method = config["train"]["method"]
-    # if config["train"]["loss"]["gdro"]:
-    #     method = "gdro"
-    # elif config["train"]["loss"]["reweight_class"]:
-    #     method = "reweight"
-    # elif config["train"]["loss"]["robust_sampler"]:
-    #     method = "sampler"
-    # elif config["train"]["multiclass"]:
-    #     method = "multiclass"
-    # elif "upsampled" in config["dataset"]["datapanel_pth"]:
-    #     method = "upsample"
-    # elif config["train"]["method"] == "cnc":
-    #     method = "cnc"
-    # elif config["train"]["method"] == "cnc_gaze":
-    #     method = "cnc_gaze"
-    # elif config["train"]["method"] == "randcon":
-    #     method = "randcon"
 
     lr = config["train"]["lr"]
     wd = config["train"]["wd"]
@@ -160,7 +145,7 @@ class Classifier(pl.LightningModule, TerraModule):
         )
         _metrics = {
             "accuracy": torchmetrics.Accuracy(compute_on_step=False),
-            "auroc": torchmetrics.AUROC(compute_on_step=False, num_classes=num_classes),
+            "auroc": torchmetrics.AUROC(compute_on_step=False),
             # TODO (Sabri): Use sklearn metrics here, torchmetrics doesn't handle case
             # there are only a subset of classes in a test set
             "macro_f1": torchmetrics.F1(num_classes=num_classes, average="macro"),
@@ -189,7 +174,8 @@ class Classifier(pl.LightningModule, TerraModule):
             if self.gaze_clip:
                 self.gaze_encoder = model
                 self.gaze_encoder.classifier = nn.Identity()
-                self.clip_func = nn.CrossEntropyLoss(reduction="none")
+                # self.clip_func = nn.CrossEntropyLoss(reduction="none")
+                self.contrastive_loss = ContrastiveLoss(type="sim_clr")
             else:
                 self.model = model
         if self.config["train"]["method"] != "gaze_erm":
@@ -310,11 +296,17 @@ class Classifier(pl.LightningModule, TerraModule):
             gaze_embs = self.gaze_encoder(gaze_inputs, seq_len)
 
             labels = torch.ones_like(gaze_embs)[:, 0].long()
-            logits = gaze_embs @ embs.T
-            loss_t = self.clip_func(logits, labels)
-            loss_i = self.clip_func(logits.T, labels)
-            loss = (loss_i + loss_t) / 2
-            contrastive_loss = loss.mean()
+            # logits = gaze_embs @ embs.T
+            # loss_t = self.clip_func(logits, labels)
+            # loss_i = self.clip_func(logits.T, labels)
+            # loss = (loss_i + loss_t) / 2
+            # contrastive_loss = loss.mean()
+            # contrastive_loss = nn.functional.cosine_embedding_loss(
+            #     embs, gaze_embs, labels
+            # )
+            x = torch.stack([embs, gaze_embs]).transpose(0, 1)
+            labels = torch.stack([labels, labels]).transpose(0, 1)
+            contrastive_loss = self.contrastive_loss(x, labels)
 
         elif self.segmentation:
             inputs, targets, group_ids = (
@@ -356,10 +348,13 @@ class Classifier(pl.LightningModule, TerraModule):
                 self.train_loss_computer.log_stats(self.log, is_training=True)
             else:
                 loss = self.train_loss_computer(outs, targets.long()).mean()
-            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
 
+            self.log(
+                "criterion_loss", loss, on_step=True, logger=True
+            )  # , sync_dist=True)
             cw = self.config["train"]["contrastive_config"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
+            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
             self.log(
                 "contrastive_loss",
                 contrastive_loss,
@@ -422,7 +417,7 @@ class Classifier(pl.LightningModule, TerraModule):
         self.log("valid_loss", loss)  # , sync_dist=True)
 
         for metric in self.metrics.values():
-            metric(torch.softmax(outs, dim=-1), targets)
+            metric(torch.softmax(outs, dim=-1)[:, 1], targets)
 
         if not self.segmentation:
             self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
