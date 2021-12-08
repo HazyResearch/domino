@@ -9,16 +9,17 @@ import torch.nn as nn
 
 
 class SliceDiscoveryMethod(ABC):
+    
     @dataclass
     class Config:
-        n_slices: int = 5
+        pass
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 
-    def __init__(self, config: Union[Config, dict] = None):
-        if isinstance(config, dict):
-            config = self.Config(**config)
-        self.config = config
+    def __init__(self, n_slices: int):
+
+        self.config = self.Config()
+        self.config.n_slices = n_slices
 
     @abstractmethod
     def fit(

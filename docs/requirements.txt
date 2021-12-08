@@ -1,0 +1,8 @@
+sphinx-rtd-theme
+sphinx_autodoc_typehints
+nbsphinx
+recommonmark
+toml 
+furo
+ipython
+git+https://github.com/data-centric-ai/dcbench@main#dcbench
