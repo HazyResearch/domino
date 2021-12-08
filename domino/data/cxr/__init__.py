@@ -155,7 +155,7 @@ def create_gaze_dp(root_dir: str = ROOT_DIR, run_dir: str = None):
                 "gaze_time": gaze_feats_dict[img_id]["gaze_time"],
                 "gaze_diffusivity": gaze_feats_dict[img_id]["gaze_diffusivity"],
                 "expert_label": expert_labels_dict[img_id],
-                "image_id": os.path.splitext(os.path.basename(img_id))[0],
+                "id": os.path.splitext(os.path.basename(img_id))[0],
             }
             for img_id in expert_labels_dict
         ]
@@ -331,10 +331,10 @@ def build_cxr_dp(
     # get segment annotations
     segment_df = pd.read_csv(os.path.join(root_dir, "train-rle.csv"))
     segment_df = segment_df.rename(
-        columns={"ImageId": "image_id", " EncodedPixels": "encoded_pixels"}
+        columns={"ImageId": "id", " EncodedPixels": "encoded_pixels"}
     )
     # there are some image ids with multiple label rows, we'll just take the first
-    segment_df = segment_df[~segment_df.image_id.duplicated(keep="first")]
+    segment_df = segment_df[~segment_df.id.duplicated(keep="first")]
 
     # get binary labels for pneumothorax, any row with a "-1" for encoded pixels is
     # considered a negative
@@ -349,7 +349,7 @@ def build_cxr_dp(
         [
             {
                 "filepath": filepath,
-                "image_id": os.path.splitext(os.path.basename(filepath))[0],
+                "id": os.path.splitext(os.path.basename(filepath))[0],
             }
             for filepath in filepaths
         ]
@@ -357,7 +357,7 @@ def build_cxr_dp(
 
     # important to perform a left join here, because there are some images in the
     # directory without labels in `segment_df`
-    df = df.merge(filepath_df, how="left", on="image_id")
+    df = df.merge(filepath_df, how="left", on="id")
 
     # add in chest tube annotations
     rows = []
@@ -370,13 +370,13 @@ def build_cxr_dp(
         )
         rows.extend(
             [
-                {"image_id": k, "chest_tube": int(v), "split": split}
+                {"id": k, "chest_tube": int(v), "split": split}
                 for k, v in tube_dict.items()
             ]
         )
     tube_df = pd.DataFrame(rows)
 
-    df = df.merge(tube_df, how="left", on="image_id")
+    df = df.merge(tube_df, how="left", on="id")
     df.split = df.split.fillna("train")
 
     dp = get_dp(df, segmentation=segmentation)
@@ -384,7 +384,7 @@ def build_cxr_dp(
     # integrate gaze features
     gaze_dp = create_gaze_dp(root_dir)
     # gaze_df = create_gaze_df.out(load=True)
-    dp = dp.merge(gaze_dp, how="left", on="image_id")
+    dp = dp.merge(gaze_dp, how="left", on="id")
 
     if tube_mask:
         tube_mask = dp["chest_tube"].data.astype(str) != "nan"

@@ -13,12 +13,7 @@ def train_cxr(
     dataset_cfg = cfg["dataset"]
     train_cfg = cfg["train"]
 
-    segmentation = train_cfg["method"] == "segmentation"
-
-    # dp = mk.DataPanel.read(path=dataset_cfg["datapanel_pth"])
-    dp = build_cxr_dp(root_dir="/media/4tb_hdd/siim", segmentation=segmentation).out(
-        load=True
-    )
+    dp = build_cxr_dp(root_dir="/media/4tb_hdd/siim", tube_mask=True).load()
 
     train(
         dp=dp,
@@ -30,6 +25,7 @@ def train_cxr(
         valid_split=train_cfg["valid_split"],
         val_check_interval=train_cfg["val_check_interval"],
         max_epochs=train_cfg["epochs"],
+        wandb_config={},
         config=cfg,
     )
 

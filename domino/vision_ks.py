@@ -18,7 +18,6 @@ from torchmetrics.functional import dice_score
 from torchvision import transforms as transforms
 from torchvision.models.segmentation import fcn_resnet50
 
-from domino.cnc import SupervisedContrastiveLoss, load_contrastive_dp
 from domino.contrastive_loss import ContrastiveLoss
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet, SequenceModel
@@ -53,7 +52,7 @@ def get_save_dir(config):
     save_dir = f"{DOMINO_DIR}/scratch/khaled/results/method_{method}/gaze_split_{gaze_split}/target_{target}/subgroup_{subgroups}/lr_{lr}/wd_{wd}/dropout_{dropout}"
 
     if "erm" not in config["train"]["method"]:
-        cw = config["train"]["contrastive_config"]["contrastive_weight"]
+        cw = config["train"]["contrastive_weight"]
         save_dir += f"/cw_{cw}"
 
         # if method == "cnc_gaze":
@@ -82,21 +81,13 @@ class Classifier(pl.LightningModule, TerraModule):
         super().__init__()
         self.config = config
 
-        self.cnc = config["train"]["method"] == "cnc"
-        self.cnc_gaze = config["train"]["method"] == "cnc_gaze"
-        self.randcon = config["train"]["method"] == "randcon"
-        self.gaze_clip = config["train"]["method"] == "gaze_clip"
-        self.segmentation = config["train"]["method"] == "segmentation"
-        self.contrastive = (
-            "cnc" in config["train"]["method"] or "con" in config["train"]["method"]
-        )
+        self.gazecon = config["train"]["method"] == "gazecon"
 
         self._set_model()
         criterion_dict = {"cross_entropy": nn.CrossEntropyLoss, "mse": nn.MSELoss}
         criterion_fnc = criterion_dict[config["train"]["loss"]["criterion"]]
         if config["train"]["loss"]["criterion"] == "cross_entropy":
             criterion = criterion_fnc(
-                # weight=torch.Tensor(config["train"]["loss"]["class_weights"]).cuda(),
                 reduction="none",
             )
         else:
@@ -107,34 +98,21 @@ class Classifier(pl.LightningModule, TerraModule):
         loss_cfg = config["train"]["loss"]
         dataset_cfg = config["dataset"]
 
-        if self.contrastive:
-            self.contrastive_loss = SupervisedContrastiveLoss(
-                config["train"]["contrastive_config"]
-            )
-            self.encoder = nn.Sequential(*list(self.model.children())[:-1])
+        self.train_loss_computer = LossComputer(
+            criterion,
+            is_robust=loss_cfg["gdro"],
+            dataset_config=dataset_cfg["train_dataset_config"],
+            gdro_config=loss_cfg["gdro_config"],
+        )
+        self.val_loss_computer = LossComputer(
+            criterion,
+            is_robust=loss_cfg["gdro"],
+            dataset_config=dataset_cfg["val_dataset_config"],
+            gdro_config=loss_cfg["gdro_config"],
+        )
 
-            self.train_loss_computer = criterion
-            self.val_loss_computer = criterion
-
-        else:
-            self.train_loss_computer = LossComputer(
-                criterion,
-                is_robust=loss_cfg["gdro"],
-                dataset_config=dataset_cfg["train_dataset_config"],
-                gdro_config=loss_cfg["gdro_config"],
-            )
-            self.val_loss_computer = LossComputer(
-                criterion,
-                is_robust=loss_cfg["gdro"],
-                dataset_config=dataset_cfg["val_dataset_config"],
-                gdro_config=loss_cfg["gdro_config"],
-            )
-
-        if config["train"]["loss"]["criterion"] == "mse" or self.segmentation:
-            self.metrics = {}
-        else:
-            metrics = self.config.get("metrics", ["auroc", "accuracy"])
-            self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
+        metrics = self.config.get("metrics", ["auroc", "accuracy"])
+        self.set_metrics(metrics, num_classes=dataset_cfg["num_classes"])
         self.valid_preds = PredLogger()
 
     def set_metrics(self, metrics: List[str], num_classes: int = None):
@@ -160,7 +138,7 @@ class Classifier(pl.LightningModule, TerraModule):
     def _set_model(self):
         model_cfg = self.config["model"]
         num_classes = self.config["dataset"]["num_classes"]
-        if self.config["train"]["method"] == "gaze_erm" or self.gaze_clip:
+        if self.gazecon:
             gaze_enc_cfg = self.config["train"]["gaze_encoder_config"]
             model = SequenceModel(
                 input_size=3,
@@ -171,33 +149,23 @@ class Classifier(pl.LightningModule, TerraModule):
                 nheads=gaze_enc_cfg["nheads"],
                 T=gaze_enc_cfg["T"],
             )
-            if self.gaze_clip:
-                self.gaze_encoder = model
-                self.gaze_encoder.classifier = nn.Identity()
-                # self.clip_func = nn.CrossEntropyLoss(reduction="none")
-                self.contrastive_loss = ContrastiveLoss(type="sim_clr")
-            else:
-                self.model = model
-        if self.config["train"]["method"] != "gaze_erm":
-            if self.segmentation:
-                self.model = fcn_resnet50(
-                    pretrained=False,
-                    num_classes=num_classes,
-                )
+            self.gaze_encoder = model
+            self.gaze_encoder.classifier = nn.Identity()
+            self.contrastive_loss = ContrastiveLoss(type="sim_clr")
 
-            elif model_cfg["model_name"] == "resnet":
-                self.model = ResNet(
-                    num_classes=num_classes,
-                    arch=model_cfg["arch"],
-                    dropout=model_cfg["dropout"],
-                    pretrained=model_cfg["pretrained"],
-                )
-            elif model_cfg["model_name"] == "densenet":
-                self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
-            else:
-                raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
+        if model_cfg["model_name"] == "resnet":
+            self.model = ResNet(
+                num_classes=num_classes,
+                arch=model_cfg["arch"],
+                dropout=model_cfg["dropout"],
+                pretrained=model_cfg["pretrained"],
+            )
+        elif model_cfg["model_name"] == "densenet":
+            self.model = DenseNet(num_classes=num_classes, arch=model_cfg["arch"])
+        else:
+            raise ValueError(f"Model name {model_cfg['model_name']} not supported.")
 
-        if self.gaze_clip:
+        if self.gazecon:
             self.fc = self.model.fc
             self.model.fc = nn.Identity()
             self.image_proj = nn.Linear(
@@ -205,85 +173,13 @@ class Classifier(pl.LightningModule, TerraModule):
             )
 
     def forward(self, x):
-        if self.gaze_clip:
+        if self.gazecon:
             return self.fc(self.model(x))
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        if self.contrastive:
-            a_inputs, a_targets, a_group_ids = (
-                batch["input"],
-                batch["target"],
-                batch["group_id"],
-            )
-            if self.cnc:
-                p_entries, n_entries = batch["contrastive_input_pair"]
-                all_p_inputs = p_entries[0]
-                all_n_inputs = n_entries[0]
-                all_p_targets = p_entries[1]
-                all_n_targets = n_entries[1]
 
-            contrastive_loss = 0
-            pos_sim = 0
-            neg_sim = 0
-            for a_ix in range(len(a_inputs)):
-                if self.cnc:
-                    p_inputs = all_p_inputs[a_ix]
-                    n_inputs = all_n_inputs[a_ix]
-                    p_targets = all_p_targets[a_ix]
-                    n_targets = all_n_targets[a_ix]
-
-                elif self.cnc_gaze or self.randcon:
-                    gaze_features = batch["gaze_features"]
-                    a_gfeats = gaze_features[a_ix]
-                    gfeat_dist = torch.norm(gaze_features - a_gfeats, dim=1)
-                    if self.randcon:
-                        gfeat_dist = torch.rand_like(gfeat_dist)
-                    alpha = gfeat_dist.median()
-                    same_class = a_targets == a_targets[a_ix]
-
-                    # n_mask = gfeat_dist <= alpha
-                    n_mask = torch.logical_and(gfeat_dist > alpha, same_class)
-                    p_mask = torch.logical_and(gfeat_dist <= alpha, same_class)
-                    # p_mask = gfeat_dist > alpha
-                    # remove anchor from p_mask
-                    p_mask[a_ix] = False
-
-                    if p_mask.sum() < 2 or n_mask.sum() < 2:
-                        continue
-
-                    p_inputs = a_inputs[p_mask]
-                    p_targets = a_targets[p_mask]
-                    n_inputs = a_inputs[n_mask]
-                    n_targets = a_targets[n_mask]
-
-                c_loss, pos_sim_, neg_sim_ = self.contrastive_loss(
-                    (a_inputs[a_ix], p_inputs, n_inputs), self.encoder
-                )
-
-                c_loss.backward()
-                free_gpu([c_loss], delete=True)
-
-                contrastive_loss += c_loss.item()
-                pos_sim += pos_sim_.item()
-                neg_sim += neg_sim_.item()
-
-            contrastive_loss /= len(a_inputs)
-            pos_sim /= len(a_inputs)
-            neg_sim /= len(a_inputs)
-
-            if self.cnc:
-                inputs = torch.cat([a_inputs, p_inputs, n_inputs])
-                targets = torch.cat([a_targets, p_targets, n_targets])
-            else:
-                inputs = a_inputs
-                targets = a_targets
-
-            # group_ids = (
-            #     a_group_ids  # torch.cat([a_group_ids, p_group_ids, n_group_ids])
-            # )
-
-        elif self.gaze_clip:
+        if self.gazecon:
             inputs, gaze_inputs, targets, group_ids = (
                 batch["input"],
                 batch["gaze_seq"],
@@ -296,135 +192,61 @@ class Classifier(pl.LightningModule, TerraModule):
             gaze_embs = self.gaze_encoder(gaze_inputs, seq_len)
 
             labels = torch.ones_like(gaze_embs)[:, 0].long()
-            # logits = gaze_embs @ embs.T
-            # loss_t = self.clip_func(logits, labels)
-            # loss_i = self.clip_func(logits.T, labels)
-            # loss = (loss_i + loss_t) / 2
-            # contrastive_loss = loss.mean()
-            # contrastive_loss = nn.functional.cosine_embedding_loss(
-            #     embs, gaze_embs, labels
-            # )
             x = torch.stack([embs, gaze_embs]).transpose(0, 1)
             labels = torch.stack([labels, labels]).transpose(0, 1)
             contrastive_loss = self.contrastive_loss(x, labels)
 
-        elif self.segmentation:
-            inputs, targets, group_ids = (
-                batch["input"],
-                batch["segmentation_target"].long(),
-                batch["group_id"],
-            )
-            outs = self.model(inputs)["out"]
-            loss = self.train_loss_computer.loss(outs, targets, group_ids)
-            self.train_loss_computer.log_stats(self.log, is_training=True)
-            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
-            dice = dice_score(outs, targets)
-            self.log("train_dice", dice)
-
-        else:
-            input_key = (
-                "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
-            )
-            inputs, targets, group_ids = (
-                batch[input_key],
-                batch["target"],
-                batch["group_id"],
-            )
-
-            if self.config["train"]["method"] == "gaze_erm":
-                seq_len = batch["gaze_seq_len"]
-                outs = self.model(inputs, seq_len)
-            else:
-                outs = self.forward(inputs)
-
-            loss = self.train_loss_computer.loss(outs, targets, group_ids)
-            self.train_loss_computer.log_stats(self.log, is_training=True)
-            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
-
-        if self.contrastive or self.gaze_clip:
             outs = self.forward(inputs)
-            if self.gaze_clip:
-                loss = self.train_loss_computer.loss(outs, targets, group_ids)
-                self.train_loss_computer.log_stats(self.log, is_training=True)
-            else:
-                loss = self.train_loss_computer(outs, targets.long()).mean()
+            loss = self.train_loss_computer.loss(outs, targets, group_ids)
+            self.train_loss_computer.log_stats(self.log, is_training=True)
 
-            self.log(
-                "criterion_loss", loss, on_step=True, logger=True
-            )  # , sync_dist=True)
-            cw = self.config["train"]["contrastive_config"]["contrastive_weight"]
+            self.log("criterion_loss", loss, on_step=True, logger=True)
+            cw = self.config["train"]["contrastive_weight"]
             loss = (1 - cw) * loss + cw * contrastive_loss
-            self.log("train_loss", loss, on_step=True, logger=True)  # , sync_dist=True)
+            self.log("train_loss", loss, on_step=True, logger=True)
             self.log(
                 "contrastive_loss",
                 contrastive_loss,
                 on_step=True,
                 logger=True,
-                # sync_dist=True,
             )
 
-            if self.contrastive:
-                self.log(
-                    "positive_sim",
-                    pos_sim,
-                    on_step=True,
-                    logger=True,
-                )
+        else:
+            inputs, targets, group_ids = (
+                batch["input"],
+                batch["target"],
+                batch["group_id"],
+            )
 
-                self.log(
-                    "negative_sim",
-                    neg_sim,
-                    on_step=True,
-                    logger=True,
-                )
+            outs = self.forward(inputs)
+
+            loss = self.train_loss_computer.loss(outs, targets, group_ids)
+            self.train_loss_computer.log_stats(self.log, is_training=True)
+            self.log("train_loss", loss, on_step=True, logger=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
 
-        if self.segmentation:
-            inputs, targets, group_ids = (
-                batch["input"],
-                batch["segmentation_target"].long(),
-                batch["group_id"],
-            )
-            outs = self.model(inputs)["out"]
-            dice = dice_score(outs, targets)
-            self.log("valid_dice", dice)
+        inputs, targets, group_ids, sample_id = (
+            batch["input"],
+            batch["target"],
+            batch["group_id"],
+            batch["id"],
+        )
 
-        else:
-            input_key = (
-                "gaze_seq" if self.config["train"]["method"] == "gaze_erm" else "input"
-            )
+        outs = self.forward(inputs)
 
-            inputs, targets, group_ids, sample_id = (
-                batch[input_key],
-                batch["target"],
-                batch["group_id"],
-                batch["id"],
-            )
-
-            if self.config["train"]["method"] == "gaze_erm":
-                seq_len = batch["gaze_seq_len"]
-                outs = self.model(inputs, seq_len)
-            else:
-                outs = self.forward(inputs)
-
-        if self.contrastive:
-            loss = self.val_loss_computer(outs, targets).mean()
-        else:
-            loss = self.val_loss_computer.loss(outs, targets, group_ids)
+        loss = self.val_loss_computer.loss(outs, targets, group_ids)
         self.log("valid_loss", loss)  # , sync_dist=True)
 
         for metric in self.metrics.values():
             metric(torch.softmax(outs, dim=-1)[:, 1], targets)
 
-        if not self.segmentation:
-            self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
+        self.valid_preds.update(torch.softmax(outs, dim=-1), targets, sample_id)
 
     def validation_epoch_end(self, outputs) -> None:
-        if not (self.contrastive):
-            self.val_loss_computer.log_stats(self.log)
+        self.val_loss_computer.log_stats(self.log)
         for metric_name, metric in self.metrics.items():
             self.log(f"valid_{metric_name}", metric.compute())  # , sync_dist=True)
 
@@ -469,6 +291,7 @@ def train(
     id_column: str,
     model: Classifier = None,
     config: dict = None,
+    wandb_config: dict = None,
     num_classes: int = 2,
     max_epochs: int = 50,
     samples_per_epoch: int = None,
@@ -477,28 +300,14 @@ def train(
     batch_size: int = 16,
     train_split: str = "train",
     valid_split: str = "valid",
-    weighted_sampling: bool = False,
     **kwargs,
 ):
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
     pl.utilities.seed.seed_everything(config["train"]["seed"])
 
-    multiclass = config["train"]["multiclass"]
-
     train_mask = dp["split"].data == train_split
-    if config["train"]["gaze_split"]:
-        # gaze train split is one where chest tube labels exist
-        train_mask = np.logical_and(
-            train_mask, dp["chest_tube"].data.astype(str) != "nan"
-        )
-        gaze_features = torch.stack(
-            [
-                torch.Tensor(dp["gaze_time"]),
-                torch.Tensor(dp["gaze_unique"]),
-                torch.Tensor(dp["gaze_diffusivity"]),
-                torch.Tensor(dp["gaze_max_visit"]),
-            ]
-        ).T
+    # train_mask = np.logical_and(train_mask, dp["chest_tube"].data.astype(str) != "nan")
+    val_mask = dp["split"].data == valid_split
 
     subgroup_columns = config["dataset"]["subgroup_columns"]
     if len(subgroup_columns) > 0:
@@ -508,43 +317,19 @@ def train(
     else:
         group_ids = dp[target_column].data
     group_ids[np.isnan(group_ids)] = -1
-    if multiclass:
-        # make sure gdro and robust sampler are off
-        assert (
-            not config["train"]["loss"]["robust_sampler"]
-            and not config["train"]["loss"]["gdro"]
-        )
-        num_classes = num_classes * 2 * len(subgroup_columns)
 
     dp = mk.DataPanel.from_batch(
         {
             "input": dp[input_column],
-            "target": dp[target_column]  # .astype(int)
-            if not multiclass
-            else group_ids.astype(int),  # group_ids become target labels
+            "target": dp[target_column],
             "id": dp[id_column],
-            "split": dp["split"],
             "group_id": group_ids.astype(int),
-            "chest_tube": dp["chest_tube"],  # DEBUG
-            "gaze_features": gaze_features,
             "gaze_seq": dp["padded_gaze_seq"],
             "gaze_seq_len": dp["gaze_seq_len"],
-            "filepath": dp["filepath"],
-            "segmentation_target": dp["segmentation_target"],
         }
     )
-
-    val_mask = dp["split"].data == valid_split
-    if config["train"]["method"] == "gaze_erm":
-        train_split_frac = 0.8
-        gaze_mask = np.array(
-            [isinstance(entry, torch.FloatTensor) for entry in dp["gaze_seq"]]
-        )
-        rand_vec = np.random.rand(len(gaze_mask))
-        train_mask = np.logical_and(gaze_mask, rand_vec < train_split_frac)
-        val_mask = np.logical_and(gaze_mask, rand_vec >= train_split_frac)
     train_dp = dp.lz[train_mask]
-    val_dp = dp.lz[val_mask]
+    val_dp = dp["input", "target", "id", "group_id"].lz[val_mask]
 
     # create train_dataset_config and val_dataset_config
     subgroup_columns_ = []
@@ -577,24 +362,6 @@ def train(
     config["dataset"]["train_dataset_config"] = train_dataset_config
     config["dataset"]["val_dataset_config"] = val_dataset_config
 
-    if config["train"]["loss"]["reweight_class"]:
-
-        class_weights = np.array(
-            [
-                float(1 - ((train_dp["target"] == i).sum() / len(train_dp)))
-                for i in range(num_classes)
-            ]
-        )
-        class_weights = [
-            int((1 + class_weight) ** config["train"]["loss"]["reweight_class_alpha"])
-            for class_weight in class_weights
-        ]
-
-    else:
-        class_weights = [1] * num_classes
-
-    config["train"]["loss"]["class_weights"] = class_weights
-
     if (model is not None) and (config is not None):
         raise ValueError("Cannot pass both `model` and `config`.")
 
@@ -609,6 +376,7 @@ def train(
             model = Classifier(config)
 
     save_dir = get_save_dir(config)
+    config.update(wandb_config)
     logger = WandbLogger(
         config=dictconfig_to_dict(config),
         config_exclude_keys="wandb",
@@ -619,8 +387,6 @@ def train(
     model.train()
     ckpt_metric = "valid_accuracy"
     mode = "max"
-    if config["train"]["method"] == "segmentation":
-        ckpt_metric = "valid_dice"
     # if len(subgroup_columns) > 0:
     #     ckpt_metric = "robust val acc"
     # if "erm" not in config["train"]["method"]:
@@ -639,51 +405,11 @@ def train(
         default_root_dir=save_dir,
         **kwargs,
     )
-    # accelerator="dp",
 
     sampler = None
 
-    if weighted_sampling:
-        assert not config["train"]["loss"]["robust_sampler"]
-        weights = torch.ones(len(train_dp))
-        weights[train_dp["target"] == 1] = (1 - dp["target"]).sum() / (
-            dp["target"].sum()
-        )
-        samples_per_epoch = (
-            len(train_dp) if samples_per_epoch is None else samples_per_epoch
-        )
-        sampler = WeightedRandomSampler(weights=weights, num_samples=samples_per_epoch)
-
-    elif config["train"]["loss"]["robust_sampler"]:
-        weights = torch.ones(len(train_dp))
-        for group_i in range(len(subgroup_columns_)):
-            group_mask = train_dp["group_id"] == group_i
-            # higher weight if rare subclass
-            weights[group_mask] = (
-                1
-                + (len(train_dp) - (train_dp["group_id"] == group_i).sum())
-                / len(train_dp)
-            ) ** config["train"]["loss"]["reweight_class_alpha"]
-
-        samples_per_epoch = (
-            len(train_dp) if samples_per_epoch is None else samples_per_epoch
-        )
-        sampler = WeightedRandomSampler(weights=weights, num_samples=samples_per_epoch)
-    elif samples_per_epoch is not None:
+    if samples_per_epoch is not None:
         sampler = RandomSampler(train_dp, num_samples=samples_per_epoch)
-
-    # if doing CnC, we need to create the contrastive train dataloader
-    if config["train"]["cnc"]:
-        cnc_config = config["train"]["cnc_config"]
-        contrastive_loader = load_contrastive_dp(
-            train_dp,
-            cnc_config["num_anchor"],
-            cnc_config["num_positive"],
-            cnc_config["num_negative"],
-        )
-
-        # train_dp_ = train_dp.copy()
-        train_dp = contrastive_loader
 
     train_dl = DataLoader(
         train_dp,

@@ -29,7 +29,7 @@ def run_pipeline(cfg: DictConfig):
                 correlate_thresholds=[None],
                 num_corr=5,
                 n=675,
-                skip_terra_cache=True,
+                skip_terra_cache=False,
             ),
             collect_settings(
                 dataset="cxr",
@@ -42,7 +42,7 @@ def run_pipeline(cfg: DictConfig):
                 num_frac=5,
                 target_frac=0.2,
                 n=675,
-                skip_terra_cache=True,
+                skip_terra_cache=False,
             ),
         ]
     )
@@ -53,16 +53,13 @@ def run_pipeline(cfg: DictConfig):
     train_settings_kwargs = dict(
         setting_dp=setting_dp,
         data_dp=data_dp,
-        split_dp=split,
-        model_config={"pretrained": False},
-        input_column=dataset_cfg["input_column"],
-        id_column=dataset_cfg["id_column"],
-        target_column=dataset_cfg["target_column"],
+        split_dp=None,
         batch_size=train_cfg["batch_size"],
         num_workers=dataset_cfg["num_workers"],
         valid_split=train_cfg["valid_split"],
         val_check_interval=train_cfg["val_check_interval"],
         max_epochs=train_cfg["epochs"],
+        trainmodel_config=cfg,
     )
     setting_dp, _ = train_settings(**train_settings_kwargs)
 

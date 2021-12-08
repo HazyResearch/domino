@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from domino.metrics import compute_model_metrics
 from domino.slices.abstract import build_setting
 from domino.utils import get_wandb_runs, get_worker_assignment, nested_getattr
-from domino.vision import Classifier, score, train
+from domino.vision_ks import Classifier, score, train
 
 
 def cache_loader(filepath: str):
@@ -41,7 +41,7 @@ def cache_loader(filepath: str):
 def train_model(
     dp: mk.DataPanel,
     setting_spec: dict,
-    model_config: dict,
+    trainmodel_config: dict,
     run_dir: str = None,
     **kwargs,
 ):
@@ -56,7 +56,7 @@ def train_model(
             "train_model_run_id": int(os.path.basename(run_dir)),
             **setting_spec,
         },
-        config=model_config,
+        config=trainmodel_config,
         **kwargs,
     )
 
@@ -66,7 +66,7 @@ def train_settings(
     setting_dp: mk.DataPanel,
     data_dp: mk.DataPanel,
     split_dp: mk.DataPanel,
-    model_config: dict,
+    trainmodel_config: dict,
     num_samples: int = 1,
     num_gpus: int = 1,
     num_cpus: int = 8,
@@ -76,12 +76,12 @@ def train_settings(
 ):
     train_settings_run_id = int(os.path.basename(run_dir))
 
-    # support for splitting up the job among multiple worker machines
-    setting_dp = get_worker_assignment(
-        dp=setting_dp,
-        worker_idx=kwargs.pop("worker_idx", None),
-        num_workers=kwargs.pop("num_workers", None),
-    )
+    # # support for splitting up the job among multiple worker machines
+    # setting_dp = get_worker_assignment(
+    #     dp=setting_dp,
+    #     worker_idx=kwargs.pop("worker_idx", None),
+    #     num_workers=kwargs.pop("num_workers", None),
+    # )
 
     def _train_model(setting_spec):
         import terra
@@ -101,7 +101,7 @@ def train_settings(
                 "train_settings_run_id": train_settings_run_id,
                 "build_setting_run_id": build_setting_run_id,
             },
-            model_config=model_config,
+            trainmodel_config=trainmodel_config,
             pbar=False,
             **kwargs,
             return_run_id=True,

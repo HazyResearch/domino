@@ -109,7 +109,8 @@ class AbstractSliceBuilder:
         else:
             raise ValueError(f"Slice category '{slice_category}' not recognized.")
 
-        dp = merge_in_split(dp, split_dp)
+        if split_dp is not None:
+            dp = merge_in_split(dp, split_dp)
         return dp
 
     def build_correlation_setting(self) -> mk.DataPanel:
