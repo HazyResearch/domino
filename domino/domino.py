@@ -1,11 +1,11 @@
 import warnings
 from dataclasses import dataclass
 from functools import wraps
+from typing import Union
 
 import meerkat as mk
 import numpy as np
 import sklearn.cluster as cluster
-import torch.nn as nn
 from scipy import linalg
 from scipy.special import logsumexp
 from sklearn.decomposition import PCA
@@ -21,73 +21,95 @@ from sklearn.mixture._gaussian_mixture import (
 )
 from sklearn.preprocessing import label_binarize
 from sklearn.utils.validation import check_is_fitted
+from tqdm import tqdm
 
-from domino.abstract import SliceDiscoveryMethod
-from domino.utils import VariableColumn, requires_columns
+from .abstract import SliceDiscoveryMethod
 
 
 class DominoSDM(SliceDiscoveryMethod):
     @dataclass
     class Config(SliceDiscoveryMethod.Config):
+        """Configuration for the DominoSDM."""
+
         weight_y_log_likelihood: float = 1
         covariance_type: str = "diag"
-        n_components: int = 128
-        n_clusters: int = 25
+        n_pca_components: int = 128
+        n_mixture_components: int = 25
         init_params: str = "error"
-
-        explain_w_model: bool = False
-
-    RESOURCES_REQUIRED = {"cpu": 1, "gpu": 0}
+        max_iter: int = 100
 
     def __init__(self, config: dict = None, **kwargs):
         super().__init__(config, **kwargs)
-        if self.config.n_components is None:
+
+        if self.config.n_pca_components is None:
             self.pca = None
         else:
-            self.pca = PCA(n_components=self.config.n_components)
+            self.pca = PCA(n_components=self.config.n_pca_components)
+
         self.gmm = DominoMixture(
-            n_components=self.config.n_clusters,
+            n_components=self.config.n_mixture_components,
             weight_y_log_likelihood=self.config.weight_y_log_likelihood,
             covariance_type=self.config.covariance_type,
             init_params=self.config.init_params,
+            max_iter=self.config.max_iter,
         )
 
-    @requires_columns(
-        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
-    )
     def fit(
         self,
-        data_dp: mk.DataPanel,
-        model: nn.Module = None,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
     ):
-        emb = data_dp[self.config.emb].data
+        """Fit the DominoSDM to the data."""
+        if (
+            any(map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs]))
+            and data is None
+        ):
+            raise ValueError(
+                "If `embeddings`, `target` or `pred_probs` are strings, `data`"
+                " must be provided."
+            )
+        embeddings = data[embeddings] if isinstance(embeddings, str) else embeddings
+        targets = data[targets] if isinstance(targets, str) else targets
+        pred_probs = data[pred_probs] if isinstance(pred_probs, str) else pred_probs
+
         if self.pca is not None:
-            self.pca.fit(X=emb[:1000])
-            emb = self.pca.transform(X=emb)
-        self.gmm.fit(X=emb, y=data_dp["target"], y_hat=data_dp["probs"])
+            self.pca.fit(X=embeddings)
+            embeddings = self.pca.transform(X=embeddings)
+
+        self.gmm.fit(X=embeddings, y=targets, y_hat=pred_probs)
 
         self.slice_cluster_indices = (
             -np.abs((self.gmm.y_probs[:, 1] - self.gmm.y_hat_probs[:, 1]))
         ).argsort()[: self.config.n_slices]
         return self
 
-    @requires_columns(
-        dp_arg="data_dp", columns=["probs", "target", VariableColumn("self.config.emb")]
-    )
     def transform(
         self,
-        data_dp: mk.DataPanel,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
     ):
-        emb = data_dp[self.config.emb].data
-        if self.pca is not None:
-            emb = self.pca.transform(X=emb)
-        dp = data_dp.view()
-        clusters = self.gmm.predict_proba(
-            emb, y=data_dp["target"], y_hat=data_dp["probs"]
-        )
+        if (
+            any(map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs]))
+            and data is None
+        ):
+            raise ValueError(
+                "If `embeddings`, `target` or `pred_probs` are strings, `data`"
+                " must be provided."
+            )
+        embeddings = data[embeddings] if isinstance(embeddings, str) else embeddings
+        targets = data[targets] if isinstance(targets, str) else targets
+        pred_probs = data[pred_probs] if isinstance(pred_probs, str) else pred_probs
 
-        dp["pred_slices"] = clusters[:, self.slice_cluster_indices]
-        return dp
+        if self.pca is not None:
+            embeddings = self.pca.transform(X=embeddings)
+
+        clusters = self.gmm.predict_proba(embeddings, y=targets, y_hat=pred_probs)
+
+        return clusters[:, self.slice_cluster_indices]
 
 
 class DominoMixture(GaussianMixture):
@@ -229,7 +251,7 @@ class DominoMixture(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in range(1, self.max_iter + 1):  # removed tqdm from here
+            for n_iter in tqdm(range(1, self.max_iter + 1)):  # removed tqdm from here
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)

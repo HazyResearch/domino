@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from functools import getcallargs, reduce, wraps
+from functools import reduce, wraps
+from inspect import getcallargs
 from typing import Collection, Mapping
 
 

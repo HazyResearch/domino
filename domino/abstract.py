@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Union
 
 import meerkat as mk
 import torch.nn as nn
@@ -11,15 +12,13 @@ class SliceDiscoveryMethod(ABC):
     @dataclass
     class Config:
         n_slices: int = 5
-        emb: str = "emb"
 
     RESOURCES_REQUIRED = {"cpu": 1, "custom_resources": {"ram_gb": 4}}
 
-    def __init__(self, config: dict = None, **kwargs):
-        if config is not None:
-            self.config = self.Config(**config, **kwargs)
-        else:
-            self.config = self.Config(**kwargs)
+    def __init__(self, config: Union[Config, dict] = None):
+        if isinstance(config, dict):
+            config = self.Config(**config)
+        self.config = config
 
     @abstractmethod
     def fit(

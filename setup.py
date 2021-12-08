@@ -17,20 +17,22 @@ NAME = "domino"
 DESCRIPTION = ""
 URL = ""
 EMAIL = "eyuboglu@stanford.edu"
-# AUTHOR = "https://github.com/HazyResearch/domino"
-REQUIRES_PYTHON = ">=3.7.0"
+AUTHOR = "https://github.com/HazyResearch/domino"
+REQUIRES_PYTHON = ">=3.8.10"
 VERSION = main_ns["__version__"]
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
-    "meerkat-ml",
+    "meerkat-ml[ml] @ git+https://github.com/robustness-gym/meerkat@dev",
     "pandas",
     "numpy>=1.18.0",
     "tqdm>=4.49.0",
     # TODO: support scikit-learn 1.0.0
     "scikit-learn==0.24.2",
+    "ipywidgets",
+    "seaborn"
 ]
 
 EXTRAS = {
