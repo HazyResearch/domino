@@ -19,6 +19,7 @@ def run_pipeline(cfg: DictConfig):
         root_dir="/media/4tb_hdd/siim", tube_mask=True, skip_terra_cache=False
     )
 
+    skip_terra_cache = cfg.skip_terra_cache
     setting_dp = concat_settings(
         [
             collect_settings(
@@ -29,7 +30,7 @@ def run_pipeline(cfg: DictConfig):
                 correlate_thresholds=[None],
                 num_corr=5,
                 n=675,
-                skip_terra_cache=False,
+                skip_terra_cache=skip_terra_cache,
             ),
             collect_settings(
                 dataset="cxr",
@@ -42,7 +43,7 @@ def run_pipeline(cfg: DictConfig):
                 num_frac=5,
                 target_frac=0.2,
                 n=675,
-                skip_terra_cache=False,
+                skip_terra_cache=skip_terra_cache,
             ),
         ]
     )
@@ -61,7 +62,20 @@ def run_pipeline(cfg: DictConfig):
         max_epochs=train_cfg["epochs"],
         trainmodel_config=cfg,
     )
-    setting_dp, _ = train_settings(**train_settings_kwargs)
+    setting_dp, _ = train_settings(
+        **train_settings_kwargs, skip_terra_cache=skip_terra_cache
+    )
+
+    score_settings_kwargs = dict(
+        layers={"layer4": "model.layer4"},
+        batch_size=train_cfg.batch_size,
+        reduction_fns=["mean"],
+        split=["test"],
+    )
+
+    setting_dp = score_settings(
+        model_dp=setting_dp, **score_settings_kwargs, skip_terra_cache=skip_terra_cache
+    )
 
     breakpoint()
 

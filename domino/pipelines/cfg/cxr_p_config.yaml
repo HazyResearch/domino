@@ -1,3 +1,5 @@
+skip_terra_cache: False
+
 model:
   model_name: resnet
   arch: resnet50
@@ -23,7 +25,7 @@ train:
   wd: 0
   valid_split: test
   gaze_split: True
-  val_check_interval: 20
+  val_check_interval: 8
   loss:
     criterion: "cross_entropy"
     gdro: False

@@ -21,7 +21,7 @@ from torchvision.models.segmentation import fcn_resnet50
 from domino.contrastive_loss import ContrastiveLoss
 from domino.gdro_loss import LossComputer
 from domino.modeling import DenseNet, ResNet, SequenceModel
-from domino.utils import PredLogger
+from domino.utils import PredLogger, TerraCheckpoint
 
 # from domino.data.iwildcam import get_iwildcam_model
 # from domino.data.wilds import get_wilds_model
@@ -300,6 +300,8 @@ def train(
     batch_size: int = 16,
     train_split: str = "train",
     valid_split: str = "valid",
+    run_dir: str = None,
+    pbar: bool = True,
     **kwargs,
 ):
     # Note from https://pytorch-lightning.readthedocs.io/en/0.8.3/multi_gpu.html: Make sure to set the random seed so that each model initializes with the same weights.
@@ -376,6 +378,7 @@ def train(
             model = Classifier(config)
 
     save_dir = get_save_dir(config)
+    config = dict(config)
     config.update(wandb_config)
     logger = WandbLogger(
         config=dictconfig_to_dict(config),
@@ -392,16 +395,24 @@ def train(
     # if "erm" not in config["train"]["method"]:
     #     ckpt_metric = "contrastive_loss"
     #     mode = "min"
-    checkpoint_callback = ModelCheckpoint(
-        monitor=ckpt_metric, mode=mode, every_n_train_steps=5
-    )
+    # checkpoint_callback = ModelCheckpoint(
+    #     monitor=ckpt_metric, mode=mode, every_n_train_steps=5
+    # )
+    checkpoint_callbacks = [
+        TerraCheckpoint(
+            dirpath=run_dir,
+            monitor=ckpt_metric,
+            save_top_k=1,
+            mode=mode,
+        )
+    ]
     trainer = pl.Trainer(
         gpus=gpus,
         max_epochs=max_epochs,
         accumulate_grad_batches=1,
         log_every_n_steps=1,
         logger=logger,
-        callbacks=[checkpoint_callback],
+        callbacks=checkpoint_callbacks,
         default_root_dir=save_dir,
         **kwargs,
     )
