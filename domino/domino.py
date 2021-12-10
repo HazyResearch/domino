@@ -41,7 +41,7 @@ class DominoSDM(SliceDiscoveryMethod):
     Suppose you've trained a model and stored its predictions on a validation dataset in
     a `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_ with columns
     "emb", "target", and "pred_probs". After loading the DataPanel, you can discover
-    underfperforming slices of the validation dataset with the following code:
+    underperforming slices of the validation dataset with the following code:
 
     .. code-block:: python
 
@@ -69,7 +69,7 @@ class DominoSDM(SliceDiscoveryMethod):
         n_pca_components (Union[int, None], optional): The number of PCA components
             to use. If ``None``, then no PCA is performed. Defaults to 128.
         n_mixture_components (int, optional): The number of clusters in the mixture
-            model, :math:`\\bar{k}`. This differs from ``n_slices`` in that the
+            model, :math:`\bar{k}`. This differs from ``n_slices`` in that the
             ``DominoSDM`` only returns the top ``n_slices`` with the highest error rate
             of the ``n_mixture_components``. Defaults to 25.
         init_params (str, optional): The initialization method to use. Options are
@@ -77,10 +77,10 @@ class DominoSDM(SliceDiscoveryMethod):
             "confusion". If "confusion", TODO: describe confusion matrix initialization.
             Defaults to "confusion".
         y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
-            the :math:`P( Y=y_i| S=s)` term in the log likelihood during the E-step.
+            the :math:`P(Y=y_{i} | S=s)` term in the log likelihood during the E-step.
             Defaults to 1.
         y_hat_log_likelihood_weight (float, optional): The weight :math:`\hat{\gamma}`
-            applied to the :math:`P(\hat{Y} = h_\\theta(x_i) | S=s)` term in the log
+            applied to the :math:`P(\hat{Y} = h_\theta(x_i) | S=s)` term in the log
             likelihood during the E-step. Defaults to 1.
         max_iter (int, optional): The maximum number of iterations to run. Defaults
             to 100.
@@ -92,10 +92,10 @@ class DominoSDM(SliceDiscoveryMethod):
     based on the assumption that data is generated according to the following generative
     process.
 
-    * Each example belongs to one of :math:`\\bar{k}` slices. This slice
+    * Each example belongs to one of :math:`\bar{k}` slices. This slice
       :math:`S` is sampled from a categorical
       distribution :math:`S \sim Cat(\mathbf{p}_S)` with parameter :math:`\mathbf{p}_S
-      \in\{\mathbf{p} \in \mathbb{R}_+^{\\bar{k}} : \sum_{i = 1}^{\\bar{k}} p_i = 1\}`
+      \in\{\mathbf{p} \in \mathbb{R}_+^{\bar{k}} : \sum_{i = 1}^{\bar{k}} p_i = 1\}`
       (see ``DominoSDM.mm.weights_``).
     * Given the slice :math:`S'`, the embeddings are normally distributed
       :math:`Z | S \sim \mathcal{N}(\mathbf{\mu}, \mathbf{\Sigma}`)  with parameters
@@ -122,7 +122,7 @@ class DominoSDM(SliceDiscoveryMethod):
 
     .. math::
         \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s)
-        P( Y=y_i| S=s)P(\hat{Y} = h_\\theta(x_i) | S=s)
+        P( Y=y_i| S=s)P(\hat{Y} = h_\theta(x_i) | S=s)
 
     We include two optional hyperparameters
     :math:`\gamma, \hat{\gamma} \in \mathbb{R}_+`
@@ -133,7 +133,7 @@ class DominoSDM(SliceDiscoveryMethod):
 
     .. math::
         \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s)
-        P( Y=y_i| S=s)^\gamma P(\hat{Y} = h_\\theta(x_i) | S=s)^{\hat{\gamma}}
+        P( Y=y_i| S=s)^\gamma P(\hat{Y} = h_\theta(x_i) | S=s)^{\hat{\gamma}}
 
     .. attention::
         Although we model the prediction :math:`\hat{Y}` as a categorical random
