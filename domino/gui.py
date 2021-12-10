@@ -1,6 +1,7 @@
 from typing import List, Union
 
 import ipywidgets as widgets
+from ipywidgets.widgets.widget_description import DescriptionStyle
 import matplotlib.pyplot as plt
 import meerkat as mk
 import numpy as np
@@ -8,13 +9,18 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import display
 
+from .describe import describe_slice
+
 
 def explore(
-    data: Union[dict, mk.DataPanel] = None,
-    embeddings: Union[str, np.ndarray] = "embedding",
-    targets: Union[str, np.ndarray] = "target",
-    pred_probs: Union[str, np.ndarray] = "pred_probs",
-    slices: Union[str, np.ndarray] = "slices",
+    data: mk.DataPanel = None,
+    embedding_column: Union[str, np.ndarray] = "embedding",
+    target_column: Union[str, np.ndarray] = "target",
+    pred_prob_column: Union[str, np.ndarray] = "pred_probs",
+    slice_column: Union[str, np.ndarray] = "slices",
+    text: mk.DataPanel = None,
+    text_embeddings: str = "embedding",
+    phrase: str = "output_phrase",
 ) -> None:
     """Creates a IPyWidget GUI for exploring discovered slices. The GUI includes two
     sections: (1) The first section displays data visualizations summarizing the
@@ -33,7 +39,7 @@ def explore(
             embeddings, targets, and prediction probabilities. The names of the
             columns can be specified with the ``embeddings``, ``targets``, and
             ``pred_probs`` arguments. Defaults to None.
-        embeddings (Union[str, np.ndarray], optional): The name of a colum in
+        embedding_column (Union[str, np.ndarray], optional): The name of a colum in
             ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
             of shape (n_samples, dimension of embedding). Defaults to
             "embedding".
@@ -45,7 +51,7 @@ def explore(
             probability scores or "hard" 1-hot encoded predictions). If
             ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
             or (n_samples,) in the binary case. Defaults to "pred_probs".
-        slices (str, optional): The name of The name of a column in ``data`` holding
+        slice_column (str, optional): The name of The name of a column in ``data`` holding
             discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
 
@@ -69,17 +75,24 @@ def explore(
         explore(data=test_dp)
     """
     if data is None and any(
-        map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs, slices])
+        map(
+            lambda x: isinstance(x, str),
+            [embedding_column, target_column, pred_prob_column, slice_column],
+        )
     ):
         raise ValueError(
-            "If `embeddings`, `target` or `pred_probs` are strings, `data`"
+            "If `embedding_column`, `target` or `pred_prob_column` are strings, `data`"
             " must be provided."
         )
 
-    embeddings = data[embeddings] if isinstance(embeddings, str) else embeddings
-    targets = data[targets] if isinstance(targets, str) else targets
-    pred_probs = data[pred_probs] if isinstance(pred_probs, str) else pred_probs
-    slices = data[slices] if isinstance(slices, str) else slices
+    embeddings = (
+        data[embedding_column]
+        if isinstance(embedding_column, str)
+        else embedding_column
+    )
+    targets = data[target_column] if isinstance(target_column, str) else target_column
+    pred_probs = data[pred_prob_column] if isinstance(pred_prob_column, str) else pred_prob_column
+    slices = data[slice_column] if isinstance(slice_column, str) else slice_column
 
     if data is None:
         dp = mk.DataPanel(
@@ -87,7 +100,7 @@ def explore(
                 "embeddings": embeddings,
                 "targets": targets,
                 "pred_probs": pred_probs,
-                "domino_slices)": slices,
+                "domino_slices": slices,
             }
         )
     else:
@@ -100,7 +113,7 @@ def explore(
 
         # TODO (Sabri): Support a confusion matrix for the multiclass case.
         with plot_output:
-            data = pd.DataFrame(
+            plot_df = pd.DataFrame(
                 {
                     "in-slice": slices[:, slice_idx].data > slice_threshold,
                     "pred_probs": pred_probs[:, 1].data.numpy(),
@@ -108,7 +121,7 @@ def explore(
                 }
             )
             g = sns.displot(
-                data=data,
+                data=plot_df,
                 hue="in-slice",
                 x="pred_probs",
                 col="target",
@@ -125,6 +138,24 @@ def explore(
             plot_output.clear_output(wait=True)
             plt.show()
 
+    description_output = widgets.Output()
+
+    def show_descriptions(slice_idx: int, slice_threshold: float):
+        description_output.clear_output(wait=False)
+        if text is not None:
+            description_dp = describe_slice(
+                data=dp,
+                embeddings=embedding_column,
+                slices=slice_column,
+                slice_idx=slice_idx,
+                text=text,
+                text_embeddings=text_embeddings,
+                phrase=phrase,
+                slice_threshold=slice_threshold,
+            )
+            with description_output:
+                display(description_dp[(-description_dp["score"]).argsort()[:5]])
+
     dp_output = widgets.Output()
 
     def show_dp(slice_idx, columns: List[str], page_idx: int, page_size: int):
@@ -134,7 +165,7 @@ def explore(
         with dp_output:
             display(
                 dp.lz[
-                    (-dp["domino_slices"][:, slice_idx]).argsort()[
+                    (-slices[:, slice_idx]).argsort()[
                         page_size * page_idx : page_size * (page_idx + 1)
                     ]
                 ][list(columns)]
@@ -143,7 +174,7 @@ def explore(
     # Create widgets
     slice_idx_widget = widgets.Dropdown(
         value=1,
-        options=list(range(dp["domino_slices"].shape[-1])),
+        options=list(range(slices.shape[-1])),
         description="Slice",
         layout=widgets.Layout(width="150px"),
     )
@@ -185,6 +216,12 @@ def explore(
 
     # Establish interactions between widgets and the visualization functions
     widgets.interactive(
+        show_descriptions,
+        slice_idx=slice_idx_widget,
+        slice_threshold=slice_threshold_widget,
+    )
+
+    widgets.interactive(
         show_dp,
         slice_idx=slice_idx_widget,
         columns=column_selector,
@@ -209,6 +246,14 @@ def explore(
     )
     display(slice_threshold_widget)
     display(plot_output)
+    display(widgets.VBox([
+        widgets.HTML(
+            value=(
+                "<p> Natural language descriptions of the slice: </p>"
+            )
+        ),
+        description_output]))
+
     display(
         widgets.HBox(
             [

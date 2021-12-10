@@ -57,6 +57,10 @@ EXTRAS = {
         "sphinx-autobuild",
         "furo",
     ],
+    "text": [
+        "transformers",
+        "nltk"
+    ]
 }
 
 
