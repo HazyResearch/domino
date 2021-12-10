@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 import warnings
-from dataclasses import dataclass
 from functools import wraps
 from typing import Union
 
@@ -29,17 +29,17 @@ from .abstract import SliceDiscoveryMethod
 
 class DominoSDM(SliceDiscoveryMethod):
 
-    """
+    r"""
     Slice Discovery based on the Domino Mixture Model.
 
-    Discover slices by jointly modeling a mixture of input embeddings (e.g. activations 
-    from a trained model), class labels, and model predictions. This encourages slices 
+    Discover slices by jointly modeling a mixture of input embeddings (e.g. activations
+    from a trained model), class labels, and model predictions. This encourages slices
     that are homogeneous with respect to error type (e.g. all false positives).
 
     Examples
     --------
     Suppose you've trained a model and stored its predictions on a validation dataset in
-    a `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_ with columns 
+    a `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_ with columns
     "emb", "target", and "pred_probs". After loading the DataPanel, you can discover
     underfperforming slices of the validation dataset with the following code:
 
@@ -47,7 +47,7 @@ class DominoSDM(SliceDiscoveryMethod):
 
         dp = ...  # Load dataset into a Meerkat DataPanel
 
-        # split dataset 
+        # split dataset
         valid_dp = dp.lz[dp["split"] == "valid"]
         test_dp = dp.lz[dp["split"] == "test"]
 
@@ -74,13 +74,13 @@ class DominoSDM(SliceDiscoveryMethod):
             of the ``n_mixture_components``. Defaults to 25.
         init_params (str, optional): The initialization method to use. Options are
             the same as in sklearn.mixture.GaussianMixture plus one addition,
-            "error". If "error", then TODO
-            Defaults to "error".
-        y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to 
+            "confusion". If "confusion", TODO: describe confusion matrix initialization.
+            Defaults to "confusion".
+        y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
             the :math:`P( Y=y_i| S=s)` term in the log likelihood during the E-step.
             Defaults to 1.
         y_hat_log_likelihood_weight (float, optional): The weight :math:`\hat{\gamma}`
-            applied to the :math:`P(\hat{Y} = h_\\theta(x_i) | S=s)` term in the log 
+            applied to the :math:`P(\hat{Y} = h_\\theta(x_i) | S=s)` term in the log
             likelihood during the E-step. Defaults to 1.
         max_iter (int, optional): The maximum number of iterations to run. Defaults
             to 100.
@@ -89,67 +89,68 @@ class DominoSDM(SliceDiscoveryMethod):
     -----
 
     The mixture model is an extension of a standard Gaussian Mixture Model. The model is
-    based on the assumption that data is generated according to the following generative 
-    process. 
-    
-    * Each example belongs to one of :math:`\\bar{k}` slices. This slice 
+    based on the assumption that data is generated according to the following generative
+    process.
+
+    * Each example belongs to one of :math:`\\bar{k}` slices. This slice
       :math:`S` is sampled from a categorical
-      distribution :math:`S \sim Cat(\mathbf{p}_S)` with parameter :math:`\mathbf{p}_S \in
-      \{\mathbf{p} \in \mathbb{R}_+^{\\bar{k}} : \sum_{i = 1}^{\\bar{k}} p_i = 1\}` (see 
-      ``DominoSDM.mm.weights_``).
+      distribution :math:`S \sim Cat(\mathbf{p}_S)` with parameter :math:`\mathbf{p}_S
+      \in\{\mathbf{p} \in \mathbb{R}_+^{\\bar{k}} : \sum_{i = 1}^{\\bar{k}} p_i = 1\}`
+      (see ``DominoSDM.mm.weights_``).
     * Given the slice :math:`S'`, the embeddings are normally distributed
       :math:`Z | S \sim \mathcal{N}(\mathbf{\mu}, \mathbf{\Sigma}`)  with parameters
-      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``DominoSDM.mm.means_``) and 
-      :math:`\mathbf{\Sigma} \in \mathbb{S}^{d}_{++}` (see ``DominoSDM.mm.covariances_``; 
-      normally this parameter is constrained to the set of symmetric positive definite 
-      :math:`d \\times d` matrices, however the argument ``covariance_type`` allows for 
+      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``DominoSDM.mm.means_``) and
+      :math:`\mathbf{\Sigma} \in \mathbb{S}^{d}_{++}`
+      (see ``DominoSDM.mm.covariances_``;
+      normally this parameter is constrained to the set of symmetric positive definite
+      :math:`d \\times d` matrices, however the argument ``covariance_type`` allows for
       other constraints).
-    * Given the slice, the labels vary as a categorical 
-      :math:`Y |S \sim Cat(\mathbf{p})` with parameter :math:`\mathbf{p} 
-      \in \{\mathbf{p} \in \mathbb{R}^c_+ : \sum_{i = 1}^c p_i = 1\}` (see 
+    * Given the slice, the labels vary as a categorical
+      :math:`Y |S \sim Cat(\mathbf{p})` with parameter :math:`\mathbf{p}
+      \in \{\mathbf{p} \in \mathbb{R}^c_+ : \sum_{i = 1}^c p_i = 1\}` (see
       ``DominoSDM.mm.y_probs``).
-    * Given the slice, the model predictions also vary as a categorical 
+    * Given the slice, the model predictions also vary as a categorical
       :math:`\hat{Y} | S \sim Cat(\mathbf{\hat{p}})` with parameter
       :math:`\mathbf{\hat{p}} \in \{\mathbf{\hat{p}} \in \mathbb{R}^c_+ :
       \sum_{i = 1}^c \hat{p}_i = 1\}` (see ``DominoSDM.mm.y_hat_probs``).
 
     The mixture model is, thus, parameterized by :math:`\phi = [\mathbf{p}_S, \mu,
-    \Sigma, \mathbf{p}, \mathbf{\hat{p}}]` corresponding to the attributes 
-    ``weights_, means_, covariances_, y_probs, y_hat_probs`` respectively. The 
-    log-likelihood over the :math:`n` examples in the validation dataset :math:`D_v` is 
+    \Sigma, \mathbf{p}, \mathbf{\hat{p}}]` corresponding to the attributes
+    ``weights_, means_, covariances_, y_probs, y_hat_probs`` respectively. The
+    log-likelihood over the :math:`n` examples in the validation dataset :math:`D_v` is
     given as followsand maximized using expectation-maximization:
 
     .. math::
-        \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s) 
+        \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s)
         P( Y=y_i| S=s)P(\hat{Y} = h_\\theta(x_i) | S=s)
 
-    We include two optional hyperparameters 
-    :math:`\gamma, \hat{\gamma} \in \mathbb{R}_+` 
-    (see ``y_log_liklihood_weight`` and ``y_hat_log_likelihood_weight`` below) that 
-    balance the importance of modeling the class labels and predictions against the 
-    importance of modeling the embedding. The modified log-likelihood over :math:`n` 
+    We include two optional hyperparameters
+    :math:`\gamma, \hat{\gamma} \in \mathbb{R}_+`
+    (see ``y_log_liklihood_weight`` and ``y_hat_log_likelihood_weight`` below) that
+    balance the importance of modeling the class labels and predictions against the
+    importance of modeling the embedding. The modified log-likelihood over :math:`n`
     examples is given as follows:
 
     .. math::
-        \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s) 
+        \ell(\phi) = \sum_{i=1}^n \log \sum_{s=1}^{\hat{k}} P(S=s)P(Z=z_i| S=s)
         P( Y=y_i| S=s)^\gamma P(\hat{Y} = h_\\theta(x_i) | S=s)^{\hat{\gamma}}
 
     .. attention::
-        Although we model the prediction :math:`\hat{Y}` as a categorical random 
+        Although we model the prediction :math:`\hat{Y}` as a categorical random
         variable, in practice predictions are sometimes "soft" (e.g. the output
-        of a softmax layer is a probability distribution over labels, not a single 
-        label). In these cases, the prediction :math:`\hat{Y}` is technically a 
-        dirichlet random variable (i.e. a distribution over distributions). 
-        
-        However, to keep the implementation simple while still leveraging the extra 
+        of a softmax layer is a probability distribution over labels, not a single
+        label). In these cases, the prediction :math:`\hat{Y}` is technically a
+        dirichlet random variable (i.e. a distribution over distributions).
+
+        However, to keep the implementation simple while still leveraging the extra
         information provided by "soft" predictions, we naïvely plug the "soft"
         predictions directly into the categorical PMF in the E-step and the update in
-        the M-step. Specifically, during the E-step, instead of computing the 
-        categorical PMF :math:`P(\hat{Y}=\hat{y_i} | S=s)` we compute 
-        :math:`\sum_{j=1}^c \hat{y_i}(j) P(\hat{Y}=j | S=s)` where :math:`\hat{y_i}(j)` 
+        the M-step. Specifically, during the E-step, instead of computing the
+        categorical PMF :math:`P(\hat{Y}=\hat{y_i} | S=s)` we compute
+        :math:`\sum_{j=1}^c \hat{y_i}(j) P(\hat{Y}=j | S=s)` where :math:`\hat{y_i}(j)`
         is the "soft" prediction for class :math:`j` (we can
         think of this like we're marginalizing out the uncertainty in the prediction).
-        During the M-step, we compute a "soft" update for the categorical parameters 
+        During the M-step, we compute a "soft" update for the categorical parameters
         :math:`p_j^{(s)} = \sum_{i=1}^n Q(s,i) \hat{y_i}(j)` where :math:`Q(s,i)`
         is the "responsibility" of slice :math:`s` towards the data point :math:`i`.
     """
@@ -160,7 +161,7 @@ class DominoSDM(SliceDiscoveryMethod):
         covariance_type: str = "diag",
         n_pca_components: Union[int, None] = 128,
         n_mixture_components: int = 25,
-        init_params: str = "error",
+        init_params: str = "confusion",
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
         max_iter: int = 100,
@@ -206,14 +207,14 @@ class DominoSDM(SliceDiscoveryMethod):
                 ``pred_probs`` arguments. Defaults to None.
             embeddings (Union[str, np.ndarray], optional): The name of a colum in
                 ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
-                of shape (n_samples, dimension of embedding). Defaults to 
+                of shape (n_samples, dimension of embedding). Defaults to
                 "embedding".
             targets (Union[str, np.ndarray], optional): The name of a column in
-                ``data`` holding class labels. If ``data`` is ``None``, then an 
+                ``data`` holding class labels. If ``data`` is ``None``, then an
                 np.ndarray of shape (n_samples,). Defaults to "target".
-            pred_probs (Union[str, np.ndarray], optional): The name of 
-                a column in ``data`` holding model predictions (can either be "soft" 
-                probability scores or "hard" 1-hot encoded predictions). If 
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
                 ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
 
@@ -265,14 +266,14 @@ class DominoSDM(SliceDiscoveryMethod):
                 ``pred_probs`` arguments. Defaults to None.
             embeddings (Union[str, np.ndarray], optional): The name of a colum in
                 ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
-                of shape (n_samples, dimension of embedding). Defaults to 
+                of shape (n_samples, dimension of embedding). Defaults to
                 "embedding".
             targets (Union[str, np.ndarray], optional): The name of a column in
-                ``data`` holding class labels. If ``data`` is ``None``, then an 
+                ``data`` holding class labels. If ``data`` is ``None``, then an
                 np.ndarray of shape (n_samples,). Defaults to "target".
-            pred_probs (Union[str, np.ndarray], optional): The name of 
-                a column in ``data`` holding model predictions (can either be "soft" 
-                probability scores or "hard" 1-hot encoded predictions). If 
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
                 ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
 
@@ -338,7 +339,7 @@ class DominoMixture(GaussianMixture):
         elif self.init_params == "random":
             resp = random_state.rand(n_samples, self.n_components)
             resp /= resp.sum(axis=1)[:, np.newaxis]
-        elif self.init_params == "error":
+        elif self.init_params == "confusion":
             num_classes = y.shape[-1]
             if self.n_components < num_classes ** 2:
                 raise ValueError(
@@ -445,7 +446,7 @@ class DominoMixture(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in tqdm(range(1, self.max_iter + 1), colour='#f17a4a'):  
+            for n_iter in tqdm(range(1, self.max_iter + 1), colour="#f17a4a"):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)

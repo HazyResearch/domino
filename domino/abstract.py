@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Union
 
 import meerkat as mk
 import torch.nn as nn
 
 
 class SliceDiscoveryMethod(ABC):
-    
     @dataclass
     class Config:
         pass

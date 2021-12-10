@@ -17,7 +17,7 @@ def explore(
     slices: Union[str, np.ndarray] = "slices",
 ) -> None:
     """Creates a IPyWidget GUI for exploring discovered slices. The GUI includes two
-    sections: (1) The first section displays data visualizations summarizing the predictions
+    sections: (1) The first section displays data visualizations summarizing the
     model predictions and accuracy stratified by slice. (2) The second section displays
     a table (i.e. Meerkat DataPanel) of the data examples most representative of each
     slice. The DataPanel passed to ``data`` should include columns for embeddings,
@@ -45,7 +45,7 @@ def explore(
             probability scores or "hard" 1-hot encoded predictions). If
             ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
             or (n_samples,) in the binary case. Defaults to "pred_probs".
-        slices (str, optional): The name of The name of a column in ``data`` holding 
+        slices (str, optional): The name of The name of a column in ``data`` holding
             discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
 
@@ -57,7 +57,7 @@ def explore(
         from domino import explore, DominoSDM
         dp = ...  # prepare the dataset as a Meerkat DataPanel
 
-        # split dataset 
+        # split dataset
         valid_dp = dp.lz[dp["split"] == "valid"]
         test_dp = dp.lz[dp["split"] == "test"]
 
