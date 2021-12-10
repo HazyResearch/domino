@@ -32,7 +32,12 @@ REQUIRED = [
     # TODO: support scikit-learn 1.0.0
     "scikit-learn==0.24.2",
     "ipywidgets",
-    "seaborn"
+    "seaborn",
+    "torch",
+    "torchvision",
+    "ftfy",
+    "regex",    
+    "clip @ git+https://github.com/openai/CLIP.git"
 ]
 
 EXTRAS = {

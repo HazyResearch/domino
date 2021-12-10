@@ -20,43 +20,53 @@ def explore(
     sections: (1) The first section displays data visualizations summarizing the predictions
     model predictions and accuracy stratified by slice. (2) The second section displays
     a table (i.e. Meerkat DataPanel) of the data examples most representative of each
-    slice. The DataPane passed to ``data`` should include columns for embeddings,
+    slice. The DataPanel passed to ``data`` should include columns for embeddings,
     targets, pred_probs and slices. Any additional columns will be included in the
     visualization in section (2).
 
-    Example::
-        from domino import gui, DominoSDM
-        dp = ...  # prepare the dataset as a Meerkat DataPanel
-
-        domino = DominoSDM()
-        domino.fit(data=dp)
-        dp["slices"] = domino.transform(
-            data=dp, embeddings="emb", targets="target", pred_probs="probs"
-        )
-
-    .. note::
-        This function works best in the original Jupyter Notebook, and has not been
-        tested thoroughly in a Jupyter Lab or VSCode environment.
+    .. caution::
+        This GUI works best in the original Jupyter Notebook, and may not work properly
+        in a Jupyter Lab or VSCode environment.
 
     Args:
-        data (Union[dict, mk.DataPanel], optional): A Meerkat DataPanel holding the
-            dataset. Should include columns for embeddings, targets, pred_probs and
-            slices, as described below. Any additional columns will be included in the
-            visualization in section (2). Defaults to None.
-        embeddings (Union[str, np.ndarray], optional): The name of the embedding column
-            in ``data`` or, if ``data`` is ``None``, then embeddings as an np.ndarray
-            of shape (num_examples, embedding_dimension). Defaults to "embedding".
-        targets (Union[str, np.ndarray], optional): The name of the target column in
-            ``data`` or, if ``data`` is ``None``, then the targets as an np.ndarray of
-            shape (num_examples,). Defaults to "target".
-        pred_probs (Union[str, np.ndarray], optional): The name of the
-            predicted probability column in ``data`` or, if ``data`` is ``None``, then
-            the predicted probabilities as an np.ndarray of shape (num_examples,
-            num_classes). Defaults to "pred_probs".
-        slices (str, optional): The name of the column in ``data`` holding the
-            discovered slices or, if ``data`` is ``None``, then the slices as an
+        data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
+            embeddings, targets, and prediction probabilities. The names of the
+            columns can be specified with the ``embeddings``, ``targets``, and
+            ``pred_probs`` arguments. Defaults to None.
+        embeddings (Union[str, np.ndarray], optional): The name of a colum in
+            ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
+            of shape (n_samples, dimension of embedding). Defaults to
+            "embedding".
+        targets (Union[str, np.ndarray], optional): The name of a column in
+            ``data`` holding class labels. If ``data`` is ``None``, then an
+            np.ndarray of shape (n_samples,). Defaults to "target".
+        pred_probs (Union[str, np.ndarray], optional): The name of
+            a column in ``data`` holding model predictions (can either be "soft"
+            probability scores or "hard" 1-hot encoded predictions). If
+            ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
+            or (n_samples,) in the binary case. Defaults to "pred_probs".
+        slices (str, optional): The name of The name of a column in ``data`` holding 
+            discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
 
+    Examples
+    --------
+     .. code-block:: python
+        :name: Example:
+
+        from domino import explore, DominoSDM
+        dp = ...  # prepare the dataset as a Meerkat DataPanel
+
+        # split dataset 
+        valid_dp = dp.lz[dp["split"] == "valid"]
+        test_dp = dp.lz[dp["split"] == "test"]
+
+        domino = DominoSDM()
+        domino.fit(data=valid_dp)
+        test_dp["slices"] = domino.transform(
+            data=test_dp, embeddings="emb", targets="target", pred_probs="probs"
+        )
+        explore(data=test_dp)
     """
     if data is None and any(
         map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs, slices])

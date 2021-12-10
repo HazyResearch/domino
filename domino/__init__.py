@@ -1,3 +1,4 @@
-from .domino import DominoMixture, DominoSDM
+from .domino import DominoSDM
+from .gui import explore
 
-__all__ = ["DominoSDM", "DominoMixture"]
+__all__ = ["DominoSDM", "explore"]
