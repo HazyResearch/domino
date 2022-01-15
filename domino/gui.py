@@ -91,7 +91,11 @@ def explore(
         else embedding_column
     )
     targets = data[target_column] if isinstance(target_column, str) else target_column
-    pred_probs = data[pred_prob_column] if isinstance(pred_prob_column, str) else pred_prob_column
+    pred_probs = (
+        data[pred_prob_column]
+        if isinstance(pred_prob_column, str)
+        else pred_prob_column
+    )
     slices = data[slice_column] if isinstance(slice_column, str) else slice_column
 
     if data is None:
@@ -116,7 +120,9 @@ def explore(
             plot_df = pd.DataFrame(
                 {
                     "in-slice": slices[:, slice_idx].data > slice_threshold,
-                    "pred_probs": pred_probs[:, 1].data.numpy(),
+                    "pred_probs": pred_probs[:, 1].data.numpy()
+                    if len(pred_probs.shape) == 2
+                    else pred_probs.data,
                     "target": targets.data,
                 }
             )
@@ -132,6 +138,7 @@ def explore(
                 palette=["#bdbdbd", "#2396f3"],
                 stat="percent",
                 common_norm=False,
+                bins=20
             )
             g.set_axis_labels("Model's output probability", "% of examples")
 
@@ -146,6 +153,7 @@ def explore(
             description_dp = describe_slice(
                 data=dp,
                 embeddings=embedding_column,
+                targets=target_column,
                 slices=slice_column,
                 slice_idx=slice_idx,
                 text=text,
@@ -246,13 +254,16 @@ def explore(
     )
     display(slice_threshold_widget)
     display(plot_output)
-    display(widgets.VBox([
-        widgets.HTML(
-            value=(
-                "<p> Natural language descriptions of the slice: </p>"
-            )
-        ),
-        description_output]))
+    display(
+        widgets.VBox(
+            [
+                widgets.HTML(
+                    value=("<p> Natural language descriptions of the slice: </p>")
+                ),
+                description_output,
+            ]
+        )
+    )
 
     display(
         widgets.HBox(

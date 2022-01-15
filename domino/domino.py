@@ -240,7 +240,7 @@ class DominoSDM(SliceDiscoveryMethod):
         self.mm.fit(X=embeddings, y=targets, y_hat=pred_probs)
 
         self.slice_cluster_indices = (
-            -np.abs((self.mm.y_probs[:, 1] - self.mm.y_hat_probs[:, 1]))
+            -np.abs((self.mm.y_hat_probs - self.mm.y_probs).max(axis=1))
         ).argsort()[: self.config.n_slices]
         return self
 
