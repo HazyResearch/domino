@@ -72,10 +72,6 @@ class DominoSDM(SliceDiscoveryMethod):
             model, :math:`\bar{k}`. This differs from ``n_slices`` in that the
             ``DominoSDM`` only returns the top ``n_slices`` with the highest error rate
             of the ``n_mixture_components``. Defaults to 25.
-        init_params (str, optional): The initialization method to use. Options are
-            the same as in sklearn.mixture.GaussianMixture plus one addition,
-            "confusion". If "confusion", TODO: describe confusion matrix initialization.
-            Defaults to "confusion".
         y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
             the :math:`P(Y=y_{i} | S=s)` term in the log likelihood during the E-step.
             Defaults to 1.
@@ -84,6 +80,13 @@ class DominoSDM(SliceDiscoveryMethod):
             likelihood during the E-step. Defaults to 1.
         max_iter (int, optional): The maximum number of iterations to run. Defaults
             to 100.
+        init_params (str, optional): The initialization method to use. Options are
+            the same as in sklearn.mixture.GaussianMixture plus one addition,
+            "confusion". If "confusion", TODO: describe confusion matrix initialization.
+            Defaults to "confusion".
+        confusion_noise (float, optional): Only used if ``init_params="confusion"``.
+            The scale of noise added to the confusion matrix initialization.
+            Defaults to 0.001.
 
     Notes
     -----
@@ -161,10 +164,11 @@ class DominoSDM(SliceDiscoveryMethod):
         covariance_type: str = "diag",
         n_pca_components: Union[int, None] = 128,
         n_mixture_components: int = 25,
-        init_params: str = "confusion",
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
         max_iter: int = 100,
+        init_params: str = "confusion",
+        confusion_noise: float = 1e-3,
     ):
         super().__init__(n_slices=n_slices)
 
@@ -172,6 +176,7 @@ class DominoSDM(SliceDiscoveryMethod):
         self.config.n_pca_components = n_pca_components
         self.config.n_mixture_components = n_mixture_components
         self.config.init_params = init_params
+        self.config.confusion_noise = confusion_noise
         self.config.y_log_likelihood_weight = y_log_likelihood_weight
         self.config.y_hat_log_likelihood_weight = y_hat_log_likelihood_weight
         self.config.max_iter = max_iter
@@ -188,6 +193,7 @@ class DominoSDM(SliceDiscoveryMethod):
             covariance_type=self.config.covariance_type,
             init_params=self.config.init_params,
             max_iter=self.config.max_iter,
+            confusion_noise=self.config.confusion_noise,
         )
 
     def fit(
@@ -307,10 +313,12 @@ class DominoMixture(GaussianMixture):
         *args,
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
+        confusion_noise: float = 1e-3,
         **kwargs
     ):
         self.y_log_likelihood_weight = y_log_likelihood_weight
         self.y_hat_log_likelihood_weight = y_hat_log_likelihood_weight
+        self.confusion_noise = confusion_noise
         super().__init__(*args, **kwargs)
 
     def _initialize_parameters(self, X, y, y_hat, random_state):
@@ -359,7 +367,9 @@ class DominoMixture(GaussianMixture):
             )[:, : self.n_components]
             resp /= resp.sum(axis=1)[:, np.newaxis]
 
-            resp += random_state.rand(n_samples, self.n_components)
+            resp += (
+                random_state.rand(n_samples, self.n_components) * self.confusion_noise
+            )
             resp /= resp.sum(axis=1)[:, np.newaxis]
 
         else:
@@ -368,6 +378,7 @@ class DominoMixture(GaussianMixture):
             )
 
         self._initialize(X, y, y_hat, resp)
+        print(self.y_probs[:, 0].sum())
 
     def _initialize(self, X, y, y_hat, resp):
         """Initialization of the Gaussian mixture parameters.
