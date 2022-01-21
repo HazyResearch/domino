@@ -138,9 +138,13 @@ def explore(
                 palette=["#bdbdbd", "#2396f3"],
                 stat="percent",
                 common_norm=False,
-                bins=20
+                bins=20,
             )
             g.set_axis_labels("Model's output probability", "% of examples")
+            for target in np.unique(targets.data):
+                g.axes[0, target].set_title(
+                    f"target={target} \n (# of examples in-slice={np.sum((slices[:, slice_idx].data > slice_threshold) & (targets.data == target))})"
+                )
 
             plot_output.clear_output(wait=True)
             plt.show()
@@ -166,15 +170,27 @@ def explore(
 
     dp_output = widgets.Output()
 
-    def show_dp(slice_idx, columns: List[str], page_idx: int, page_size: int):
+    def show_dp(
+        slice_idx,
+        page_idx: int,
+        page_size: int,
+        # columns: List[str],
+        slice_threshold: float,
+    ):
         mk.config.DisplayOptions.max_rows = page_size
         dp_output.clear_output(wait=False)
+        columns = ["image_id", "image", "target", "prob"]
+
+        num_examples_in_slice = np.sum(slices[:, slice_idx].data > slice_threshold)
 
         with dp_output:
             display(
                 dp.lz[
                     (-slices[:, slice_idx]).argsort()[
-                        page_size * page_idx : page_size * (page_idx + 1)
+                        page_size
+                        * page_idx : min(
+                            page_size * (page_idx + 1), num_examples_in_slice
+                        )
                     ]
                 ][list(columns)]
             )
@@ -232,9 +248,10 @@ def explore(
     widgets.interactive(
         show_dp,
         slice_idx=slice_idx_widget,
-        columns=column_selector,
+        # columns=column_selector,
         page_idx=page_idx_widget,
-        page_size=page_size_widget,
+        page_size=100,  # page_size_widget,
+        slice_threshold=slice_threshold_widget,
     )
 
     widgets.interactive(
@@ -252,39 +269,47 @@ def explore(
             ]
         )
     )
-    display(slice_threshold_widget)
+    #display(slice_threshold_widget)
     display(plot_output)
     display(
         widgets.VBox(
             [
                 widgets.HTML(
-                    value=("<p> Natural language descriptions of the slice: </p>")
+                    value=("<p> <strong> Natural language descriptions of the slice: </strong> </p>")
                 ),
                 description_output,
             ]
         )
     )
 
+    # display(
+    #     widgets.HBox(
+    #         [
+    #             widgets.VBox(
+    #                 [
+    #                     widgets.HTML(
+    #                         value=(
+    #                             "<style>p{word-wrap: break-word}</style> <p>"
+    #                             + "Select multiple columns with <em>cmd-click</em>."
+    #                             + " </p>"
+    #                         )
+    #                     ),
+    #                     column_selector,
+    #                 ]
+    #             ),
+    #             widgets.VBox([page_idx_widget, page_size_widget]),
+    #         ],
+    #     )
+    # )
     display(
-        widgets.HBox(
+         widgets.VBox(
             [
-                widgets.VBox(
-                    [
-                        widgets.HTML(
-                            value=(
-                                "<style>p{word-wrap: break-word}</style> <p>"
-                                + "Select multiple columns with <em>cmd-click</em>."
-                                + " </p>"
-                            )
-                        ),
-                        column_selector,
-                    ]
+                widgets.HTML(
+                    value=("<p> <strong>  Examples in the slice, ranked by likelihood: </strong> </p>")
                 ),
-                widgets.VBox([page_idx_widget, page_size_widget]),
-            ],
-        )
-    )
-    display(dp_output)
+                dp_output,
+            ]
+        ))
 
     # To actually run the functions `plot_slice` and `show_dp` we need update the value
     # of one of the widgets.
