@@ -142,7 +142,7 @@ def explore(
             )
             g.set_axis_labels("Model's output probability", "% of examples")
             for target in np.unique(targets.data):
-                g.axes[0, target].set_title(
+                g.axes[0, int(target)].set_title(
                     f"target={target} \n (# of examples in-slice={np.sum((slices[:, slice_idx].data > slice_threshold) & (targets.data == target))})"
                 )
 
@@ -179,7 +179,7 @@ def explore(
     ):
         mk.config.DisplayOptions.max_rows = page_size
         dp_output.clear_output(wait=False)
-        columns = ["image_id", "image", "target", "prob"]
+        columns = ["image_id", "image", "target", "probs"]
 
         num_examples_in_slice = np.sum(slices[:, slice_idx].data > slice_threshold)
 
@@ -269,13 +269,15 @@ def explore(
             ]
         )
     )
-    #display(slice_threshold_widget)
+    # display(slice_threshold_widget)
     display(plot_output)
     display(
         widgets.VBox(
             [
                 widgets.HTML(
-                    value=("<p> <strong> Natural language descriptions of the slice: </strong> </p>")
+                    value=(
+                        "<p> <strong> Natural language descriptions of the slice: </strong> </p>"
+                    )
                 ),
                 description_output,
             ]
@@ -302,14 +304,17 @@ def explore(
     #     )
     # )
     display(
-         widgets.VBox(
+        widgets.VBox(
             [
                 widgets.HTML(
-                    value=("<p> <strong>  Examples in the slice, ranked by likelihood: </strong> </p>")
+                    value=(
+                        "<p> <strong>  Examples in the slice, ranked by likelihood: </strong> </p>"
+                    )
                 ),
                 dp_output,
             ]
-        ))
+        )
+    )
 
     # To actually run the functions `plot_slice` and `show_dp` we need update the value
     # of one of the widgets.
