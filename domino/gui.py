@@ -1,7 +1,6 @@
 from typing import List, Union
 
 import ipywidgets as widgets
-from ipywidgets.widgets.widget_description import DescriptionStyle
 import matplotlib.pyplot as plt
 import meerkat as mk
 import numpy as np
@@ -51,8 +50,8 @@ def explore(
             probability scores or "hard" 1-hot encoded predictions). If
             ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
             or (n_samples,) in the binary case. Defaults to "pred_probs".
-        slice_column (str, optional): The name of The name of a column in ``data`` holding
-            discovered slices. If ``data`` is ``None``, then an
+        slice_column (str, optional): The name of The name of a column in ``data``
+            holding discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
 
     Examples
@@ -74,6 +73,7 @@ def explore(
         )
         explore(data=test_dp)
     """
+    print("here")
     if data is None and any(
         map(
             lambda x: isinstance(x, str),
@@ -91,7 +91,11 @@ def explore(
         else embedding_column
     )
     targets = data[target_column] if isinstance(target_column, str) else target_column
-    pred_probs = data[pred_prob_column] if isinstance(pred_prob_column, str) else pred_prob_column
+    pred_probs = (
+        data[pred_prob_column]
+        if isinstance(pred_prob_column, str)
+        else pred_prob_column
+    )
     slices = data[slice_column] if isinstance(slice_column, str) else slice_column
 
     if data is None:
@@ -246,13 +250,16 @@ def explore(
     )
     display(slice_threshold_widget)
     display(plot_output)
-    display(widgets.VBox([
-        widgets.HTML(
-            value=(
-                "<p> Natural language descriptions of the slice: </p>"
-            )
-        ),
-        description_output]))
+    display(
+        widgets.VBox(
+            [
+                widgets.HTML(
+                    value=("<p> Natural language descriptions of the slice: </p>")
+                ),
+                description_output,
+            ]
+        )
+    )
 
     display(
         widgets.HBox(
