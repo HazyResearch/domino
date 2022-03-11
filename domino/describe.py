@@ -5,6 +5,7 @@ from scipy.stats import mode
 
 def describe_slice(
     data: mk.DataPanel = None,
+    targets: str = "target", 
     embeddings: str = "embedding",
     slices: str = "slices",
     text: mk.DataPanel = None,
@@ -16,8 +17,8 @@ def describe_slice(
     slice_mask = data[slices].data[:, slice_idx] > slice_threshold
     slice_data = data.lz[slice_mask]
     slice_proto = slice_data[embeddings].data.mean(axis=0)
-    mode_target = mode(slice_data["target"].data).mode
-    ref_proto = data.lz[data["target"] == 1]["emb"].data.mean(axis=0)
+    mode_target = mode(slice_data[targets].data).mode[0]
+    ref_proto = data.lz[data[targets].data == mode_target][embeddings].data.mean(axis=0)
 
     text["score"] = np.dot(text[text_embeddings], (slice_proto - ref_proto))
     return text[[phrase, "score"]]

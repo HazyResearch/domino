@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import Union
 
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
@@ -120,7 +120,9 @@ def explore(
             plot_df = pd.DataFrame(
                 {
                     "in-slice": slices[:, slice_idx].data > slice_threshold,
-                    "pred_probs": pred_probs[:, 1].data.numpy(),
+                    "pred_probs": pred_probs[:, 1].data.numpy()
+                    if len(pred_probs.shape) == 2
+                    else pred_probs.data,
                     "target": targets.data,
                 }
             )
@@ -136,8 +138,17 @@ def explore(
                 palette=["#bdbdbd", "#2396f3"],
                 stat="percent",
                 common_norm=False,
+                bins=20,
             )
             g.set_axis_labels("Model's output probability", "% of examples")
+            for target in np.unique(targets.data):
+                in_slice = np.sum(
+                    (slices[:, slice_idx].data > slice_threshold)
+                    & (targets.data == target)
+                )
+                g.axes[0, int(target)].set_title(
+                    f"target={target} \n (# of examples in-slice={in_slice})"
+                )
 
             plot_output.clear_output(wait=True)
             plt.show()
@@ -150,6 +161,7 @@ def explore(
             description_dp = describe_slice(
                 data=dp,
                 embeddings=embedding_column,
+                targets=target_column,
                 slices=slice_column,
                 slice_idx=slice_idx,
                 text=text,
@@ -162,15 +174,27 @@ def explore(
 
     dp_output = widgets.Output()
 
-    def show_dp(slice_idx, columns: List[str], page_idx: int, page_size: int):
+    def show_dp(
+        slice_idx,
+        page_idx: int,
+        page_size: int,
+        # columns: List[str],
+        slice_threshold: float,
+    ):
         mk.config.DisplayOptions.max_rows = page_size
         dp_output.clear_output(wait=False)
+        columns = ["image_id", "image", "target", "probs"]
+
+        num_examples_in_slice = np.sum(slices[:, slice_idx].data > slice_threshold)
 
         with dp_output:
             display(
                 dp.lz[
                     (-slices[:, slice_idx]).argsort()[
-                        page_size * page_idx : page_size * (page_idx + 1)
+                        page_size
+                        * page_idx : min(
+                            page_size * (page_idx + 1), num_examples_in_slice
+                        )
                     ]
                 ][list(columns)]
             )
@@ -231,6 +255,7 @@ def explore(
         columns=column_selector,
         page_idx=page_idx_widget,
         page_size=page_size_widget,
+        slice_threshold=slice_threshold_widget,
     )
 
     widgets.interactive(
@@ -248,39 +273,54 @@ def explore(
             ]
         )
     )
-    display(slice_threshold_widget)
+    # display(slice_threshold_widget)
     display(plot_output)
     display(
         widgets.VBox(
             [
                 widgets.HTML(
-                    value=("<p> Natural language descriptions of the slice: </p>")
+                    value=(
+                        "<p> <strong> Natural language descriptions of the slice: "
+                        "</strong> </p>"
+                    )
                 ),
                 description_output,
             ]
         )
     )
 
+    # display(
+    #     widgets.HBox(
+    #         [
+    #             widgets.VBox(
+    #                 [
+    #                     widgets.HTML(
+    #                         value=(
+    #                             "<style>p{word-wrap: break-word}</style> <p>"
+    #                             + "Select multiple columns with <em>cmd-click</em>."
+    #                             + " </p>"
+    #                         )
+    #                     ),
+    #                     column_selector,
+    #                 ]
+    #             ),
+    #             widgets.VBox([page_idx_widget, page_size_widget]),
+    #         ],
+    #     )
+    # )
     display(
-        widgets.HBox(
+        widgets.VBox(
             [
-                widgets.VBox(
-                    [
-                        widgets.HTML(
-                            value=(
-                                "<style>p{word-wrap: break-word}</style> <p>"
-                                + "Select multiple columns with <em>cmd-click</em>."
-                                + " </p>"
-                            )
-                        ),
-                        column_selector,
-                    ]
+                widgets.HTML(
+                    value=(
+                        "<p> <strong>  Examples in the slice, ranked by likelihood: "
+                        "</strong> </p>"
+                    )
                 ),
-                widgets.VBox([page_idx_widget, page_size_widget]),
-            ],
+                dp_output,
+            ]
         )
     )
-    display(dp_output)
 
     # To actually run the functions `plot_slice` and `show_dp` we need update the value
     # of one of the widgets.
