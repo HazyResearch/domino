@@ -1,0 +1,5 @@
+
+GUI
+====
+
+.. autofunction:: domino.explore

@@ -1,9 +1,8 @@
-
-import pandas as pd
-import meerkat as mk
-import numpy as np
 from typing import Union
 
+import meerkat as mk
+import numpy as np
+import pandas as pd
 
 
 class CorrelationImpossibleError(ValueError):
@@ -19,9 +18,10 @@ class CorrelationImpossibleError(ValueError):
     ):
         super().__init__(
             f"Cannot achieve correlation of {corr} while creating sample with {int(n)} "
-            f"examples and means of {mu_a:0.3f} and {mu_b:0.3f} for attributes {attr_a} and "
-            f"{attr_b} respectively. " + msg
+            f"examples and means of {mu_a:0.3f} and {mu_b:0.3f} for attributes "
+            f"{attr_a} and {attr_b} respectively. " + msg
         )
+
 
 def induce_correlation(
     dp: Union[pd.DataFrame, mk.DataPanel],
@@ -38,7 +38,6 @@ def induce_correlation(
     Induce a correlation `corr` between two boolean columns `attr_a` and `attr_b` by
     subsampling `df`, while maintaining mean and variance. If `match_mu` is `True` then
     take the minimum mean among the two attributes and use it for both.
-    Details: https://www.notion.so/Slice-Discovery-Evaluation-Framework-63b625318ef4411698c5e369d914db88#8bd2da454826451c80b524149e1c87cc
     """
     if mu_a is None:
         mu_a = dp[attr_a].mean()

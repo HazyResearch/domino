@@ -7,7 +7,7 @@ import meerkat as mk
 import torch.nn as nn
 
 
-class SliceDiscoveryMethod(ABC):
+class Slicer(ABC):
     @dataclass
     class Config:
         pass
@@ -24,7 +24,7 @@ class SliceDiscoveryMethod(ABC):
         self,
         model: nn.Module = None,
         data_dp: mk.DataPanel = None,
-    ) -> SliceDiscoveryMethod:
+    ) -> Slicer:
         raise NotImplementedError()
 
     @abstractmethod

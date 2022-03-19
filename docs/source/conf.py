@@ -46,6 +46,8 @@ extensions = [
     "sphinx.ext.autosummary",
     "IPython.sphinxext.ipython_directive",
     "IPython.sphinxext.ipython_console_highlighting",
+    "sphinx_panels",
+    "jupyter_sphinx",
     "sphinx_rtd_theme",
     "nbsphinx",
     "recommonmark",
@@ -66,7 +68,7 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "furo"
+html_theme = "pydata_sphinx_theme"
 
 
 # Add any paths that contain custom static files (such as style sheets) here,

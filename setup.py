@@ -36,8 +36,8 @@ REQUIRED = [
     "torch",
     "torchvision",
     "ftfy",
-    "regex",    
-    "clip @ git+https://github.com/openai/CLIP.git"
+    "regex",
+    "clip @ git+https://github.com/openai/CLIP.git",
 ]
 
 EXTRAS = {
@@ -57,10 +57,7 @@ EXTRAS = {
         "sphinx-autobuild",
         "furo",
     ],
-    "text": [
-        "transformers",
-        "nltk"
-    ]
+    "text": ["transformers", "nltk"],
 }
 
 

@@ -24,10 +24,12 @@ from sklearn.preprocessing import label_binarize
 from sklearn.utils.validation import check_is_fitted
 from tqdm.auto import tqdm
 
-from .abstract import SliceDiscoveryMethod
+from domino.utils import unpack_args
+
+from .abstract import Slicer
 
 
-class DominoSDM(SliceDiscoveryMethod):
+class DominoSlicer(Slicer):
 
     r"""
     Slice Discovery based on the Domino Mixture Model.
@@ -38,20 +40,20 @@ class DominoSDM(SliceDiscoveryMethod):
 
     Examples
     --------
-    Suppose you've trained a model and stored its predictions on a validation dataset in
+    Suppose you've trained a model and stored its predictions on a dataset in
     a `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_ with columns
     "emb", "target", and "pred_probs". After loading the DataPanel, you can discover
-    underperforming slices of the validation dataset with the following code:
+    underperforming slices of the validation dataset with the following:
 
     .. code-block:: python
-
+        from domino import DominoSlicer
         dp = ...  # Load dataset into a Meerkat DataPanel
 
         # split dataset
         valid_dp = dp.lz[dp["split"] == "valid"]
         test_dp = dp.lz[dp["split"] == "test"]
 
-        domino = DominoSDM()
+        domino = DominoSlicer()
         domino.fit(
             data=valid_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
         )
@@ -82,10 +84,12 @@ class DominoSDM(SliceDiscoveryMethod):
             to 100.
         init_params (str, optional): The initialization method to use. Options are
             the same as in sklearn.mixture.GaussianMixture plus one addition,
-            "confusion". If "confusion", TODO: describe confusion matrix initialization.
-            Defaults to "confusion".
+            "confusion". If "confusion",  the clusters are initialized such that almost
+            all of the examples in a cluster come from same cell in the confusion
+            matrix. See Notes below for more details. Defaults to "confusion".
         confusion_noise (float, optional): Only used if ``init_params="confusion"``.
-            The scale of noise added to the confusion matrix initialization.
+            The scale of noise added to the confusion matrix initialization. See notes
+            below for more details.
             Defaults to 0.001.
 
     Notes
@@ -156,6 +160,32 @@ class DominoSDM(SliceDiscoveryMethod):
         During the M-step, we compute a "soft" update for the categorical parameters
         :math:`p_j^{(s)} = \sum_{i=1}^n Q(s,i) \hat{y_i}(j)` where :math:`Q(s,i)`
         is the "responsibility" of slice :math:`s` towards the data point :math:`i`.
+
+    When using ``"confusion"`` initialization, each slice $s^{(j)}$ is assigned a
+    :math:`y^{(j)}\in \mathcal{Y}` and :math:`\hat{y}^{(j)} \in \mathcal{Y}` (*i.e.*
+    each slice is assigned a cell in the confusion matrix). This is typically done in a
+    round-robin fashion so that there are at least
+    :math:`\floor{\hat{k} / {|\mathcal{Y}|^2}}`
+    slices assigned to each cell in the confusion matrix. Then, we fill in the initial
+    responsibility matrix :math:`Q \in \mathbb{R}^{n \times \hat{k}}`, where each cell
+    :math:`Q_{ij}` corresponds to our model's initial estimate of
+    :math:`P(S=s^{(j)}|Y=y_i,
+    \hat{Y}=\hat{y}_i)`. We do this according to
+
+    .. math::
+        \bar{Q}_{ij} \leftarrow
+        \begin{cases}
+            1 + \epsilon & y_i=y^{(j)} \land \hat{y}_i = \hat{y}^{(j)} \\
+            \epsilon & \text{otherwise}
+        \end{cases}
+
+    .. math::
+        Q_{ij} \leftarrow \frac{\bar{Q}_{ij} } {\sum_{l=1}^{\hat{k}} \bar{Q}_{il}}
+
+    where :math:`\epsilon` is random noise which ensures that slices assigned to the
+    same confusion matrix cell won't have the exact same initialization. We sample
+    :math:`\epsilon` uniformly from the range ``(0, confusion_noise]``.
+
     """
 
     def __init__(
@@ -202,7 +232,7 @@ class DominoSDM(SliceDiscoveryMethod):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = "target",
         pred_probs: Union[str, np.ndarray] = "pred_probs",
-    ) -> DominoSDM:
+    ) -> DominoSlicer:
         """
         Fit the mixture model to data.
 
@@ -227,17 +257,9 @@ class DominoSDM(SliceDiscoveryMethod):
         Returns:
             DominoSDM: Returns a fit instance of DominoSDM.
         """
-        if (
-            any(map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs]))
-            and data is None
-        ):
-            raise ValueError(
-                "If `embeddings`, `target` or `pred_probs` are strings, `data`"
-                " must be provided."
-            )
-        embeddings = data[embeddings] if isinstance(embeddings, str) else embeddings
-        targets = data[targets] if isinstance(targets, str) else targets
-        pred_probs = data[pred_probs] if isinstance(pred_probs, str) else pred_probs
+        embeddings, targets, pred_probs = unpack_args(
+            data, embeddings, targets, pred_probs
+        )
 
         if self.pca is not None:
             self.pca.fit(X=embeddings)
@@ -286,17 +308,9 @@ class DominoSDM(SliceDiscoveryMethod):
         Returns:
             np.ndarray: A ``np.ndarray`` of shape (n_samples, n_slices).
         """
-        if (
-            any(map(lambda x: isinstance(x, str), [embeddings, targets, pred_probs]))
-            and data is None
-        ):
-            raise ValueError(
-                "If `embeddings`, `target` or `pred_probs` are strings, `data`"
-                " must be provided."
-            )
-        embeddings = data[embeddings] if isinstance(embeddings, str) else embeddings
-        targets = data[targets] if isinstance(targets, str) else targets
-        pred_probs = data[pred_probs] if isinstance(pred_probs, str) else pred_probs
+        embeddings, targets, pred_probs = unpack_args(
+            data, embeddings, targets, pred_probs
+        )
 
         if self.pca is not None:
             embeddings = self.pca.transform(X=embeddings)
@@ -314,7 +328,7 @@ class DominoMixture(GaussianMixture):
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
         confusion_noise: float = 1e-3,
-        **kwargs
+        **kwargs,
     ):
         self.y_log_likelihood_weight = y_log_likelihood_weight
         self.y_hat_log_likelihood_weight = y_hat_log_likelihood_weight

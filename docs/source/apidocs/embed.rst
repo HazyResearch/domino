@@ -1,0 +1,6 @@
+
+Embed
+======
+
+
+.. autofunction:: domino.embed

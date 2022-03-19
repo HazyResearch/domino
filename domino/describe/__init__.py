@@ -5,14 +5,14 @@ from scipy.stats import mode
 
 def describe_slice(
     data: mk.DataPanel = None,
-    targets: str = "target", 
+    targets: str = "target",
     embeddings: str = "embedding",
     slices: str = "slices",
     text: mk.DataPanel = None,
     text_embeddings: str = "embedding",
     phrase: str = "output_phrase",
     slice_idx: int = 0,
-    slice_threshold: float = 0.5
+    slice_threshold: float = 0.5,
 ):
     slice_mask = data[slices].data[:, slice_idx] > slice_threshold
     slice_data = data.lz[slice_mask]

@@ -3,6 +3,9 @@ sphinx_autodoc_typehints
 nbsphinx
 recommonmark
 toml 
-furo
+#furo
+pydata-sphinx-theme
 ipython
+jupyter-sphinx
+sphinx-panels
 #git+https://github.com/data-centric-ai/dcbench@main#dcbench

@@ -3,6 +3,15 @@ from functools import reduce, wraps
 from inspect import getcallargs
 from typing import Collection, Mapping
 
+import meerkat as mk
+
+
+def unpack_args(data: mk.DataPanel, *args):
+    if any(map(lambda x: isinstance(x, str), args)) and data is None:
+        raise ValueError("If args are strings, `data` must be provided.")
+
+    return ((data[arg] if isinstance(arg, str) else arg) for arg in args)
+
 
 def nested_getattr(obj, attr, *args):
     """Get a nested property from an object.
