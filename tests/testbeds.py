@@ -3,6 +3,7 @@ import os
 import meerkat as mk
 import numpy as np
 from PIL import Image
+from sklearn.datasets import make_blobs
 
 
 class ImageColumnTestBed:
@@ -34,3 +35,31 @@ class TextColumnTestBed:
     def __init__(self, length: int = 16):
         self.data = ["Row " * idx for idx in range(length)]
         self.col = mk.PandasSeriesColumn(self.data)
+
+
+class SliceTestBed:
+    def __init__(self, length: int = 16):
+
+        gaussian_means = np.array(
+            [
+                [0.0, 5.0, 0.0, 0.0, 0.0],
+                [1.0, 1.0, 4.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 5.0, 1.0],
+            ]
+        )
+
+        emb, clusters = make_blobs(
+            n_samples=length, centers=gaussian_means, cluster_std=1.0, random_state=42
+        )
+
+        targets = clusters == 1
+        preds = (clusters == 1) | (clusters == 2)
+
+        self.clusters = clusters
+        self.dp = mk.DataPanel(
+            {
+                "embedding": emb,
+                "target": targets,
+                "pred_probs": preds,
+            }
+        )

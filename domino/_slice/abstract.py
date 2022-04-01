@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Union
 
 import meerkat as mk
+import numpy as np
 import torch.nn as nn
 
 
@@ -29,7 +30,23 @@ class Slicer(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
+    def predict(
+        self,
+        data: mk.DataPanel,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def predict_proba(
+        self,
+        data: mk.DataPanel,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
         raise NotImplementedError()
 
     def to(self, device: Union[str, int]):

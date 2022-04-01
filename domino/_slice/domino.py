@@ -92,6 +92,8 @@ class DominoSlicer(Slicer):
             The scale of noise added to the confusion matrix initialization. See notes
             below for more details.
             Defaults to 0.001.
+        random_state (Union[int, None], optional): The random seed to use when
+            initializing  the parameters.
 
     Notes
     -----
@@ -200,6 +202,7 @@ class DominoSlicer(Slicer):
         max_iter: int = 100,
         init_params: str = "confusion",
         confusion_noise: float = 1e-3,
+        random_state: int = None,
     ):
         super().__init__(n_slices=n_slices)
 
@@ -225,6 +228,7 @@ class DominoSlicer(Slicer):
             init_params=self.config.init_params,
             max_iter=self.config.max_iter,
             confusion_noise=self.config.confusion_noise,
+            random_state=random_state,
         )
 
     def fit(
@@ -273,7 +277,7 @@ class DominoSlicer(Slicer):
         ).argsort()[: self.config.n_slices]
         return self
 
-    def transform(
+    def predict(
         self,
         data: Union[dict, mk.DataPanel] = None,
         embeddings: Union[str, np.ndarray] = "embedding",
@@ -281,11 +285,11 @@ class DominoSlicer(Slicer):
         pred_probs: Union[str, np.ndarray] = "pred_probs",
     ) -> np.ndarray:
         """
-        Estimate slice membership for data using a fit mixture model.
+        Get probabilistic slice membership for data using a fit mixture model.
 
 
         .. caution::
-            Must call ``DominoSlicer.fit`` prior to calling ``DominoSlicer.transform``.
+            Must call ``DominoSlicer.fit`` prior to calling ``DominoSlicer.predict``.
 
 
         Args:
@@ -307,7 +311,55 @@ class DominoSlicer(Slicer):
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
 
         Returns:
-            np.ndarray: A ``np.ndarray`` of shape (n_samples, n_slices).
+            np.ndarray: A binary ``np.ndarray`` of shape (n_samples, n_slices) where
+                values are either 1 or 0.
+        """
+        probs = self.predict_proba(
+            data=data,
+            embeddings=embeddings,
+            targets=targets,
+            pred_probs=pred_probs,
+        )
+        preds = np.zeros_like(probs, dtype=np.int32)
+        preds[np.arange(preds.shape[0]), probs.argmax(axis=-1)] = 1
+        return preds
+
+    def predict_proba(
+        self,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
+        """
+        Get probabilistic slice membership for data using a fit mixture model.
+
+        .. caution::
+            Must call ``DominoSlicer.fit`` prior to calling
+            ``DominoSlicer.predict_proba``.
+
+
+        Args:
+            data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
+                embeddings, targets, and prediction probabilities. The names of the
+                columns can be specified with the ``embeddings``, ``targets``, and
+                ``pred_probs`` arguments. Defaults to None.
+            embeddings (Union[str, np.ndarray], optional): The name of a colum in
+                ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
+                of shape (n_samples, dimension of embedding). Defaults to
+                "embedding".
+            targets (Union[str, np.ndarray], optional): The name of a column in
+                ``data`` holding class labels. If ``data`` is ``None``, then an
+                np.ndarray of shape (n_samples,). Defaults to "target".
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
+                ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
+                or (n_samples,) in the binary case. Defaults to "pred_probs".
+
+        Returns:
+            np.ndarray: A ``np.ndarray`` of shape (n_samples, n_slices) where values in
+                are in range [0,1] and rows sum to 1.
         """
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs

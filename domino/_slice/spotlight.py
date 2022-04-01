@@ -91,13 +91,13 @@ class SpotlightSlicer(Slicer):
             all_weights.append(weights)
         return self
 
-    def transform(
+    def predict_proba(
         self,
         data: Union[dict, mk.DataPanel] = None,
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = "target",
         pred_probs: Union[str, np.ndarray] = "pred_probs",
-    ):
+    ) -> np.ndarray:
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs
         )
@@ -106,11 +106,6 @@ class SpotlightSlicer(Slicer):
         targets = torch.tensor(targets).to(torch.long)
 
         losses = self._compute_losses(pred_probs=pred_probs, targets=targets)
-
-        if isinstance(data, mk.DataPanel):
-            dp = data.view()
-        else:
-            dp = mk.DataPanel(data)
 
         all_weights = []
 
@@ -123,8 +118,25 @@ class SpotlightSlicer(Slicer):
                 losses=losses,
             )
             all_weights.append(weights.numpy())
-        dp["pred_slices"] = np.stack(all_weights, axis=1)
-        return dp
+        return np.stack(all_weights, axis=1)
+
+    def predict(
+        self,
+        data: mk.DataPanel,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
+        probs = self.predict_proba(
+            data=data,
+            embeddings=embeddings,
+            targets=targets,
+            pred_probs=pred_probs,
+        )
+
+        # TODO (Greg): check if this is the preferred way to get hard predictions from
+        # probabilities
+        return (probs > 0.5).astype(np.int32)
 
 
 # Source below copied from spotlight implementation
