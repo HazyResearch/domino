@@ -1,7 +1,5 @@
 from typing import Dict, Union
 
-from clip import load, tokenize
-
 from .encoder import Encoder
 
 
@@ -29,6 +27,13 @@ def clip(
         Radford, A. et al. Learning Transferable Visual Models From Natural Language
         Supervision. arXiv [cs.CV] (2021)
     """
+    try:
+        from clip import load, tokenize
+    except ImportError:
+        raise ImportError(
+            "To embed with CLIP run pip install git+https://github.com/openai/CLIP.git"
+        )
+
     model, preprocess = load(variant, device=device)
     return {
         "image": Encoder(encode=model.encode_image, preprocess=preprocess),

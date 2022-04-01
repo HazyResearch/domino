@@ -37,7 +37,6 @@ REQUIRED = [
     "torchvision",
     "ftfy",
     "regex",
-    "clip @ git+https://github.com/openai/CLIP.git",
 ]
 
 EXTRAS = {
