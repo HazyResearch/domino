@@ -18,7 +18,7 @@ DESCRIPTION = ""
 URL = ""
 EMAIL = "eyuboglu@stanford.edu"
 AUTHOR = "https://github.com/HazyResearch/domino"
-REQUIRES_PYTHON = ">=3.8.10"
+REQUIRES_PYTHON = ">=3.8.6"
 VERSION = main_ns["__version__"]
 
 with open("README.md", "r") as fh:
