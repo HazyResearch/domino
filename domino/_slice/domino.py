@@ -46,6 +46,7 @@ class DominoSlicer(Slicer):
     underperforming slices of the validation dataset with the following:
 
     .. code-block:: python
+
         from domino import DominoSlicer
         dp = ...  # Load dataset into a Meerkat DataPanel
 
@@ -284,7 +285,7 @@ class DominoSlicer(Slicer):
 
 
         .. caution::
-            Must call ``DominoSDM.fit`` prior to calling ``DominoSDM.transform``.
+            Must call ``DominoSlicer.fit`` prior to calling ``DominoSlicer.transform``.
 
 
         Args:

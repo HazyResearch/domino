@@ -70,3 +70,6 @@ class Registry(_Registry):
     def __repr__(self) -> str:
         table = tabulate(self._metadata_map.values(), tablefmt="fancy_grid")
         return "Registry of {}:\n".format(self._name) + table
+
+    def __str__(self) -> str:
+        return self.__repr__()

@@ -4,9 +4,13 @@ from typing import Callable, Union
 import meerkat as mk
 import torch
 
+from domino._embed.encoder import Encoder
+
 from ..registry import Registry
 from .bit import bit
 from .clip import clip
+
+__all__ = ["clip", "bit"]
 
 encoders = Registry(name="encoders")
 
@@ -27,7 +31,7 @@ def infer_modality(col: mk.AbstractColumn):
 def embed(
     data: mk.DataPanel,
     input_col: str,
-    encoder: str = "clip",
+    encoder: Union[str, Encoder] = "clip",
     modality: str = None,
     out_col: str = None,
     device: Union[int, str] = "cpu",
@@ -36,50 +40,54 @@ def embed(
     batch_size: int = 128,
     **kwargs,
 ) -> mk.DataPanel:
-    """Embed a column of data with an encoder from the registry.
-
-    .. note::
-
-        You can see the encoders available in the registry with ``domino.encoders``.
+    """Embed a column of data with an encoder from the encoder registry.
 
     Examples
     --------
-    Suppose you have an Image dataset (e.g. CIFAR-10) loaded into a
-    `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_. After loading the
-    DataPanel, you can embed the images with clip using a code snippet like:
+    Suppose you have an Image dataset (e.g. Imagenette, CIFAR-10) loaded into a
+    `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_. You can embed the
+    images in the dataset with CLIP using a code snippet like:
 
     .. code-block:: python
 
         import meerkat as mk
         from domino import embed
 
-        dp = mk.datasets.get("cifar10")
+        dp = mk.datasets.get("imagenette")
 
         dp = embed(
             data=dp,
-            input_col="image",
+            input_col="img",
             encoder="clip"
         )
 
 
     Args:
-        data (mk.DataPanel): DataPanel
-        input_col (str): Name of column to embed.
-        encoder (str, optional): Name of . Defaults to "clip".
-        modality (str, optional): _description_. Defaults to None.
-        out_col (str, optional): _description_. Defaults to None.
-        device (Union[int, str], optional): _description_. Defaults to "cpu".
-        mmap_dir (str, optional): _description_. Defaults to None.
-        num_workers (int, optional): _description_. Defaults to 4.
-        batch_size (int, optional): _description_. Defaults to 128.
-        **kwargs: Additional keyword arguments to passed to the encoder.
-
-
-    Raises:
-        ValueError: _description_
+        data (mk.DataPanel): A DataPanel containing the data to embed.
+        input_col (str): The name of the column to embed.
+        encoder (Union[str, Encoder], optional): Name of the encoder to use. List
+            supported encoders with ``domino.encoders``. Defaults to "clip".
+            Alternatively, pass an :class:`~domino._embed.encoder.Encoder` object
+            containing a custom encoder.
+        modality (str, optional): The modality of the data to be embedded. Defaults to
+            None, in which case the modality is inferred from the type of the input
+            column.
+        out_col (str, optional): The name of the column where the embeddings are stored.
+            Defaults to None, in which case it is ``"{encoder}({input_col})"``.
+        device (Union[int, str], optional): The device on which. Defaults to "cpu".
+        mmap_dir (str, optional): The path to directory where a memory-mapped file
+            containing the embeddings will be written. Defaults to None, in which case
+            the embeddings are not memmapped.
+        num_workers (int, optional): Number of worker processes used to load the data
+            from disk. Defaults to 4.
+        batch_size (int, optional): Size of the batches to  used . Defaults to 128.
+        **kwargs: Additional keyword arguments are passed to the encoder. To see
+            supported arguments for each encoder, see the encoder documentation (e.g.
+            :func:`~domino._embed.clip`).
 
     Returns:
-        mk.DataPanel: _description_
+        mk.DataPanel: A view of ``data`` with a new column containing the embeddings.
+        This column will be named according to the ``out_col`` parameter.
     """
 
     if modality is None:

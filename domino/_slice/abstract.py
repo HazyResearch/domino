@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Union
 
 import meerkat as mk
 import torch.nn as nn
@@ -30,3 +31,9 @@ class Slicer(ABC):
     @abstractmethod
     def transform(self, data_dp: mk.DataPanel) -> mk.DataPanel:
         raise NotImplementedError()
+
+    def to(self, device: Union[str, int]):
+
+        if device != "cpu":
+            raise ValueError(f"Slicer of type {type(self)} does not support GPU.")
+        # by default this is a no-op, but subclasses can override

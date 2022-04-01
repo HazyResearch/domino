@@ -1,6 +1,6 @@
 import io
 from collections import OrderedDict
-from typing import Union
+from typing import Dict, Union
 
 import numpy as np
 import PIL
@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torchvision as tv
 
 from ..utils import nested_getattr
+from .encoder import Encoder
 from .utils import ActivationExtractor, _get_reduction_fn
 
 # this implementation is primarily an adaptation of this colab
@@ -18,11 +19,32 @@ from .utils import ActivationExtractor, _get_reduction_fn
 
 
 def bit(
-    variant: str,
+    variant: str = "BiT-M-R50x1",
     device: Union[int, str] = "cpu",
     reduction: str = "mean",
     layer: str = "body",
-):
+) -> Dict[str, Encoder]:
+    """Big Transfer (BiT) encoders [kolesnivok_2019]_. Includes encoders for the
+    following modalities:
+        - "image"
+
+    Args:
+        variant (str): The variant of the model to use. Variants include
+            "BiT-M-R50x1",  "BiT-M-R101x3", "Bit-M-R152x4".  Defaults to "BiT-M-R50x1".
+        device (Union[int, str], optional): The device on which the encoders will be
+            loaded. Defaults to "cpu".
+        reduction (str, optional): The reduction function used to reduce image
+            embeddings of shape (batch x height x width x dimensions) to (batch x
+            dimensions). Defaults to "mean". Other options include "max".
+        layer (str, optional): The layer of the model from which the embeddings will
+            beto extract the embeddings from. Defaults to "body".
+
+    .. [kolesnivok_2019]
+
+        Kolesnikov, A. et al. Big Transfer (BiT): General Visual Representation
+        Learning. arXiv [cs.CV] (2019)
+    """
+
     model = _get_model(variant=variant)
 
     layer = nested_getattr(model, layer)
@@ -37,7 +59,7 @@ def bit(
         model(batch)  # run forward pass, but don't collect output
         return extractor.activation
 
-    return {"image": (_embed, transform)}
+    return {"image": Encoder(encoder=_embed, preprocess=transform)}
 
 
 def transform(img: PIL.Image.Image):

@@ -5,8 +5,10 @@ import torch
 import torchvision as tv
 from clip import tokenize
 
+import domino
 from domino import embed, encoders
 from domino._embed.encoder import Encoder
+from domino.registry import Registry
 
 from ..testbeds import ImageColumnTestBed, TextColumnTestBed
 
@@ -73,3 +75,8 @@ def test_embed_text(simple_encoder):
         tokenize(dp["text"][0]).to(torch.float32).mean()
         == dp["_simple_encoder(text)"][0].mean()
     )
+
+
+def test_encoders_repr():
+    assert isinstance(domino.encoders, Registry)
+    assert isinstance(domino.encoders.__repr__(), str)
