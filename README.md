@@ -15,7 +15,7 @@ Discover slices of data on which your models underperform.
 
 [**Getting Started**](#%EF%B8%8F-quickstart)
 | [**What is domino?**](#-what-is-domino)
-| [**Docs**](https://domino.readthedocs.io/en/latest/index.html)
+| [**Docs**](https://domino-slice.readthedocs.io/en/latest/index.html)
 | [**Contributing**](CONTRIBUTING.md)
 | [**Paper**](https://arxiv.org/pdf/2203.14960.pdf)
 | [**About**](#%EF%B8%8F-about)
