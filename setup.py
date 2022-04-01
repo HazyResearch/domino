@@ -25,7 +25,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
-    "meerkat-ml[ml] @ git+https://github.com/robustness-gym/meerkat@dev",
+    "meerkat-ml[ml]",
     "pandas",
     "numpy>=1.18.0",
     "tqdm>=4.49.0",
