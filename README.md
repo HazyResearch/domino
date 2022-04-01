@@ -17,26 +17,27 @@ Discover slices of data on which your models underperform.
 | [**What is domino?**](#-what-is-domino)
 | [**Docs**](https://domino.readthedocs.io/en/latest/index.html)
 | [**Contributing**](CONTRIBUTING.md)
-| [**Paper**](https://openreview.net/pdf?id=FPCMqjI0jXN)
+| [**Paper**](https://arxiv.org/pdf/2203.14960.pdf)
 | [**About**](#%EF%B8%8F-about)
 </div>
 
 
 ## ⚡️ Quickstart
-**Note**: `domino` has not yet been publicly released. Please install in editable mode as described below below.
 
 ```bash
 pip install domino 
 ```
-> Optional: some parts of Domino rely on optional dependencies. If you know which optional dependencies you'd like to install, you can do so using something like `pip install dcbench[dev]` instead. See setup.py for a full list of optional dependencies.
+> Optional: some parts of Domino rely on optional dependencies. If you know which optional dependencies you'd like to install, you can do so using something like `pip install domino[text]` instead. See setup.py for a full list of optional dependencies.
 
-> Installing from main: `pip install "domino[dev] @ git+https://github.com/HazyResearch/domino@main"`
+> Installing from main: `pip install "domino[text] @ git+https://github.com/HazyResearch/domino@main"`
 
 > Installing in editable mode: `git clone https://github.com/HazyResearch/domino.git && cd domino && pip install -e .`
 
 ```python
 import domino
 ```
+
+To learn more follow along in our tutorial: TODO
 
 
 ## ✉️ About
