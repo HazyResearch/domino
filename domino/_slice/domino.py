@@ -445,7 +445,6 @@ class DominoMixture(GaussianMixture):
             )
 
         self._initialize(X, y, y_hat, resp)
-        print(self.y_probs[:, 0].sum())
 
     def _initialize(self, X, y, y_hat, resp):
         """Initialization of the Gaussian mixture parameters.

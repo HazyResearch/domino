@@ -97,7 +97,7 @@ def embed(
     if out_col is None:
         out_col = f"{encoder}({input_col})"
 
-    encoder = encoders.get(encoder, **kwargs)
+    encoder = encoders.get(encoder, device=device, **kwargs)
 
     if modality not in encoder:
         raise ValueError(f'Encoder "{encoder}" does not support modality "{modality}".')
@@ -140,7 +140,7 @@ def _embed(
 
     if collate is not None:
         embed_input.collate_fn = collate
-
+    
     with torch.no_grad():
         data[out_col] = embed_input.map(
             lambda x: encode(x.data.to(device)).cpu().detach().numpy(),

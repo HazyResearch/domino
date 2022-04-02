@@ -1,4 +1,4 @@
-from typing import Union
+from typing import List, Union
 
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
@@ -8,18 +8,19 @@ import pandas as pd
 import seaborn as sns
 from IPython.display import display
 
-from .describe import describe_slice
+from domino.utils import unpack_args
+from ._describe import describe
 
 
 def explore(
     data: mk.DataPanel = None,
-    embedding_column: Union[str, np.ndarray] = "embedding",
-    target_column: Union[str, np.ndarray] = "target",
-    pred_prob_column: Union[str, np.ndarray] = "pred_probs",
-    slice_column: Union[str, np.ndarray] = "slices",
+    embeddings: Union[str, np.ndarray] = "embedding",
+    targets: Union[str, np.ndarray] = "target",
+    pred_probs: Union[str, np.ndarray] = "pred_prob",
+    slices: Union[str, np.ndarray] = "slices",
     text: mk.DataPanel = None,
-    text_embeddings: str = "embedding",
-    phrase: str = "output_phrase",
+    text_embeddings: Union[str, np.ndarray] = "embedding",
+    phrase: Union[str, np.ndarray] = "output_phrase",
 ) -> None:
     """Creates a IPyWidget GUI for exploring discovered slices. The GUI includes two
     sections: (1) The first section displays data visualizations summarizing the
@@ -38,7 +39,7 @@ def explore(
             embeddings, targets, and prediction probabilities. The names of the
             columns can be specified with the ``embeddings``, ``targets``, and
             ``pred_probs`` arguments. Defaults to None.
-        embedding_column (Union[str, np.ndarray], optional): The name of a colum in
+        embeddings (Union[str, np.ndarray], optional): The name of a column in
             ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
             of shape (n_samples, dimension of embedding). Defaults to
             "embedding".
@@ -50,9 +51,18 @@ def explore(
             probability scores or "hard" 1-hot encoded predictions). If
             ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
             or (n_samples,) in the binary case. Defaults to "pred_probs".
-        slice_column (str, optional): The name of The name of a column in ``data``
+        slices (str, optional): The name of The name of a column in ``data``
             holding discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
+        text (str, optional): A `Meerkat DataPanel` with columns for text phrases and
+            their embeddings. The names of the columns can be specified with the 
+            ``text_embeddings`` and ``phrase`` arguments. Defaults to None.
+        text_embeddings (Union[str, np.ndarray], optional): The name of a colum in
+            ``text`` holding embeddings. If ``text`` is ``None``, then an np.ndarray
+            of shape (n_phrases, dimension of embedding). Defaults to "embedding".
+        phrase (Union[str, np.ndarray], optional): The name of a column in ``text``
+            holding text phrases. If ``text`` is ``None``, then an np.ndarray of
+            shape (n_phrases,). Defaults to "output_phrase".
 
     Examples
     --------
@@ -73,29 +83,10 @@ def explore(
         )
         explore(data=test_dp)
     """
-    if data is None and any(
-        map(
-            lambda x: isinstance(x, str),
-            [embedding_column, target_column, pred_prob_column, slice_column],
-        )
-    ):
-        raise ValueError(
-            "If `embedding_column`, `target` or `pred_prob_column` are strings, `data`"
-            " must be provided."
-        )
 
-    embeddings = (
-        data[embedding_column]
-        if isinstance(embedding_column, str)
-        else embedding_column
+    embeddings, targets, pred_probs, slices = unpack_args(
+        data, embeddings, targets, pred_probs, slices
     )
-    targets = data[target_column] if isinstance(target_column, str) else target_column
-    pred_probs = (
-        data[pred_prob_column]
-        if isinstance(pred_prob_column, str)
-        else pred_prob_column
-    )
-    slices = data[slice_column] if isinstance(slice_column, str) else slice_column
 
     if data is None:
         dp = mk.DataPanel(
@@ -157,15 +148,15 @@ def explore(
     def show_descriptions(slice_idx: int, slice_threshold: float):
         description_output.clear_output(wait=False)
         if text is not None:
-            description_dp = describe_slice(
+            description_dp = describe(
                 data=dp,
-                embeddings=embedding_column,
-                targets=target_column,
-                slices=slice_column,
+                embeddings=embeddings,
+                targets=targets,
+                slices=slices,
                 slice_idx=slice_idx,
                 text=text,
                 text_embeddings=text_embeddings,
-                phrase=phrase,
+                phrases=phrase,
                 slice_threshold=slice_threshold,
             )
             with description_output:
@@ -177,13 +168,11 @@ def explore(
         slice_idx,
         page_idx: int,
         page_size: int,
-        # columns: List[str],
+        columns: List[str],
         slice_threshold: float,
     ):
         mk.config.DisplayOptions.max_rows = page_size
         dp_output.clear_output(wait=False)
-        columns = ["image_id", "image", "target", "probs"]
-
         num_examples_in_slice = np.sum(slices[:, slice_idx].data > slice_threshold)
 
         with dp_output:
@@ -272,7 +261,7 @@ def explore(
             ]
         )
     )
-    # display(slice_threshold_widget)
+    display(slice_threshold_widget)
     display(plot_output)
     display(
         widgets.VBox(
@@ -288,25 +277,25 @@ def explore(
         )
     )
 
-    # display(
-    #     widgets.HBox(
-    #         [
-    #             widgets.VBox(
-    #                 [
-    #                     widgets.HTML(
-    #                         value=(
-    #                             "<style>p{word-wrap: break-word}</style> <p>"
-    #                             + "Select multiple columns with <em>cmd-click</em>."
-    #                             + " </p>"
-    #                         )
-    #                     ),
-    #                     column_selector,
-    #                 ]
-    #             ),
-    #             widgets.VBox([page_idx_widget, page_size_widget]),
-    #         ],
-    #     )
-    # )
+    display(
+        widgets.HBox(
+            [
+                widgets.VBox(
+                    [
+                        widgets.HTML(
+                            value=(
+                                "<style>p{word-wrap: break-word}</style> <p>"
+                                + "Select multiple columns with <em>cmd-click</em>."
+                                + " </p>"
+                            )
+                        ),
+                        column_selector,
+                    ]
+                ),
+                widgets.VBox([page_idx_widget, page_size_widget]),
+            ],
+        )
+    )
     display(
         widgets.VBox(
             [

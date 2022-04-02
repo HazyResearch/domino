@@ -37,5 +37,8 @@ def clip(
     model, preprocess = load(variant, device=device)
     return {
         "image": Encoder(encode=model.encode_image, preprocess=preprocess),
-        "text": Encoder(encode=model.encode_text, preprocesser=tokenize),
+        "text": Encoder(
+            # need to squeeze out the batch dimension for compatibility with collate
+            encode=model.encode_text, preprocess=lambda x: tokenize(x).squeeze(0)
+        ),
     }
