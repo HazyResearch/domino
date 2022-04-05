@@ -4,7 +4,7 @@
     <img src="docs/assets/banner.png" height=150 alt="banner"/>
     -->
 Domino 
------
+
 <!---
 ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/HazyResearch/domino/CI)
 ![GitHub](https://img.shields.io/github/license/HazyResearch/domino)
