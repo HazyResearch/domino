@@ -1,6 +1,8 @@
 
 <div align="center">
+    <!---
     <img src="docs/assets/banner.png" height=150 alt="banner"/>
+    -->
 Domino 
 -----
 <!---
@@ -17,9 +19,11 @@ Discover slices of data on which your models underperform.
 | [**What is domino?**](#-what-is-domino)
 | [**Docs**](https://domino-slice.readthedocs.io/en/latest/index.html)
 | [**Contributing**](CONTRIBUTING.md)
-| [**Paper**](https://arxiv.org/pdf/2203.14960.pdf)
+| [**Paper**](https://arxiv.org/abs/2203.14960.pdf)
 | [**About**](#%EF%B8%8F-about)
 </div>
+
+
 
 
 ## ⚡️ Quickstart
@@ -27,18 +31,39 @@ Discover slices of data on which your models underperform.
 ```bash
 pip install domino 
 ```
-> Optional: some parts of Domino rely on optional dependencies. If you know which optional dependencies you'd like to install, you can do so using something like `pip install domino[text]` instead. See setup.py for a full list of optional dependencies.
-
-> Installing from main: `pip install "domino[text] @ git+https://github.com/HazyResearch/domino@main"`
-
-> Installing in editable mode: `git clone https://github.com/HazyResearch/domino.git && cd domino && pip install -e .`
+> For more detailed installation instructions, see the [docs](https://domino-slice.readthedocs.io/en/latest/intro.html).
 
 ```python
 import domino
 ```
 
-To learn more follow along in our tutorial: TODO
+To learn more follow along in our tutorial on [Google Colab](https://colab.research.google.com/github/HazyResearch/domino/blob/main/examples/01_intro.ipynb) or dive into the [docs](https://domino-slice.readthedocs.io/en/latest/intro.html). 
+
+
+## 🍕 What is Domino?
+
+Machine learning models that achieve high overall accuracy often make systematic errors on coherent slices of validation data. Domino provides tools to help discover these slices.
+
+***What is a slice?***  A slice is a set of data samples that share a common characteristic. As an example, in large image datasets, photos of vintage cars comprise a slice (i.e. all images in the slice share a common subject). The term slice has a number of synonyms  that you might be more familiar with (e.g. subgroup, subpopulation, stratum).
+
+Slice discovery is the task of mining unstructured input data (e.g. images, videos, audio) for semantically meaningful subgroups on which a model performs poorly. We refer to automated techniques that mine input data for semantically meaningful slices as slice discovery methods (SDM). Given a labeled validation dataset and a trained classifier, an SDM computes a set of slicing functions that partition the dataset into slices. This process is illustrated below. 
+
+<img src="docs/assets/slice_discovery.png"/>
+
+This repository is named `domino` in reference to the pizza chain of the same name, known for its reliable slice deliveries. It is a slice discovery hub that provides implementations of popular slice discovery methods under a common API. It also provides tools for running quantative evaluations of slice discovery methods. 
+
+To see a full list of implemented methods, see the [docs](https://domino-slice.readthedocs.io/en/latest/apidocs/index.html). 
+## 🔗 Useful Links
+- 💻 [GitHub](https://github.com/HazyResearch/domino)
+- 📘 [Docs](https://domino-slice.readthedocs.io/en/latest/)
+
+Papers:
+- 📄 [ICLR 2022 Paper](https://arxiv.org/abs/2203.14960)
+
+Blogposts:
+- 🌍 [BlogPost]()
+
 
 
 ## ✉️ About
-`domino` is being developed at Stanford in the HazyResearch and Zou groups. Reach out to Sabri Eyuboglu (eyuboglu [at] stanford [dot] edu) if you would like to get involved or contribute!
+Reach out to Sabri Eyuboglu (eyuboglu [at] stanford [dot] edu) if you would like to get involved or contribute!
