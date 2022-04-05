@@ -48,7 +48,7 @@ Machine learning models that achieve high overall accuracy often make systematic
 
 Slice discovery is the task of mining unstructured input data (e.g. images, videos, audio) for semantically meaningful subgroups on which a model performs poorly. We refer to automated techniques that mine input data for semantically meaningful slices as slice discovery methods (SDM). Given a labeled validation dataset and a trained classifier, an SDM computes a set of slicing functions that partition the dataset into slices. This process is illustrated below. 
 
-<img src="docs/assets/slice_discovery.png"/>
+<img src="docs/assets/slice_discovery.png" height="300px"/>
 
 This repository is named `domino` in reference to the pizza chain of the same name, known for its reliable slice deliveries. It is a slice discovery hub that provides implementations of popular slice discovery methods under a common API. It also provides tools for running quantative evaluations of slice discovery methods. 
 
