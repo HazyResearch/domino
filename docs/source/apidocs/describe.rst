@@ -1,3 +1,4 @@
+.. _describe-reference:
 
 Describe
 =========

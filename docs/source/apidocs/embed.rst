@@ -1,3 +1,4 @@
+.. _embed-reference:
 
 Embed
 ======

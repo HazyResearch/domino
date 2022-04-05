@@ -1,3 +1,4 @@
+.. _slice-reference:
 
 Slice
 ========
