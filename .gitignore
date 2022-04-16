@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 .vscode
 .DS_Store
+dcbench-config.yaml
 
 # C extensions
 *.so

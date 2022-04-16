@@ -57,6 +57,7 @@ EXTRAS = {
         "furo",
     ],
     "text": ["transformers", "nltk"],
+    "eval": ["pytorch-lightning", "dcbench"],
 }
 
 
