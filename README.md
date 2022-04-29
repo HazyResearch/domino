@@ -29,7 +29,7 @@ Discover slices of data on which your models underperform.
 ## ⚡️ Quickstart
 
 ```bash
-pip install domino[clip,text] @ git+https://github.com/HazyResearch/domino@main 
+pip install "domino[clip,text] @ git+https://github.com/HazyResearch/domino@main"
 ```
 > For more detailed installation instructions, see the [docs](https://domino-slice.readthedocs.io/en/latest/intro.html).
 
