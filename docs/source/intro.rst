@@ -10,6 +10,11 @@ Installation
     Domino is available on `PyPI <https://pypi.org/project/domino/>`_ and can be 
     installed with pip.
 
+    .. warning::
+
+        Domino is currently being actively developed. We recommend installing using
+        the "Latest" or "Editable" tabs for the most up to date version.
+
     .. code-block:: 
 
         pip install domino
