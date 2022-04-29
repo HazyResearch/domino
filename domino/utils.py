@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from functools import reduce, wraps
 from inspect import getcallargs
 from typing import Collection, Mapping
+import pandas as pd
+import torch
+import numpy as np
+from typing import List 
 
 import meerkat as mk
 
@@ -21,7 +25,20 @@ def unpack_args(data: mk.DataPanel, *args):
         new_args.append(arg)
     return new_args 
 
-
+def convert_to_numpy(*args):
+    """Convert Torch tensors and Pandas Series to numpy arrays."""
+    new_args = []
+    for arg in args:
+        if torch.is_tensor(arg):
+            new_args.append(arg.numpy())
+        elif isinstance(arg, pd.Series):
+            new_args.append(arg.values)
+        elif isinstance(arg, List):
+            new_args.append(np.array(arg))
+        else:
+            new_args.append(arg)
+        
+    return tuple(new_args)
 
 def nested_getattr(obj, attr, *args):
     """Get a nested property from an object.

@@ -4,6 +4,7 @@ import meerkat as mk
 import numpy as np
 from PIL import Image
 from sklearn.datasets import make_blobs
+import torch
 
 
 class ImageColumnTestBed:
@@ -28,6 +29,7 @@ class ImageColumnTestBed:
 
         self.col = mk.ImageColumn.from_filepaths(
             self.image_paths,
+            loader=Image.open,
         )
 
 
@@ -38,13 +40,22 @@ class TextColumnTestBed:
 
 
 class SliceTestBed:
-    def __init__(self, length: int = 16):
+    def __init__(self, length: int = 16, type: str = "numpy"):
+
+        if type == "numpy":
+            conversion = lambda x: x
+        elif type == "torch":
+            conversion = torch.tensor 
+        else:
+            raise ValueError("Unknown type: {}".format(type))
 
         gaussian_means = np.array(
             [
                 [0.0, 5.0, 0.0, 0.0, 0.0],
                 [1.0, 1.0, 4.0, 0.0, 0.0],
                 [1.0, 0.0, 0.0, 5.0, 1.0],
+                [5.0, 2.0, 0.0, 1.0, 10.0],
+                [1.0, 10.0, 2.0, 2.0, 0.0],
             ]
         )
 
@@ -58,9 +69,9 @@ class SliceTestBed:
         self.clusters = clusters
         self.dp = mk.DataPanel(
             {
-                "embedding": emb,
-                "target": targets,
-                "pred_probs": np.stack([1-preds, preds], axis=1).astype(float),
-                "losses": np.abs(targets ^ preds).astype(float),
+                "embedding": conversion(emb),
+                "target": conversion(targets),
+                "pred_probs": conversion(np.stack([1-preds, preds], axis=1).astype(float)),
+                "losses": conversion(np.abs(targets ^ preds).astype(float)),
             }
         )

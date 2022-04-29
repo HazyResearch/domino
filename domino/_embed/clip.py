@@ -32,6 +32,8 @@ def clip(
     except ImportError:
         raise ImportError(
             "To embed with CLIP run pip install git+https://github.com/openai/CLIP.git"
+            "and install domino with the `clip` submodule. For example, "
+            "`pip install domino[clip]`"
         )
 
     model, preprocess = load(variant, device=device)
