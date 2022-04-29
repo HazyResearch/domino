@@ -25,7 +25,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
-    "meerkat-ml[ml]",
+    "meerkat-ml",
     "pandas",
     "numpy>=1.18.0",
     "tqdm>=4.49.0",
@@ -34,9 +34,6 @@ REQUIRED = [
     "ipywidgets",
     "seaborn",
     "torch",
-    "torchvision",
-    "ftfy",
-    "regex",
 ]
 
 EXTRAS = {
@@ -58,6 +55,8 @@ EXTRAS = {
     ],
     "text": ["transformers", "nltk"],
     "eval": ["pytorch-lightning", "dcbench"],
+    "bit": ["torchvision"],
+    "clip": ["ftfy", "regex"]
 }
 
 
