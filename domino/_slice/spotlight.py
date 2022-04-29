@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from torch.nn.functional import cross_entropy
+from tqdm import tqdm
 
 from domino.utils import unpack_args
 
@@ -27,67 +28,62 @@ class SpotlightSlicer(Slicer):
 
     def __init__(
         self,
+        n_slices: int = 5,
         spotlight_size: int = 0.02,  # recommended from paper
-        num_steps: int = 1000,
+        n_steps: int = 1000,
         learning_rate: float = 1e-3,  # default from the implementation
-        **kwargs
+        device: torch.device = torch.device("cpu"),
     ):
-        super().__init__(**kwargs)
+        super().__init__(n_slices=n_slices)
 
         self.config.spotlight_size = spotlight_size
-        self.config.num_steps = num_steps
+        self.config.n_steps = n_steps
         self.config.learning_rate = learning_rate
+        self.config.device = device
 
         self.means = []
         self.precisions = []
-
-    def _compute_losses(
-        self, targets: np.ndarray = "target", pred_probs: np.ndarray = "pred_probs"
-    ):
-        return cross_entropy(
-            pred_probs,
-            targets,
-            reduction="none",
-        )
 
     def fit(
         self,
         data: Union[dict, mk.DataPanel] = None,
         embeddings: Union[str, np.ndarray] = "embedding",
-        targets: Union[str, np.ndarray] = "target",
-        pred_probs: Union[str, np.ndarray] = "pred_probs",
+        targets: Union[str, np.ndarray] = None,
+        pred_probs: Union[str, np.ndarray] = None,
+        losses: Union[str, np.ndarray] = None, 
+        **kwargs
     ):
-        embeddings, targets, pred_probs = unpack_args(
-            data, embeddings, targets, pred_probs
+        embeddings, targets, pred_probs, losses = unpack_args(
+            data, embeddings, targets, pred_probs, losses
         )
 
-        pred_probs = torch.tensor(pred_probs).to(torch.float32)
-        targets = torch.tensor(targets).to(torch.long)
+        losses = self._compute_losses(targets=targets, pred_probs=pred_probs, losses=losses)
+
+        embeddings = torch.tensor(embeddings).to(dtype=torch.float, device=self.config.device)
 
         all_weights = []
         weights_unnorm = None
-        losses = self._compute_losses(pred_probs=pred_probs, targets=targets)
-
-        min_weight = targets.shape[0] * self.config.spotlight_size
+        min_weight = losses.shape[0] * self.config.spotlight_size
         for slice_idx in range(self.config.n_slices):
             if slice_idx != 0:
-                weights_unnorm /= max(weights_unnorm)
-                losses *= 1 - weights_unnorm
+                weights_unnorm = weights_unnorm / max(weights_unnorm)
+                losses =  losses * (1 - weights_unnorm)
 
             (weights, weights_unnorm, mean, log_precision) = run_spotlight(
                 embeddings=embeddings,
                 losses=losses,
                 min_weight=min_weight,
                 barrier_x_schedule=np.geomspace(  #
-                    targets.shape[0] - min_weight,
+                    losses.shape[0] - min_weight,
                     0.05 * min_weight,
-                    self.config.num_steps,
+                    self.config.n_steps,
                 ),
                 learning_rate=self.config.learning_rate,
                 device=self.config.device,
+                **kwargs
             )
-            self.means.append(mean.cpu().detach())
-            self.precisions.append(log_precision.cpu().detach())
+            self.means.append(mean.detach())
+            self.precisions.append(log_precision.detach())
             all_weights.append(weights)
         return self
 
@@ -95,48 +91,70 @@ class SpotlightSlicer(Slicer):
         self,
         data: Union[dict, mk.DataPanel] = None,
         embeddings: Union[str, np.ndarray] = "embedding",
-        targets: Union[str, np.ndarray] = "target",
-        pred_probs: Union[str, np.ndarray] = "pred_probs",
+        targets: Union[str, np.ndarray] = None,
+        pred_probs: Union[str, np.ndarray] = None,
+        losses: Union[str, np.ndarray] = None,
     ) -> np.ndarray:
-        embeddings, targets, pred_probs = unpack_args(
-            data, embeddings, targets, pred_probs
+        embeddings, targets, pred_probs, losses = unpack_args(
+            data, embeddings, targets, pred_probs, losses
         )
 
-        pred_probs = torch.tensor(pred_probs).to(torch.float32)
-        targets = torch.tensor(targets).to(torch.long)
+        losses = self._compute_losses(pred_probs=pred_probs, targets=targets, losses=losses)
+        embeddings = torch.tensor(embeddings).to(dtype=torch.float, device=self.config.device)
 
-        losses = self._compute_losses(pred_probs=pred_probs, targets=targets)
 
         all_weights = []
 
         for slice_idx in range(self.config.n_slices):
             weights, _, _, _ = md_adversary_weights(
                 mean=self.means[slice_idx],
-                precision=torch.eye(self.means[slice_idx].shape[0])
-                * torch.exp(self.precisions[slice_idx]),
+                precision=torch.exp(self.precisions[slice_idx]) *
+                torch.eye(self.means[slice_idx].shape[0], device=self.config.device),
                 x=embeddings,
                 losses=losses,
             )
-            all_weights.append(weights.numpy())
+            all_weights.append(weights.cpu().numpy())
         return np.stack(all_weights, axis=1)
 
     def predict(
         self,
         data: mk.DataPanel,
         embeddings: Union[str, np.ndarray] = "embedding",
-        targets: Union[str, np.ndarray] = "target",
-        pred_probs: Union[str, np.ndarray] = "pred_probs",
+        targets: Union[str, np.ndarray] = None,
+        pred_probs: Union[str, np.ndarray] = None,
+        losses: Union[str, np.ndarray] = None 
     ) -> np.ndarray:
         probs = self.predict_proba(
             data=data,
             embeddings=embeddings,
             targets=targets,
             pred_probs=pred_probs,
+            losses=losses
         )
 
         # TODO (Greg): check if this is the preferred way to get hard predictions from
         # probabilities
         return (probs > 0.5).astype(np.int32)
+    
+    def _compute_losses(
+        self, targets: np.ndarray, pred_probs: np.ndarray, losses: np.ndarray
+    ):
+        error_msg = "Must either provide `losses` or `pred_probs` and `targets`. "
+        if losses is None:
+            if (targets is None) or (pred_probs is None):
+                raise ValueError(error_msg)
+            pred_probs = torch.tensor(pred_probs).to(torch.float32).to(self.config.device)
+            targets = torch.tensor(targets).to(torch.long).to(self.config.device)
+            losses = cross_entropy(
+                pred_probs,
+                targets,
+                reduction="none",
+            )
+        else:
+            if targets is not None or pred_probs is not None:
+                raise ValueError(error_msg)
+            losses = torch.tensor(losses).to(torch.float32).to(self.config.device)
+        return losses 
 
 
 # Source below copied from spotlight implementation
@@ -251,8 +269,8 @@ def run_spotlight(
     predictions=None,
     prediction_coeff=0.0,
 ):
-    x = embeddings.clone().to(torch.float).to(device=device)
-    y = losses.clone().to(torch.float).to(device=device)
+    x = embeddings
+    y = losses
     dimensions = x.shape[1]
 
     mean = torch.zeros((dimensions,), requires_grad=True, device=device).to(torch.float)
@@ -264,13 +282,15 @@ def run_spotlight(
         optimizer, patience=scheduler_patience, factor=scheduler_decay
     )
 
-    num_steps = len(barrier_x_schedule)
+    n_steps = len(barrier_x_schedule)
 
     objective_history = []
     total_weight_history = []
     lr_history = []
 
-    for t in range(num_steps):  # removed tqdm here
+    print_every = min(print_every, n_steps)
+
+    for t in tqdm(range(n_steps)):  # removed tqdm here
         optimizer.zero_grad()
         precision = torch.exp(log_precision)
         precision_matrix = torch.eye(x.shape[1], device=device) * precision
@@ -295,8 +315,8 @@ def run_spotlight(
         optimizer.step()
         scheduler.step(neg_objective)
 
-        objective_history.append(objective.detach().cpu().item())
-        total_weight_history.append(total_weight.detach().cpu().item())
+        objective_history.append(objective.detach().item())
+        total_weight_history.append(total_weight.detach().item())
         lr_history.append(get_lr(optimizer))
 
         if (t + 1) % print_every == 0:
@@ -309,8 +329,8 @@ def run_spotlight(
                 mean, precision_matrix, x, y
             )
 
-    final_weights = weights.detach().cpu().numpy()
-    final_weights_unnorm = weights_unnorm.detach().cpu().numpy()
+    final_weights = weights.detach()
+    final_weights_unnorm = weights_unnorm.detach()
 
     return (
         final_weights,

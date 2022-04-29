@@ -60,6 +60,7 @@ class SliceTestBed:
             {
                 "embedding": emb,
                 "target": targets,
-                "pred_probs": preds,
+                "pred_probs": np.stack([1-preds, preds], axis=1).astype(float),
+                "losses": np.abs(targets ^ preds).astype(float),
             }
         )

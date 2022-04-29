@@ -24,7 +24,7 @@ def simple_image_transform(image: PIL.Image):
     return tv.transforms.ToTensor()(image)
 
 
-def _simple_encoder(variant: str = "ViT-B/32"):
+def _simple_encoder(variant: str = "ViT-B/32", device: str = "cpu"):
     return {
         "image": Encoder(encode=simple_encode, preprocess=simple_image_transform),
         "text": Encoder(encode=simple_encode, preprocess=tokenize),
@@ -33,7 +33,8 @@ def _simple_encoder(variant: str = "ViT-B/32"):
 
 @pytest.fixture()
 def simple_encoder(monkeypatch):
-    encoders.register(_simple_encoder)
+    if "_simple_encoder" not in encoders.names:
+        encoders.register(_simple_encoder)
     return _simple_encoder
 
 

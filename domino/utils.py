@@ -10,7 +10,17 @@ def unpack_args(data: mk.DataPanel, *args):
     if any(map(lambda x: isinstance(x, str), args)) and data is None:
         raise ValueError("If args are strings, `data` must be provided.")
 
-    return ((data[arg] if isinstance(arg, str) else arg) for arg in args)
+    new_args = []
+    for arg in args:
+        if isinstance(arg, str):
+            arg = data[arg]
+        if isinstance(arg, mk.AbstractColumn):
+            # this is necessary because torch.tensor() of a NumpyArrayColumn is very 
+            # slow and I don't want implementers to have to deal with casing on this
+            arg = arg.data
+        new_args.append(arg)
+    return new_args 
+
 
 
 def nested_getattr(obj, attr, *args):
