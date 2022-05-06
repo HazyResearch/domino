@@ -109,11 +109,11 @@ def explore(
         with plot_output:
             plot_df = pd.DataFrame(
                 {
-                    "in-slice": slices[:, slice_idx].data > slice_threshold,
-                    "pred_probs": pred_probs[:, 1].data.numpy()
+                    "in-slice": slices[:, slice_idx] > slice_threshold,
+                    "pred_probs": pred_probs[:, 1].numpy()
                     if len(pred_probs.shape) == 2
-                    else pred_probs.data,
-                    "target": targets.data,
+                    else pred_probs,
+                    "target": targets,
                 }
             )
             g = sns.displot(
@@ -131,10 +131,10 @@ def explore(
                 bins=20,
             )
             g.set_axis_labels("Model's output probability", "% of examples")
-            for target in np.unique(targets.data):
+            for target in np.unique(targets):
                 in_slice = np.sum(
-                    (slices[:, slice_idx].data > slice_threshold)
-                    & (targets.data == target)
+                    (slices[:, slice_idx] > slice_threshold)
+                    & (targets == target)
                 )
                 g.axes[0, int(target)].set_title(
                     f"target={target} \n (# of examples in-slice={in_slice})"
@@ -173,7 +173,7 @@ def explore(
     ):
         mk.config.DisplayOptions.max_rows = page_size
         dp_output.clear_output(wait=False)
-        num_examples_in_slice = np.sum(slices[:, slice_idx].data > slice_threshold)
+        num_examples_in_slice = np.sum(slices[:, slice_idx] > slice_threshold)
 
         with dp_output:
             display(
