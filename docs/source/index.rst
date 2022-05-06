@@ -16,7 +16,7 @@ Next Steps
 
     Get started with Domino by completing the introductory Google Colab. 
 
-    .. link-button:: https://drive.google.com/file/d/15kPD6Kym0MOpICafHgO1pCt8T2N_xevM/view?usp=sharing 
+    .. link-button:: https://colab.research.google.com/github/HazyResearch/domino/blob/main/examples/01_intro.ipynb
         :classes: btn-primary btn-block stretched-link
         :text: Colab Notebook
     ---
@@ -38,7 +38,7 @@ Next Steps
 
     Read our blogpost to learn more about the motivation behind Domino. 
 
-    .. link-button:: https://www.notion.so/sabrieyuboglu/Domino-DataPanels-for-Machine-Learning-64891aca2c584f1889eb0129bb747863
+    .. link-button:: https://hazyresearch.stanford.edu/blog/2022-04-02-domino
         :classes: btn-primary btn-block stretched-link
         :text: Blog Post 
 

@@ -18,14 +18,14 @@ DESCRIPTION = ""
 URL = ""
 EMAIL = "eyuboglu@stanford.edu"
 AUTHOR = "https://github.com/HazyResearch/domino"
-REQUIRES_PYTHON = ">=3.8.6"
+REQUIRES_PYTHON = ">=3.7.0"
 VERSION = main_ns["__version__"]
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 REQUIRED = [
-    "meerkat-ml[ml]",
+    "meerkat-ml",
     "pandas",
     "numpy>=1.18.0",
     "tqdm>=4.49.0",
@@ -34,9 +34,6 @@ REQUIRED = [
     "ipywidgets",
     "seaborn",
     "torch",
-    "torchvision",
-    "ftfy",
-    "regex",
 ]
 
 EXTRAS = {
@@ -54,10 +51,14 @@ EXTRAS = {
         "parameterized",
         "pre-commit>=2.9.3",
         "sphinx-autobuild",
-        "furo",
+        "sphinx-panels", 
+        "jupyter-sphinx",
+        "pydata-sphinx-theme",
     ],
     "text": ["transformers", "nltk"],
     "eval": ["pytorch-lightning", "dcbench"],
+    "bit": ["torchvision"],
+    "clip": ["ftfy", "regex"]
 }
 
 

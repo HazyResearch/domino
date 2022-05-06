@@ -2,8 +2,8 @@ import meerkat as mk
 import PIL
 import pytest
 import torch
-import torchvision as tv
-from clip import tokenize
+import hashlib
+import numpy as np
 
 import domino
 from domino import embed, encoders
@@ -21,13 +21,20 @@ def simple_encode(batch: torch.Tensor):
 
 
 def simple_image_transform(image: PIL.Image):
-    return tv.transforms.ToTensor()(image)
+    return torch.tensor(np.asarray(image)).to(torch.float32)
+
+
+def simple_text_transform(text: str):
+    return torch.tensor([
+        int.from_bytes(hashlib.sha256(token.encode('utf-8')).digest(), 'big') % 100
+        for token in text.split(" ")
+    ])[:1]
 
 
 def _simple_encoder(variant: str = "ViT-B/32", device: str = "cpu"):
     return {
         "image": Encoder(encode=simple_encode, preprocess=simple_image_transform),
-        "text": Encoder(encode=simple_encode, preprocess=tokenize),
+        "text": Encoder(encode=simple_encode, preprocess=simple_text_transform),
     }
 
 
@@ -53,7 +60,7 @@ def test_embed_images(tmpdir: str, simple_encoder):
     assert isinstance(dp, mk.DataPanel)
     assert "_simple_encoder(image)" in dp
     assert (
-        tv.transforms.ToTensor()(dp["image"][0]).mean()
+        simple_image_transform(dp["image"][0]).mean()
         == dp["_simple_encoder(image)"][0].mean()
     )
 
@@ -73,7 +80,7 @@ def test_embed_text(simple_encoder):
     assert isinstance(dp, mk.DataPanel)
     assert "_simple_encoder(text)" in dp
     assert (
-        tokenize(dp["text"][0]).to(torch.float32).mean()
+        simple_text_transform(dp["text"][0]).to(torch.float32).mean()
         == dp["_simple_encoder(text)"][0].mean()
     )
 

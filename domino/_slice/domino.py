@@ -24,7 +24,7 @@ from sklearn.preprocessing import label_binarize
 from sklearn.utils.validation import check_is_fitted
 from tqdm.auto import tqdm
 
-from domino.utils import unpack_args
+from domino.utils import convert_to_numpy, unpack_args
 
 from .abstract import Slicer
 
@@ -265,6 +265,9 @@ class DominoSlicer(Slicer):
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs
         )
+        embeddings, targets, pred_probs = convert_to_numpy(
+            embeddings, targets, pred_probs
+        )
 
         if self.pca is not None:
             self.pca.fit(X=embeddings)
@@ -364,6 +367,9 @@ class DominoSlicer(Slicer):
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs
         )
+        embeddings, targets, pred_probs = convert_to_numpy(
+            embeddings, targets, pred_probs
+        )
 
         if self.pca is not None:
             embeddings = self.pca.transform(X=embeddings)
@@ -418,7 +424,7 @@ class DominoMixture(GaussianMixture):
             num_classes = y.shape[-1]
             if self.n_components < num_classes ** 2:
                 raise ValueError(
-                    "Can't use parameter init 'error' when "
+                    "Can't use 'init_params=\"confusion\"' when "
                     "`n_components` < `num_classes **2`"
                 )
             resp = np.matmul(y[:, :, np.newaxis], y_hat[:, np.newaxis, :]).reshape(

@@ -8,7 +8,6 @@ import requests
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision as tv
 
 from ..utils import nested_getattr
 from .encoder import Encoder
@@ -44,6 +43,14 @@ def bit(
         Kolesnikov, A. et al. Big Transfer (BiT): General Visual Representation
         Learning. arXiv [cs.CV] (2019)
     """
+
+    try:
+        import torchvision as tv
+    except ImportError:
+        raise ImportError(
+            "To embed with bit install domino with the `bit` submodule. For example, "
+            "pip install domino[bit]."
+        )
 
     model = _get_model(variant=variant)
 

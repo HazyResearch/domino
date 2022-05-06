@@ -10,6 +10,11 @@ Installation
     Domino is available on `PyPI <https://pypi.org/project/domino/>`_ and can be 
     installed with pip.
 
+    .. warning::
+
+        Domino is currently being actively developed. We recommend installing using
+        the "Latest" or "Editable" tabs for the most up to date version.
+
     .. code-block:: 
 
         pip install domino
@@ -39,7 +44,7 @@ Installation
 
     .. code-block:: bash
 
-        pip install "domino @ git+https://github.com/HazyResearch/domino@dev"
+        pip install "domino @ git+https://github.com/HazyResearch/domino@main"
 
     .. admonition:: Optional Dependencies
     
@@ -48,13 +53,13 @@ Installation
 
         .. code-block:: bash
 
-            pip install "domino[all] @ git+https://github.com/HazyResearch/domino@dev"
+            pip install "domino[all] @ git+https://github.com/HazyResearch/domino@main"
         
         You can also install specific groups optional of dependencies using something like: 
 
         .. code-block:: bash
 
-            pip install "domino[text] @ git+https://github.com/HazyResearch/domino@dev"
+            pip install "domino[text] @ git+https://github.com/HazyResearch/domino@main"
             
         See `setup.py` for a full list of optional dependencies.   
 

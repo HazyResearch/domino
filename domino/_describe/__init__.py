@@ -97,7 +97,7 @@ def describe(
 
     slice_mask = slices[:, slice_idx] > slice_threshold
     slice_proto = embeddings[slice_mask].mean(axis=0)
-    mode_target = mode(targets[slice_mask].data).mode[0]
+    mode_target = mode(targets[slice_mask]).mode[0]
     ref_proto = embeddings[targets == mode_target].mean(axis=0)
 
     scores = np.dot(text_embeddings, (slice_proto - ref_proto))
