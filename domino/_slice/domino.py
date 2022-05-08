@@ -274,6 +274,7 @@ class DominoSlicer(Slicer):
         if self.pca is not None:
             self.pca.fit(X=embeddings)
             embeddings = self.pca.transform(X=embeddings)
+        
 
         self.mm.fit(X=embeddings, y=targets, y_hat=pred_probs)
 

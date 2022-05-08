@@ -66,10 +66,11 @@ def bit(
         model(batch)  # run forward pass, but don't collect output
         return extractor.activation
 
-    return {"image": Encoder(encoder=_embed, preprocess=transform)}
+    return {"image": Encoder(encode=_embed, preprocess=transform)}
 
 
 def transform(img: PIL.Image.Image):
+    import torchvision as tv
 
     transform = tv.transforms.Compose(
         [
@@ -94,7 +95,7 @@ def _get_model(variant: str):
     weights = _get_weights(variant=variant)
 
     # BLOCK_UNITS expects model names like "r50"
-    model_str = variant.split("-").split("x")[0].lower()
+    model_str = variant.split("-")[-1].split("x")[0].lower()
     model = ResNetV2(ResNetV2.BLOCK_UNITS[model_str], width_factor=1)
     model.load_from(weights)
     return model
