@@ -41,6 +41,15 @@ def convert_to_numpy(*args):
 
     return tuple(new_args)
 
+def convert_to_torch(*args):
+    new_args = []
+    for arg in args:
+        if isinstance(arg, (np.ndarray, pd.Series, List)):
+            new_args.append(torch.tensor(arg))
+        else:
+            new_args.append(arg)
+        
+    return tuple(new_args)
 
 def nested_getattr(obj, attr, *args):
     """Get a nested property from an object.
