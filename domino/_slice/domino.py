@@ -203,6 +203,7 @@ class DominoSlicer(Slicer):
         init_params: str = "confusion",
         confusion_noise: float = 1e-3,
         random_state: int = None,
+        pbar: bool = True,
     ):
         super().__init__(n_slices=n_slices)
 
@@ -229,6 +230,7 @@ class DominoSlicer(Slicer):
             max_iter=self.config.max_iter,
             confusion_noise=self.config.confusion_noise,
             random_state=random_state,
+            pbar=pbar,
         )
 
     def fit(
@@ -387,11 +389,13 @@ class DominoMixture(GaussianMixture):
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
         confusion_noise: float = 1e-3,
+        pbar: bool = True, 
         **kwargs,
     ):
         self.y_log_likelihood_weight = y_log_likelihood_weight
         self.y_hat_log_likelihood_weight = y_hat_log_likelihood_weight
         self.confusion_noise = confusion_noise
+        self.pbar = pbar 
         super().__init__(*args, **kwargs)
 
     def _initialize_parameters(self, X, y, y_hat, random_state):
@@ -529,7 +533,7 @@ class DominoMixture(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in tqdm(range(1, self.max_iter + 1), colour="#f17a4a"):
+            for n_iter in tqdm(range(1, self.max_iter + 1), colour="#f17a4a", disable=not self.pbar):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)
