@@ -91,7 +91,6 @@ def embed(
         mk.DataPanel: A view of ``data`` with a new column containing the embeddings.
         This column will be named according to the ``out_col`` parameter.
     """
-
     if modality is None:
 
         modality = infer_modality(col=data[input_col])

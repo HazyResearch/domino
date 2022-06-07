@@ -1,5 +1,5 @@
 from ast import Import
-from asyncio import subprocess
+import subprocess
 from typing import Dict, Union
 import os 
 
@@ -7,7 +7,7 @@ from .encoder import Encoder
 
 
 def robust(
-    variant: str = "ViT-B/32", device: Union[int, str] = "cpu", model_path: str=None
+    variant: str = "resnet50", device: Union[int, str] = "cpu", model_path: str=None
 ) -> Dict[str, Encoder]:
     """Contrastive Language-Image Pre-training (CLIP) encoders [radford_2021]_. Includes
     encoders for the following modalities:
@@ -31,14 +31,14 @@ def robust(
         Supervision. arXiv [cs.CV] (2021)
     """
 
-    model_path = os.path.expanduser("~/.cache/robust/robust_resnet50.pth") if model_path is None else model_path
-    model = _load_robust_model(model_path=model_path).to(device)
+    model_path = os.path.expanduser("~/.cache/domino/robust/robust_resnet50.pth") if model_path is None else model_path
+    model = _load_robust_model(model_path=model_path, variant=variant).to(device)
 
     return {
         "image": Encoder(encode=lambda x: model(x, with_latent=True)[0][1] , preprocess=_transform_image),
     }
 
-def _load_robust_model(model_path: str):
+def _load_robust_model(model_path: str, variant: str):
     try:
         from robustness import model_utils
         from robustness import datasets as dataset_utils
@@ -46,7 +46,10 @@ def _load_robust_model(model_path: str):
         raise ImportError(
             "To embed with robust run `pip install robustness`"
         )
-    
+
+    # ensure model_path directories exist
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
     subprocess.run(
         [
             "wget", 
@@ -60,7 +63,7 @@ def _load_robust_model(model_path: str):
     dataset = dataset_function('')
 
     model_kwargs = {
-        'arch': 'resnet50',
+        'arch': variant,
         'dataset': dataset,
         'resume_path': model_path,
         'parallel': False

@@ -16,6 +16,7 @@ class Registry(_Registry):
 
         self._metadata_map = {}
 
+    @functools.lru_cache
     def get(self, name: str, *args, **kwargs) -> Any:
         ret = self._obj_map.get(name)
         if ret is None:
