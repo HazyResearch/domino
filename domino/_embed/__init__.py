@@ -9,6 +9,7 @@ from domino._embed.encoder import Encoder
 from ..registry import Registry
 from .bit import bit
 from .clip import clip
+from .robust import robust 
 
 __all__ = ["clip", "bit"]
 
@@ -16,6 +17,7 @@ encoders = Registry(name="encoders")
 
 encoders.register(clip, aliases=[])
 encoders.register(bit, aliases=[])
+encoders.register(robust, aliases=[])
 
 
 def infer_modality(col: mk.AbstractColumn):

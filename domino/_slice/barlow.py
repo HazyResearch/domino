@@ -1,4 +1,233 @@
 
+from typing import Union
+
+import meerkat as mk
+import numpy as np
+from tqdm import tqdm
+
+from domino.utils import unpack_args
+
+from .abstract import Slicer
+
+
+class BarlowSlicer(Slicer):
+
+    r"""
+    Slice Discovery based on the Barlow.
+
+    Discover slices by jointly modeling a mixture of input embeddings (e.g. activations
+    from a trained model), class labels, and model predictions. This encourages slices
+    that are homogeneous with respect to error type (e.g. all false positives).
+
+    Examples
+    --------
+    Suppose you've trained a model and stored its predictions on a dataset in
+    a `Meerkat DataPanel <https://github.com/robustness-gym/meerkat>`_ with columns
+    "emb", "target", and "pred_probs". After loading the DataPanel, you can discover
+    underperforming slices of the validation dataset with the following:
+
+    .. code-block:: python
+
+        from domino import BarlowSlicer
+        dp = ...  # Load dataset into a Meerkat DataPanel
+
+        # split dataset
+        valid_dp = dp.lz[dp["split"] == "valid"]
+        test_dp = dp.lz[dp["split"] == "test"]
+
+        domino = BarlowSlicer()
+        domino.fit(
+            data=valid_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
+        )
+        dp["domino_slices"] = domino.transform(
+            data=test_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
+        )
+
+
+    Args:
+        n_slices (int, optional): The number of slices to discover.
+            Defaults to 5.
+        covariance_type (str, optional): The type of covariance parameter
+            :math:`\mathbf{\Sigma}` to use. Same as in sklearn.mixture.GaussianMixture.
+            Defaults to "diag", which is recommended.
+        n_pca_components (Union[int, None], optional): The number of PCA components
+            to use. If ``None``, then no PCA is performed. Defaults to 128.
+        n_mixture_components (int, optional): The number of clusters in the mixture
+            model, :math:`\bar{k}`. This differs from ``n_slices`` in that the
+            ``DominoSDM`` only returns the top ``n_slices`` with the highest error rate
+            of the ``n_mixture_components``. Defaults to 25.
+        y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
+            the :math:`P(Y=y_{i} | S=s)` term in the log likelihood during the E-step.
+            Defaults to 1.
+        y_hat_log_likelihood_weight (float, optional): The weight :math:`\hat{\gamma}`
+            applied to the :math:`P(\hat{Y} = h_\theta(x_i) | S=s)` term in the log
+            likelihood during the E-step. Defaults to 1.
+        max_iter (int, optional): The maximum number of iterations to run. Defaults
+            to 100.
+        init_params (str, optional): The initialization method to use. Options are
+            the same as in sklearn.mixture.GaussianMixture plus one addition,
+            "confusion". If "confusion",  the clusters are initialized such that almost
+            all of the examples in a cluster come from same cell in the confusion
+            matrix. See Notes below for more details. Defaults to "confusion".
+        confusion_noise (float, optional): Only used if ``init_params="confusion"``.
+            The scale of noise added to the confusion matrix initialization. See notes
+            below for more details.
+            Defaults to 0.001.
+        random_state (Union[int, None], optional): The random seed to use when
+            initializing  the parameters.
+
+    """
+
+    def __init__(
+        self,
+        n_slices: int = 5,
+        covariance_type: str = "diag",
+        n_pca_components: Union[int, None] = 128,
+        n_mixture_components: int = 25,
+        y_log_likelihood_weight: float = 1,
+        y_hat_log_likelihood_weight: float = 1,
+        max_iter: int = 100,
+        init_params: str = "confusion",
+        confusion_noise: float = 1e-3,
+        random_state: int = None,
+        pbar: bool = True,
+    ):
+        super().__init__(n_slices=n_slices)
+
+       
+
+    def fit(
+        self,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> BarlowSlicer:
+        """
+        Fit the decision tree to data. 
+
+        Args:
+            data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
+                embeddings, targets, and prediction probabilities. The names of the
+                columns can be specified with the ``embeddings``, ``targets``, and
+                ``pred_probs`` arguments. Defaults to None.
+            embeddings (Union[str, np.ndarray], optional): The name of a colum in
+                ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
+                of shape (n_samples, dimension of embedding). Defaults to
+                "embedding".
+            targets (Union[str, np.ndarray], optional): The name of a column in
+                ``data`` holding class labels. If ``data`` is ``None``, then an
+                np.ndarray of shape (n_samples,). Defaults to "target".
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
+                ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
+                or (n_samples,) in the binary case. Defaults to "pred_probs".
+
+        Returns:
+            DominoSDM: Returns a fit instance of DominoSDM.
+        """
+        
+        return self
+
+    def predict(
+        self,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
+        """
+        Get probabilistic slice membership for data using a fit mixture model.
+
+
+        .. caution::
+            Must call ``BarlowSlicer.fit`` prior to calling ``BarlowSlicer.predict``.
+
+
+        Args:
+            data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
+                embeddings, targets, and prediction probabilities. The names of the
+                columns can be specified with the ``embeddings``, ``targets``, and
+                ``pred_probs`` arguments. Defaults to None.
+            embeddings (Union[str, np.ndarray], optional): The name of a colum in
+                ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
+                of shape (n_samples, dimension of embedding). Defaults to
+                "embedding".
+            targets (Union[str, np.ndarray], optional): The name of a column in
+                ``data`` holding class labels. If ``data`` is ``None``, then an
+                np.ndarray of shape (n_samples,). Defaults to "target".
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
+                ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
+                or (n_samples,) in the binary case. Defaults to "pred_probs".
+
+        Returns:
+            np.ndarray: A binary ``np.ndarray`` of shape (n_samples, n_slices) where
+                values are either 1 or 0.
+        """
+        probs = self.predict_proba(
+            data=data,
+            embeddings=embeddings,
+            targets=targets,
+            pred_probs=pred_probs,
+        )
+        preds = np.zeros_like(probs, dtype=np.int32)
+        preds[np.arange(preds.shape[0]), probs.argmax(axis=-1)] = 1
+        return preds
+
+    def predict_proba(
+        self,
+        data: Union[dict, mk.DataPanel] = None,
+        embeddings: Union[str, np.ndarray] = "embedding",
+        targets: Union[str, np.ndarray] = "target",
+        pred_probs: Union[str, np.ndarray] = "pred_probs",
+    ) -> np.ndarray:
+        """
+        Get probabilistic slice membership for data using a fit mixture model.
+
+        .. caution::
+            Must call ``BarlowSlicer.fit`` prior to calling
+            ``BarlowSlicer.predict_proba``.
+
+
+        Args:
+            data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
+                embeddings, targets, and prediction probabilities. The names of the
+                columns can be specified with the ``embeddings``, ``targets``, and
+                ``pred_probs`` arguments. Defaults to None.
+            embeddings (Union[str, np.ndarray], optional): The name of a colum in
+                ``data`` holding embeddings. If ``data`` is ``None``, then an np.ndarray
+                of shape (n_samples, dimension of embedding). Defaults to
+                "embedding".
+            targets (Union[str, np.ndarray], optional): The name of a column in
+                ``data`` holding class labels. If ``data`` is ``None``, then an
+                np.ndarray of shape (n_samples,). Defaults to "target".
+            pred_probs (Union[str, np.ndarray], optional): The name of
+                a column in ``data`` holding model predictions (can either be "soft"
+                probability scores or "hard" 1-hot encoded predictions). If
+                ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
+                or (n_samples,) in the binary case. Defaults to "pred_probs".
+
+        Returns:
+            np.ndarray: A ``np.ndarray`` of shape (n_samples, n_slices) where values in
+                are in range [0,1] and rows sum to 1.
+        """
+        embeddings, targets, pred_probs = unpack_args(
+            data, embeddings, targets, pred_probs
+        )
+        embeddings, targets, pred_probs = convert_to_numpy(
+            embeddings, targets, pred_probs
+        )
+
+        if self.pca is not None:
+            embeddings = self.pca.transform(X=embeddings)
+
+        clusters = self.mm.predict_proba(embeddings, y=targets, y_hat=pred_probs)
+
+        return clusters[:, self.slice_cluster_indices]
+
 
 
 
