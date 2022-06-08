@@ -33,6 +33,7 @@ class SpotlightSlicer(Slicer):
         n_steps: int = 1000,
         learning_rate: float = 1e-3,  # default from the implementation
         device: torch.device = torch.device("cpu"),
+        pbar: bool = False,
     ):
         super().__init__(n_slices=n_slices)
 
@@ -43,6 +44,8 @@ class SpotlightSlicer(Slicer):
 
         self.means = []
         self.precisions = []
+
+        self.pbar = pbar
 
     def fit(
         self,
@@ -68,7 +71,7 @@ class SpotlightSlicer(Slicer):
         all_weights = []
         weights_unnorm = None
         min_weight = losses.shape[0] * self.config.spotlight_size
-        for slice_idx in range(self.config.n_slices):
+        for slice_idx in tqdm(range(self.config.n_slices), disable=not self.pbar):
             if slice_idx != 0:
                 weights_unnorm = weights_unnorm / max(weights_unnorm)
                 losses = losses * (1 - weights_unnorm)
