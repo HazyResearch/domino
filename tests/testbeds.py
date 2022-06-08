@@ -45,7 +45,7 @@ class SliceTestBed:
         if type == "numpy":
             conversion = lambda x: x
         elif type == "torch":
-            conversion = torch.tensor 
+            conversion = torch.tensor
         else:
             raise ValueError("Unknown type: {}".format(type))
 
@@ -71,7 +71,9 @@ class SliceTestBed:
             {
                 "embedding": conversion(emb),
                 "target": conversion(targets),
-                "pred_probs": conversion(np.stack([1-preds, preds], axis=1).astype(float)),
+                "pred_probs": conversion(
+                    np.stack([1 - preds, preds], axis=1).astype(float)
+                ),
                 "losses": conversion(np.abs(targets ^ preds).astype(float)),
             }
         )

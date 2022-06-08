@@ -1,5 +1,5 @@
 from sklearn import metrics
-import pytest 
+import pytest
 import numpy as np
 
 from domino import SpotlightSlicer
@@ -7,25 +7,18 @@ from domino import SpotlightSlicer
 
 from ..testbeds import SliceTestBed
 
+
 @pytest.mark.parametrize("pass_losses", [True, False])
 def test_domino_results(pass_losses):
 
     testbed = SliceTestBed(length=9)
 
-    method = SpotlightSlicer(
-        n_slices=2,
-        n_steps=3
-    )
+    method = SpotlightSlicer(n_slices=2, n_steps=3)
 
     if pass_losses:
-        kwargs = {
-            "losses": "losses"
-        }
+        kwargs = {"losses": "losses"}
     else:
-        kwargs = {
-            "targets": "target",
-            "pred_probs": "pred_probs"
-        }
+        kwargs = {"targets": "target", "pred_probs": "pred_probs"}
     method.fit(data=testbed.dp, **kwargs)
 
     pred_slices = method.predict(data=testbed.dp, **kwargs)
@@ -39,4 +32,3 @@ def test_domino_results(pass_losses):
     assert isinstance(prob_slices, np.ndarray)
     # assert that the shape of the array is (n_samples, n_slices)
     assert prob_slices.shape == (len(testbed.dp), 2)
-

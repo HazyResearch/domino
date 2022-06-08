@@ -17,7 +17,7 @@ def describe(
     slice_idx: int = 0,
     slice_threshold: float = 0.5,
 ) -> mk.DataPanel:
-    """Generate descriptions of a discovered slice. 
+    """Generate descriptions of a discovered slice.
 
     Args:
         data (mk.DataPanel, optional): A `Meerkat DataPanel` with columns for
@@ -40,7 +40,7 @@ def describe(
             holding discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
         text (str, optional): A `Meerkat DataPanel` with columns for text phrases and
-            their embeddings. The names of the columns can be specified with the 
+            their embeddings. The names of the columns can be specified with the
             ``text_embeddings`` and ``phrase`` arguments. Defaults to None.
         text_embeddings (Union[str, np.ndarray], optional): The name of a colum in
             ``text`` holding embeddings. If ``text`` is ``None``, then an np.ndarray
@@ -49,13 +49,13 @@ def describe(
             holding text phrases. If ``text`` is ``None``, then an np.ndarray of
             shape (n_phrases,). Defaults to "output_phrase".
         slice_idx (int, optional): The index of the slice to describe. Defaults to 0.
-        slice_threshold (float, optional): The probability threshold for inclusion in 
+        slice_threshold (float, optional): The probability threshold for inclusion in
             the slice. Defaults to 0.5.
 
     Returns:
         mk.DataPanel: A `Meerkat DataPanel` with columns for the slice description.
 
-    
+
     Examples
     --------
      .. code-block:: python
@@ -73,8 +73,8 @@ def describe(
         text_dp = generate_candidate_descriptions(templates=templates)
 
         text_dp = embed(
-            text_dp, 
-            input_col="output_phrase", 
+            text_dp,
+            input_col="output_phrase",
             encoder="clip",
             device=0
         )
@@ -89,7 +89,7 @@ def describe(
             text_embeddings="clip(output_phrase)",
         )
 
-    
+
     """
 
     embeddings, targets, slices = unpack_args(data, embeddings, targets, slices)

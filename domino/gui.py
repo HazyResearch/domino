@@ -55,7 +55,7 @@ def explore(
             holding discovered slices. If ``data`` is ``None``, then an
             np.ndarray of shape (num_examples, num_slices). Defaults to "slices".
         text (str, optional): A `Meerkat DataPanel` with columns for text phrases and
-            their embeddings. The names of the columns can be specified with the 
+            their embeddings. The names of the columns can be specified with the
             ``text_embeddings`` and ``phrase`` arguments. Defaults to None.
         text_embeddings (Union[str, np.ndarray], optional): The name of a colum in
             ``text`` holding embeddings. If ``text`` is ``None``, then an np.ndarray
@@ -133,8 +133,7 @@ def explore(
             g.set_axis_labels("Model's output probability", "% of examples")
             for target in np.unique(targets):
                 in_slice = np.sum(
-                    (slices[:, slice_idx] > slice_threshold)
-                    & (targets == target)
+                    (slices[:, slice_idx] > slice_threshold) & (targets == target)
                 )
                 g.axes[0, int(target)].set_title(
                     f"target={target} \n (# of examples in-slice={in_slice})"

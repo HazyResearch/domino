@@ -5,7 +5,7 @@ from typing import Collection, Mapping
 import pandas as pd
 import torch
 import numpy as np
-from typing import List 
+from typing import List
 
 import meerkat as mk
 
@@ -19,11 +19,12 @@ def unpack_args(data: mk.DataPanel, *args):
         if isinstance(arg, str):
             arg = data[arg]
         if isinstance(arg, mk.AbstractColumn):
-            # this is necessary because torch.tensor() of a NumpyArrayColumn is very 
+            # this is necessary because torch.tensor() of a NumpyArrayColumn is very
             # slow and I don't want implementers to have to deal with casing on this
             arg = arg.data
         new_args.append(arg)
-    return new_args 
+    return new_args
+
 
 def convert_to_numpy(*args):
     """Convert Torch tensors and Pandas Series to numpy arrays."""
@@ -37,8 +38,9 @@ def convert_to_numpy(*args):
             new_args.append(np.array(arg))
         else:
             new_args.append(arg)
-        
+
     return tuple(new_args)
+
 
 def nested_getattr(obj, attr, *args):
     """Get a nested property from an object.

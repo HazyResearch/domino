@@ -50,16 +50,20 @@ class SpotlightSlicer(Slicer):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = None,
         pred_probs: Union[str, np.ndarray] = None,
-        losses: Union[str, np.ndarray] = None, 
+        losses: Union[str, np.ndarray] = None,
         **kwargs
     ):
         embeddings, targets, pred_probs, losses = unpack_args(
             data, embeddings, targets, pred_probs, losses
         )
 
-        losses = self._compute_losses(targets=targets, pred_probs=pred_probs, losses=losses)
+        losses = self._compute_losses(
+            targets=targets, pred_probs=pred_probs, losses=losses
+        )
 
-        embeddings = torch.tensor(embeddings).to(dtype=torch.float, device=self.config.device)
+        embeddings = torch.tensor(embeddings).to(
+            dtype=torch.float, device=self.config.device
+        )
 
         all_weights = []
         weights_unnorm = None
@@ -67,7 +71,7 @@ class SpotlightSlicer(Slicer):
         for slice_idx in range(self.config.n_slices):
             if slice_idx != 0:
                 weights_unnorm = weights_unnorm / max(weights_unnorm)
-                losses =  losses * (1 - weights_unnorm)
+                losses = losses * (1 - weights_unnorm)
 
             (weights, weights_unnorm, mean, log_precision) = run_spotlight(
                 embeddings=embeddings,
@@ -99,17 +103,20 @@ class SpotlightSlicer(Slicer):
             data, embeddings, targets, pred_probs, losses
         )
 
-        losses = self._compute_losses(pred_probs=pred_probs, targets=targets, losses=losses)
-        embeddings = torch.tensor(embeddings).to(dtype=torch.float, device=self.config.device)
-
+        losses = self._compute_losses(
+            pred_probs=pred_probs, targets=targets, losses=losses
+        )
+        embeddings = torch.tensor(embeddings).to(
+            dtype=torch.float, device=self.config.device
+        )
 
         all_weights = []
 
         for slice_idx in range(self.config.n_slices):
             weights, _, _, _ = md_adversary_weights(
                 mean=self.means[slice_idx],
-                precision=torch.exp(self.precisions[slice_idx]) *
-                torch.eye(self.means[slice_idx].shape[0], device=self.config.device),
+                precision=torch.exp(self.precisions[slice_idx])
+                * torch.eye(self.means[slice_idx].shape[0], device=self.config.device),
                 x=embeddings,
                 losses=losses,
             )
@@ -122,20 +129,20 @@ class SpotlightSlicer(Slicer):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = None,
         pred_probs: Union[str, np.ndarray] = None,
-        losses: Union[str, np.ndarray] = None 
+        losses: Union[str, np.ndarray] = None,
     ) -> np.ndarray:
         probs = self.predict_proba(
             data=data,
             embeddings=embeddings,
             targets=targets,
             pred_probs=pred_probs,
-            losses=losses
+            losses=losses,
         )
 
         # TODO (Greg): check if this is the preferred way to get hard predictions from
         # probabilities
         return (probs > 0.5).astype(np.int32)
-    
+
     def _compute_losses(
         self, targets: np.ndarray, pred_probs: np.ndarray, losses: np.ndarray
     ):
@@ -143,7 +150,9 @@ class SpotlightSlicer(Slicer):
         if losses is None:
             if (targets is None) or (pred_probs is None):
                 raise ValueError(error_msg)
-            pred_probs = torch.tensor(pred_probs).to(torch.float32).to(self.config.device)
+            pred_probs = (
+                torch.tensor(pred_probs).to(torch.float32).to(self.config.device)
+            )
             targets = torch.tensor(targets).to(torch.long).to(self.config.device)
             losses = cross_entropy(
                 pred_probs,
@@ -154,7 +163,7 @@ class SpotlightSlicer(Slicer):
             if targets is not None or pred_probs is not None:
                 raise ValueError(error_msg)
             losses = torch.tensor(losses).to(torch.float32).to(self.config.device)
-        return losses 
+        return losses
 
 
 # Source below copied from spotlight implementation
@@ -217,7 +226,7 @@ def md_objective(
         barrier_penalty = (
             barrier_scale
             * (total_weight - (min_weight + barrier_x)) ** 2
-            / barrier_x ** 2
+            / barrier_x**2
         )
         weighted_loss -= barrier_penalty
 

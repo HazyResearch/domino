@@ -51,14 +51,14 @@ EXTRAS = {
         "parameterized",
         "pre-commit>=2.9.3",
         "sphinx-autobuild",
-        "sphinx-panels", 
+        "sphinx-panels",
         "jupyter-sphinx",
         "pydata-sphinx-theme",
     ],
     "text": ["transformers", "nltk"],
     "eval": ["pytorch-lightning", "dcbench"],
     "bit": ["torchvision"],
-    "clip": ["ftfy", "regex"]
+    "clip": ["ftfy", "regex"],
 }
 
 

@@ -9,7 +9,7 @@ from domino._embed.encoder import Encoder
 from ..registry import Registry
 from .bit import bit
 from .clip import clip
-from .robust import robust 
+from .robust import robust
 
 __all__ = ["clip", "bit"]
 
@@ -141,7 +141,7 @@ def _embed(
 
     if collate is not None:
         embed_input.collate_fn = collate
-    
+
     with torch.no_grad():
         data[out_col] = embed_input.map(
             lambda x: encode(x.data.to(device)).cpu().detach().numpy(),

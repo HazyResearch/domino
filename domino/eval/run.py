@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 from contextlib import redirect_stdout
 import dataclasses
@@ -26,21 +25,21 @@ from domino.utils import unpack_args
 from dcbench import SliceDiscoveryProblem, SliceDiscoverySolution
 
 
-
 def _run_sdms(problems: List[SliceDiscoveryProblem], **kwargs):
     result = []
     for problem in problems:
-        #f = io.StringIO()
-        #with redirect_stdout(f):
+        # f = io.StringIO()
+        # with redirect_stdout(f):
         result.append(run_sdm(problem, **kwargs))
     return result
+
 
 def run_sdms(
     problems: List[SliceDiscoveryProblem],
     slicer_class: type,
     slicer_config: dict,
     emb_dp: mk.DataPanel,
-    embedding_col:  str = "emb",
+    embedding_col: str = "emb",
     batch_size: int = 1,
     num_workers: int = 0,
 ):
@@ -63,7 +62,7 @@ def run_sdms(
             problems=batch,
             emb_dp=emb_dp,
             embedding_col=embedding_col,
-            #candidate_descriptions=candidate_descriptions,
+            # candidate_descriptions=candidate_descriptions,
             slicer_class=slicer_class,
             slicer_config=slicer_config,
         )
@@ -89,7 +88,7 @@ def run_sdms(
                 t.update(n=len(result))
         ray.shutdown()
     solutions, metrics = zip(*results)
-    # flatten the list of lists 
+    # flatten the list of lists
     metrics = [row for slices in metrics for row in slices]
 
     return solutions, pd.DataFrame(metrics)
@@ -97,19 +96,17 @@ def run_sdms(
 
 def run_sdm(
     problem: SliceDiscoveryProblem,
-    #candidate_descriptions: Descriptions,
+    # candidate_descriptions: Descriptions,
     slicer_class: type,
     slicer_config: dict,
     emb_dp: mk.DataPanel,
-    embedding_col:  str = "emb",
+    embedding_col: str = "emb",
 ) -> SliceDiscoverySolution:
     val_dp = problem.merge(split="val")
     val_dp = val_dp.merge(emb_dp["id", embedding_col], on="id", how="left")
-    
+
     slicer = slicer_class(pbar=False, **slicer_config)
-    slicer.fit(
-        val_dp, embeddings=embedding_col, targets="target", pred_probs="probs"
-    )
+    slicer.fit(val_dp, embeddings=embedding_col, targets="target", pred_probs="probs")
 
     test_dp = problem.merge(split="test")
     test_dp = test_dp.merge(emb_dp["id", embedding_col], on="id", how="left")
@@ -137,9 +134,9 @@ def run_sdm(
             "slicer_class": slicer_class,
             "slicer_config": slicer_config,
             "embedding_column": embedding_col,
-        }
-    ) 
+        },
+    )
     metrics = compute_solution_metrics(
         solution,
     )
-    return solution, metrics 
+    return solution, metrics

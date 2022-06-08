@@ -1,6 +1,3 @@
-
-
-
 from typing import List, Tuple
 from dcbench import SliceDiscoveryProblem, SliceDiscoverySolution
 import meerkat as mk
@@ -8,10 +5,13 @@ import numpy as np
 import sklearn.metrics as skmetrics
 from domino.utils import unpack_args
 from scipy.stats import rankdata
-import pandas as pd 
+import pandas as pd
 from tqdm import tqdm
 
-def compute_metrics(solutions: List[SliceDiscoverySolution], run_id: int = None) -> Tuple[mk.DataPanel]:
+
+def compute_metrics(
+    solutions: List[SliceDiscoverySolution], run_id: int = None
+) -> Tuple[mk.DataPanel]:
     global_metrics = []
     slice_metrics = []
     for solution in tqdm(solutions):

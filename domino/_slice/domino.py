@@ -389,13 +389,13 @@ class DominoMixture(GaussianMixture):
         y_log_likelihood_weight: float = 1,
         y_hat_log_likelihood_weight: float = 1,
         confusion_noise: float = 1e-3,
-        pbar: bool = True, 
+        pbar: bool = True,
         **kwargs,
     ):
         self.y_log_likelihood_weight = y_log_likelihood_weight
         self.y_hat_log_likelihood_weight = y_hat_log_likelihood_weight
         self.confusion_noise = confusion_noise
-        self.pbar = pbar 
+        self.pbar = pbar
         super().__init__(*args, **kwargs)
 
     def _initialize_parameters(self, X, y, y_hat, random_state):
@@ -426,7 +426,7 @@ class DominoMixture(GaussianMixture):
             resp /= resp.sum(axis=1)[:, np.newaxis]
         elif self.init_params == "confusion":
             num_classes = y.shape[-1]
-            if self.n_components < num_classes ** 2:
+            if self.n_components < num_classes**2:
                 raise ValueError(
                     "Can't use 'init_params=\"confusion\"' when "
                     "`n_components` < `num_classes **2`"
@@ -437,8 +437,8 @@ class DominoMixture(GaussianMixture):
             resp = np.concatenate(
                 [resp]
                 * (
-                    int(self.n_components / (num_classes ** 2))
-                    + (self.n_components % (num_classes ** 2) > 0)
+                    int(self.n_components / (num_classes**2))
+                    + (self.n_components % (num_classes**2) > 0)
                 ),
                 axis=1,
             )[:, : self.n_components]
@@ -533,7 +533,9 @@ class DominoMixture(GaussianMixture):
 
             lower_bound = -np.infty if do_init else self.lower_bound_
 
-            for n_iter in tqdm(range(1, self.max_iter + 1), colour="#f17a4a", disable=not self.pbar):
+            for n_iter in tqdm(
+                range(1, self.max_iter + 1), colour="#f17a4a", disable=not self.pbar
+            ):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)
@@ -699,7 +701,7 @@ class DominoMixture(GaussianMixture):
                 self.precisions_cholesky_, self.precisions_cholesky_.T
             )
         else:
-            self.precisions_ = self.precisions_cholesky_ ** 2
+            self.precisions_ = self.precisions_cholesky_**2
 
     def _n_parameters(self):
         """Return the number of free parameters in the model."""

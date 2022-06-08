@@ -25,10 +25,12 @@ def simple_image_transform(image: PIL.Image):
 
 
 def simple_text_transform(text: str):
-    return torch.tensor([
-        int.from_bytes(hashlib.sha256(token.encode('utf-8')).digest(), 'big') % 100
-        for token in text.split(" ")
-    ])[:1]
+    return torch.tensor(
+        [
+            int.from_bytes(hashlib.sha256(token.encode("utf-8")).digest(), "big") % 100
+            for token in text.split(" ")
+        ]
+    )[:1]
 
 
 def _simple_encoder(variant: str = "ViT-B/32", device: str = "cpu"):

@@ -1,15 +1,15 @@
 from sklearn import metrics
-import pytest 
+import pytest
 from itertools import product
 
 from domino import DominoSlicer
 
 from ..testbeds import SliceTestBed
 
-@pytest.mark.parametrize("init_params,type", product([
-    "random",
-    "confusion"
-], ["numpy", "torch"]))
+
+@pytest.mark.parametrize(
+    "init_params,type", product(["random", "confusion"], ["numpy", "torch"])
+)
 def test_domino_results(init_params: str, type: str):
 
     testbed = SliceTestBed(length=9, type=type)
