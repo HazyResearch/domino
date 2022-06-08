@@ -58,7 +58,7 @@ class DominoSlicer(Slicer):
         domino.fit(
             data=valid_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
         )
-        dp["domino_slices"] = domino.transform(
+        dp["domino_slices"] = domino.predict(
             data=test_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
         )
 

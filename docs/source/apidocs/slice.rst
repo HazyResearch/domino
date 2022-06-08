@@ -10,3 +10,12 @@ DominoSlicer
 SpotlightSlicer
 ----------------
 .. autofunction:: domino.SpotlightSlicer 
+
+
+MultiaccuracySlicer
+--------------------
+.. autofunction:: domino.MultiaccuracySlicer
+
+BarlowSlicer
+------------
+.. autofunction:: domino.BarlowSlicer
