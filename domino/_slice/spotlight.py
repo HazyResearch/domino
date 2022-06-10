@@ -302,7 +302,7 @@ def run_spotlight(
 
     print_every = min(print_every, n_steps)
 
-    for t in tqdm(range(n_steps)):  # removed tqdm here
+    for t in tqdm(range(n_steps), disable=True):  # removed tqdm here
         optimizer.zero_grad()
         precision = torch.exp(log_precision)
         precision_matrix = torch.eye(x.shape[1], device=device) * precision
