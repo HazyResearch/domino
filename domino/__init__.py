@@ -1,4 +1,5 @@
 from ._embed import embed, encoders
+from ._slice.abstract import Slicer
 from ._slice.domino import DominoSlicer
 from ._slice.spotlight import SpotlightSlicer
 from ._slice.barlow import BarlowSlicer
@@ -11,7 +12,8 @@ __all__ = [
     "DominoSlicer",
     "SpotlightSlicer",
     "BarlowSlicer",
-    "MultiaccuracySlicer"
+    "MultiaccuracySlicer",
+    "Slicer",
     "embed",
     "encoders",
     "explore",

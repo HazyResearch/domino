@@ -16,7 +16,7 @@ API Reference
 The `domino` API Reference is organized into the following sections:
 
 * Slice Discovery Methods
-   Most slice discovery methods adhere to a three-step procedure: (1) embed, (2) slice, and (3) describe [eyuboglu_2022]. For each of these steps, the `domino` package provides implementations of various algorithms under a common API. This makes it easy to compose a custom slice discovery method from different choices for each step.   
+   Most slice discovery methods adhere to a three-step procedure: (1) embed, (2) slice, and (3) describe [eyuboglu_2022]_. For each of these steps, the `domino` package provides implementations of various algorithms under a common API. This makes it easy to compose a custom slice discovery method from different choices for each step.   
 
    * :ref:`embed-reference` validation data in a representation space. This reference page describes a number of popular encoders implemented in `domino`.
 

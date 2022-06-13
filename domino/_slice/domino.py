@@ -73,7 +73,7 @@ class DominoSlicer(Slicer):
             to use. If ``None``, then no PCA is performed. Defaults to 128.
         n_mixture_components (int, optional): The number of clusters in the mixture
             model, :math:`\bar{k}`. This differs from ``n_slices`` in that the
-            ``DominoSDM`` only returns the top ``n_slices`` with the highest error rate
+            ``DominoSlicer`` only returns the top ``n_slices`` with the highest error rate
             of the ``n_mixture_components``. Defaults to 25.
         y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
             the :math:`P(Y=y_{i} | S=s)` term in the log likelihood during the E-step.
@@ -106,23 +106,23 @@ class DominoSlicer(Slicer):
       :math:`S` is sampled from a categorical
       distribution :math:`S \sim Cat(\mathbf{p}_S)` with parameter :math:`\mathbf{p}_S
       \in\{\mathbf{p} \in \mathbb{R}_+^{\bar{k}} : \sum_{i = 1}^{\bar{k}} p_i = 1\}`
-      (see ``DominoSDM.mm.weights_``).
+      (see ``DominoSlicer.mm.weights_``).
     * Given the slice :math:`S'`, the embeddings are normally distributed
       :math:`Z | S \sim \mathcal{N}(\mathbf{\mu}, \mathbf{\Sigma}`)  with parameters
-      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``DominoSDM.mm.means_``) and
+      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``DominoSlicer.mm.means_``) and
       :math:`\mathbf{\Sigma} \in \mathbb{S}^{d}_{++}`
-      (see ``DominoSDM.mm.covariances_``;
+      (see ``DominoSlicer.mm.covariances_``;
       normally this parameter is constrained to the set of symmetric positive definite
       :math:`d \\times d` matrices, however the argument ``covariance_type`` allows for
       other constraints).
     * Given the slice, the labels vary as a categorical
       :math:`Y |S \sim Cat(\mathbf{p})` with parameter :math:`\mathbf{p}
       \in \{\mathbf{p} \in \mathbb{R}^c_+ : \sum_{i = 1}^c p_i = 1\}` (see
-      ``DominoSDM.mm.y_probs``).
+      ``DominoSlicer.mm.y_probs``).
     * Given the slice, the model predictions also vary as a categorical
       :math:`\hat{Y} | S \sim Cat(\mathbf{\hat{p}})` with parameter
       :math:`\mathbf{\hat{p}} \in \{\mathbf{\hat{p}} \in \mathbb{R}^c_+ :
-      \sum_{i = 1}^c \hat{p}_i = 1\}` (see ``DominoSDM.mm.y_hat_probs``).
+      \sum_{i = 1}^c \hat{p}_i = 1\}` (see ``DominoSlicer.mm.y_hat_probs``).
 
     The mixture model is, thus, parameterized by :math:`\phi = [\mathbf{p}_S, \mu,
     \Sigma, \mathbf{p}, \mathbf{\hat{p}}]` corresponding to the attributes
@@ -262,7 +262,7 @@ class DominoSlicer(Slicer):
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
 
         Returns:
-            DominoSDM: Returns a fit instance of DominoSDM.
+            DominoSlicer: Returns a fit instance of DominoSlicer.
         """
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs
@@ -288,6 +288,7 @@ class DominoSlicer(Slicer):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = "target",
         pred_probs: Union[str, np.ndarray] = "pred_probs",
+        losses: Union[str, np.ndarray] = "losses",
     ) -> np.ndarray:
         """
         Get probabilistic slice membership for data using a fit mixture model.
@@ -314,6 +315,7 @@ class DominoSlicer(Slicer):
                 probability scores or "hard" 1-hot encoded predictions). If
                 ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
+            losses (Union[str, np.ndarray], optional): Ignored. 
 
         Returns:
             np.ndarray: A binary ``np.ndarray`` of shape (n_samples, n_slices) where
@@ -335,6 +337,7 @@ class DominoSlicer(Slicer):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = "target",
         pred_probs: Union[str, np.ndarray] = "pred_probs",
+        losses: Union[str, np.ndarray] = "loss"
     ) -> np.ndarray:
         """
         Get probabilistic slice membership for data using a fit mixture model.
@@ -361,6 +364,7 @@ class DominoSlicer(Slicer):
                 probability scores or "hard" 1-hot encoded predictions). If
                 ``data`` is ``None``, then an np.ndarray of shape (n_samples, n_classes)
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
+            losses (Union[str, np.ndarray], optional): Ignored.
 
         Returns:
             np.ndarray: A ``np.ndarray`` of shape (n_samples, n_slices) where values in
