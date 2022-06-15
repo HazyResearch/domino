@@ -10,6 +10,7 @@ from ..registry import Registry
 from .bit import bit
 from .clip import clip
 from .robust import robust
+from .transformers import transformers
 
 __all__ = ["clip", "bit"]
 
@@ -18,6 +19,7 @@ encoders = Registry(name="encoders")
 encoders.register(clip, aliases=[])
 encoders.register(bit, aliases=[])
 encoders.register(robust, aliases=[])
+encoders.register(transformers, aliases=[])
 
 
 def infer_modality(col: mk.AbstractColumn):
@@ -142,9 +144,16 @@ def _embed(
     if collate is not None:
         embed_input.collate_fn = collate
 
+    def _prepare_input(x):
+        if isinstance(x, mk.AbstractColumn):
+            x = x.data 
+        if torch.is_tensor(x):
+            x = x.to(device)
+        return x
+    
     with torch.no_grad():
         data[out_col] = embed_input.map(
-            lambda x: encode(x.data.to(device)).cpu().detach().numpy(),
+            lambda x: encode(_prepare_input(x)).cpu().detach().numpy(),
             pbar=True,
             is_batched_fn=True,
             batch_size=batch_size,
