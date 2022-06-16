@@ -2,7 +2,7 @@
 
 Slice
 ========
-This page provides an API reference for the *slicers* provided by ``domino``. Recall that most slice discovey methods adhere to a three-step procedure: (1) embed, (2) **slice**, and (3) describe. In this second step, we search an embedding space for regions where a model underperforms. Algorithms that can perform this step are called *slicers* and, in ``domino``, are subclasses of the abstract :class:`~domino.Slicer`. For example, the :class:`~domino.SpotlightSlicer`, directly optimizes the parameters of Gaussian kernel to highlight regions with a high concentration of errors [deon_2022]_.
+This page includes an API reference for the *slicers* provided by ``domino``. Recall that most slice discovey methods adhere to a three-step procedure: (1) embed, (2) **slice**, and (3) describe. In this second step, we search an embedding space for regions where a model underperforms. Algorithms that can perform this step are called *slicers* and, in ``domino``, are subclasses of the abstract :class:`~domino.Slicer`. For example, the :class:`~domino.SpotlightSlicer`, directly optimizes the parameters of Gaussian kernel to highlight regions with a high concentration of errors [deon_2022]_.
 
 All slicers in Domino share a common, sklearn-esque API. They each implement three methods: :meth:`~domino.Slicer.fit`, :meth:`~domino.Slicer.predict`, and :meth:`~domino.Slicer.predict_proba`. 
 

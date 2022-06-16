@@ -3,7 +3,7 @@ from typing import Any, List, Optional, Sequence
 
 from fvcore.common.registry import Registry as _Registry
 from tabulate import tabulate
-
+    
 
 class Registry(_Registry):
     """Extension of fvcore's registry that supports aliases."""
@@ -16,7 +16,7 @@ class Registry(_Registry):
 
         self._metadata_map = {}
 
-    @functools.lru_cache
+    @functools.lru_cache(maxsize=128)
     def get(self, name: str, *args, **kwargs) -> Any:
         ret = self._obj_map.get(name)
         if ret is None:
