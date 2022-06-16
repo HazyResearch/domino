@@ -4,6 +4,7 @@ from ._slice.domino import DominoSlicer
 from ._slice.spotlight import SpotlightSlicer
 from ._slice.barlow import BarlowSlicer
 from ._slice.multiaccuracy import MultiaccuracySlicer
+from ._slice.abstract import Slicer 
 from ._describe.generate import generate_candidate_descriptions
 from ._describe import describe
 from .gui import explore

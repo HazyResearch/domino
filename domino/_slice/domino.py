@@ -274,6 +274,7 @@ class DominoSlicer(Slicer):
         if self.pca is not None:
             self.pca.fit(X=embeddings)
             embeddings = self.pca.transform(X=embeddings)
+        
 
         self.mm.fit(X=embeddings, y=targets, y_hat=pred_probs)
 
@@ -503,7 +504,11 @@ class DominoMixture(GaussianMixture):
 
     def _preprocess_ys(self, y: np.ndarray = None, y_hat: np.ndarray = None):
         if y is not None:
-            y = label_binarize(y, classes=np.arange(np.max(y) + 1))
+            # we want to support continuous binary labels as well
+            if y.dtype == np.dtype(int):
+                y = label_binarize(y, classes=np.arange(np.max(y) + 1))
+            if y.ndim == 1:
+                y = y[:, np.newaxis]
             if y.shape[-1] == 1:
                 # binary targets transform to a column vector with label_binarize
                 y = np.array([1 - y[:, 0], y[:, 0]]).T
@@ -529,6 +534,7 @@ class DominoMixture(GaussianMixture):
         random_state = check_random_state(self.random_state)
 
         n_samples, _ = X.shape
+        best_params = None
         for init in range(n_init):
             self._print_verbose_msg_init_beg(init)
 
@@ -543,6 +549,9 @@ class DominoMixture(GaussianMixture):
                 prev_lower_bound = lower_bound
 
                 log_prob_norm, log_resp = self._e_step(X, y, y_hat)
+                if np.isnan(log_resp).any():
+                    import pdb; pdb.set_trace()
+
                 self._m_step(X, y, y_hat, log_resp)
                 lower_bound = self._compute_lower_bound(log_resp, log_prob_norm)
                 change = lower_bound - prev_lower_bound
@@ -568,6 +577,8 @@ class DominoMixture(GaussianMixture):
                 ConvergenceWarning,
             )
 
+        if best_params is None:
+            self._initialize_parameters(X, y, y_hat, random_state)
         self._set_parameters(best_params)
         self.n_iter_ = best_n_iter
         self.lower_bound_ = max_lower_bound
@@ -586,7 +597,7 @@ class DominoMixture(GaussianMixture):
 
         check_is_fitted(self)
         X = _check_X(X, None, self.means_.shape[1])
-        _, log_resp = self._estimate_log_prob_resp(X, y, y_hat)
+        _, log_resp = self._estimate_log_prob_resp(X)
         return np.exp(log_resp)
 
     def _m_step(self, X, y, y_hat, log_resp):
@@ -733,6 +744,9 @@ class DominoMixture(GaussianMixture):
         y_hat: array-like of shpae (n_samples, n_classes)
         """
         # add epsilon to avoid "RuntimeWarning: divide by zero encountered in log"
+        if (np.dot(y_hat, self.y_hat_probs.T) + np.finfo(self.y_hat_probs.dtype).eps < 0).any():
+            import pdb; pdb.set_trace()
+        
         return np.log(
             np.dot(y_hat, self.y_hat_probs.T) + np.finfo(self.y_hat_probs.dtype).eps
         )
