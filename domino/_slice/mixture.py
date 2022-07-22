@@ -29,7 +29,7 @@ from domino.utils import convert_to_numpy, unpack_args
 from .abstract import Slicer
 
 
-class DominoSlicer(Slicer):
+class MixtureSlicer(Slicer):
 
     r"""
     Slice Discovery based on the Domino Mixture Model.
@@ -47,14 +47,14 @@ class DominoSlicer(Slicer):
 
     .. code-block:: python
 
-        from domino import DominoSlicer
+        from domino import MixtureSlicer
         dp = ...  # Load dataset into a Meerkat DataPanel
 
         # split dataset
         valid_dp = dp.lz[dp["split"] == "valid"]
         test_dp = dp.lz[dp["split"] == "test"]
 
-        domino = DominoSlicer()
+        domino = MixtureSlicer()
         domino.fit(
             data=valid_dp, embeddings="emb", targets="target", pred_probs="pred_probs"
         )
@@ -73,7 +73,7 @@ class DominoSlicer(Slicer):
             to use. If ``None``, then no PCA is performed. Defaults to 128.
         n_mixture_components (int, optional): The number of clusters in the mixture
             model, :math:`\bar{k}`. This differs from ``n_slices`` in that the
-            ``DominoSlicer`` only returns the top ``n_slices`` with the highest error rate
+            ``MixtureSlicer`` only returns the top ``n_slices`` with the highest error rate
             of the ``n_mixture_components``. Defaults to 25.
         y_log_likelihood_weight (float, optional): The weight :math:`\gamma` applied to
             the :math:`P(Y=y_{i} | S=s)` term in the log likelihood during the E-step.
@@ -106,23 +106,23 @@ class DominoSlicer(Slicer):
       :math:`S` is sampled from a categorical
       distribution :math:`S \sim Cat(\mathbf{p}_S)` with parameter :math:`\mathbf{p}_S
       \in\{\mathbf{p} \in \mathbb{R}_+^{\bar{k}} : \sum_{i = 1}^{\bar{k}} p_i = 1\}`
-      (see ``DominoSlicer.mm.weights_``).
+      (see ``MixtureSlicer.mm.weights_``).
     * Given the slice :math:`S'`, the embeddings are normally distributed
       :math:`Z | S \sim \mathcal{N}(\mathbf{\mu}, \mathbf{\Sigma}`)  with parameters
-      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``DominoSlicer.mm.means_``) and
+      mean :math:`\mathbf{\mu} \in \mathbb{R}^d` (see ``MixtureSlicer.mm.means_``) and
       :math:`\mathbf{\Sigma} \in \mathbb{S}^{d}_{++}`
-      (see ``DominoSlicer.mm.covariances_``;
+      (see ``MixtureSlicer.mm.covariances_``;
       normally this parameter is constrained to the set of symmetric positive definite
       :math:`d \\times d` matrices, however the argument ``covariance_type`` allows for
       other constraints).
     * Given the slice, the labels vary as a categorical
       :math:`Y |S \sim Cat(\mathbf{p})` with parameter :math:`\mathbf{p}
       \in \{\mathbf{p} \in \mathbb{R}^c_+ : \sum_{i = 1}^c p_i = 1\}` (see
-      ``DominoSlicer.mm.y_probs``).
+      ``MixtureSlicer.mm.y_probs``).
     * Given the slice, the model predictions also vary as a categorical
       :math:`\hat{Y} | S \sim Cat(\mathbf{\hat{p}})` with parameter
       :math:`\mathbf{\hat{p}} \in \{\mathbf{\hat{p}} \in \mathbb{R}^c_+ :
-      \sum_{i = 1}^c \hat{p}_i = 1\}` (see ``DominoSlicer.mm.y_hat_probs``).
+      \sum_{i = 1}^c \hat{p}_i = 1\}` (see ``MixtureSlicer.mm.y_hat_probs``).
 
     The mixture model is, thus, parameterized by :math:`\phi = [\mathbf{p}_S, \mu,
     \Sigma, \mathbf{p}, \mathbf{\hat{p}}]` corresponding to the attributes
@@ -239,7 +239,8 @@ class DominoSlicer(Slicer):
         embeddings: Union[str, np.ndarray] = "embedding",
         targets: Union[str, np.ndarray] = "target",
         pred_probs: Union[str, np.ndarray] = "pred_probs",
-    ) -> DominoSlicer:
+        losses: Union[str, np.ndarray] = None,
+    ) -> MixtureSlicer:
         """
         Fit the mixture model to data.
 
@@ -262,7 +263,7 @@ class DominoSlicer(Slicer):
                 or (n_samples,) in the binary case. Defaults to "pred_probs".
 
         Returns:
-            DominoSlicer: Returns a fit instance of DominoSlicer.
+            MixtureSlicer: Returns a fit instance of MixtureSlicer.
         """
         embeddings, targets, pred_probs = unpack_args(
             data, embeddings, targets, pred_probs
@@ -275,7 +276,6 @@ class DominoSlicer(Slicer):
             self.pca.fit(X=embeddings)
             embeddings = self.pca.transform(X=embeddings)
         
-
         self.mm.fit(X=embeddings, y=targets, y_hat=pred_probs)
 
         self.slice_cluster_indices = (
@@ -296,7 +296,7 @@ class DominoSlicer(Slicer):
 
 
         .. caution::
-            Must call ``DominoSlicer.fit`` prior to calling ``DominoSlicer.predict``.
+            Must call ``MixtureSlicer.fit`` prior to calling ``MixtureSlicer.predict``.
 
 
         Args:
@@ -344,8 +344,8 @@ class DominoSlicer(Slicer):
         Get probabilistic slice membership for data using a fit mixture model.
 
         .. caution::
-            Must call ``DominoSlicer.fit`` prior to calling
-            ``DominoSlicer.predict_proba``.
+            Must call ``MixtureSlicer.fit`` prior to calling
+            ``MixtureSlicer.predict_proba``.
 
 
         Args:
@@ -798,3 +798,5 @@ def _estimate_parameters(X, y, y_hat, resp, reg_covar, covariance_type):
     y_hat_probs = np.dot(resp.T, y_hat) / nk[:, np.newaxis]  # (n_components, n_classes)
 
     return nk, means, covariances, y_probs, y_hat_probs
+
+DominoSlicer = MixtureSlicer

@@ -17,6 +17,7 @@ class Config:
 
 class Slicer(ABC, BaseEstimator):
     def __init__(self, n_slices: int):
+        super().__init__()
 
         self.config = Config()
         self.config.n_slices = n_slices
