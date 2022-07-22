@@ -61,7 +61,7 @@ Papers:
 - 📄 [ICLR 2022 Paper](https://arxiv.org/abs/2203.14960)
 
 Blogposts:
-- 🌍 [BlogPost]()
+- 🌍 [BlogPost](https://hazyresearch.stanford.edu/blog/2022-04-02-domino)
 
 
 
