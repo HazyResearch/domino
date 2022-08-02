@@ -597,7 +597,7 @@ class DominoMixture(GaussianMixture):
 
         check_is_fitted(self)
         X = _check_X(X, None, self.means_.shape[1])
-        _, log_resp = self._estimate_log_prob_resp(X)
+        _, log_resp = self._estimate_log_prob_resp(X, y, y_hat)
         return np.exp(log_resp)
 
     def _m_step(self, X, y, y_hat, log_resp):
